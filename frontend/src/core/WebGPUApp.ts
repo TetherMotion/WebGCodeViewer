@@ -12,8 +12,11 @@ import { GridRenderer } from '../renderers/GridRenderer';
 import { CrossSectionRenderer } from '../renderers/CrossSectionRenderer';
 import { PointCloudRenderer } from '../renderers/PointCloudRenderer';
 import { OverlayRenderer } from '../renderers/OverlayRenderer';
+import { NavigationGizmo } from '../renderers/NavigationGizmo';
 import { ControlPanel } from '../ui/ControlPanel';
 import { GcodeViewer } from '../ui/GcodeViewer';
+import { NavigationCube, ViewDirection } from '../ui/NavigationCube';
+import { degToRad } from './MathUtils';
 
 export class WebGPUApp {
   private canvas: HTMLCanvasElement;
@@ -30,9 +33,11 @@ export class WebGPUApp {
   private crossSectionRenderer: CrossSectionRenderer | null = null;
   private pointCloudRenderer: PointCloudRenderer | null = null;
   private overlayRenderer: OverlayRenderer | null = null;
+  private navGizmo: NavigationGizmo | null = null;
 
   private controlPanel: ControlPanel;
   private gcodeViewer: GcodeViewer;
+  private navCube: NavigationCube;
 
   private currentJobId: string | null = null;
   private currentData: TTHRData | null = null;
@@ -40,14 +45,21 @@ export class WebGPUApp {
   private animationId: number | null = null;
   private lastFrameTime = 0;
 
-  constructor(canvas: HTMLCanvasElement, rpcClient: RpcClient, bottomPanel: HTMLElement, gcodePanel: HTMLElement) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    rpcClient: RpcClient,
+    bottomPanel: HTMLElement,
+    gcodePanel: HTMLElement,
+    navCubeContainer: HTMLElement,
+  ) {
     this.canvas = canvas;
     this.rpcClient = rpcClient;
     this.camera = new Camera();
 
-    // Build UI — control panel at bottom, gcode viewer on right
+    // Build UI — control panel at bottom, gcode viewer on right, nav cube overlay
     this.controlPanel = new ControlPanel(bottomPanel);
     this.gcodeViewer = new GcodeViewer(gcodePanel);
+    this.navCube = new NavigationCube(navCubeContainer);
 
     this.setupEventHandlers();
   }
@@ -94,6 +106,16 @@ export class WebGPUApp {
     this.gcodeViewer.on('lineSelected', (_line) => {
       // Line selection is handled via blockSelected above
     });
+
+    // Navigation cube → direction selection
+    this.navCube.on('directionSelected', (dir) => {
+      this.setViewDirection(dir);
+    });
+
+    // Navigation cube → projection mode toggle
+    this.navCube.on('projectionChanged', (mode) => {
+      this.camera.setProjectionMode(mode);
+    });
   }
 
   async init(): Promise<void> {
@@ -122,6 +144,10 @@ export class WebGPUApp {
 
     this.overlayRenderer = new OverlayRenderer(this.device);
     await this.overlayRenderer.init(this.format);
+
+    // Navigation gizmo — uses the same device but a separate canvas
+    this.navGizmo = new NavigationGizmo(this.device, this.navCube.gizmoCanvas);
+    await this.navGizmo.init();
 
     this.setupInputHandlers();
     this.startRenderLoop();
@@ -170,7 +196,13 @@ export class WebGPUApp {
       this.resize();
     });
     resizeObserver.observe(this.canvas);
+    // Also observe the gizmo canvas for size changes
+    const gizmoResizeObserver = new ResizeObserver(() => {
+      this.navGizmo?.resize();
+    });
+    gizmoResizeObserver.observe(this.navCube.gizmoCanvas);
     this.resize();
+    this.navGizmo?.resize();
   }
 
   /**
@@ -290,6 +322,9 @@ export class WebGPUApp {
 
     pass.end();
     this.device.queue.submit([encoder.finish()]);
+
+    // Render navigation gizmo (separate canvas, uses camera rotation only)
+    this.navGizmo?.render(this.camera.viewRotationMatrix);
   }
 
   private exportImage(): void {
@@ -298,6 +333,27 @@ export class WebGPUApp {
     a.href = url;
     a.download = `tether-viewer-${Date.now()}.png`;
     a.click();
+  }
+
+  /**
+   * Set the camera to a standard view direction.
+   * The orbit distance is preserved from the current camera state.
+   */
+  private setViewDirection(dir: ViewDirection): void {
+    // Standard view angles (angle, elevation)
+    // angle is measured in the XY plane, elevation is Z
+    const presets: Record<ViewDirection, { angle: number; elevation: number }> = {
+      iso:    { angle: degToRad(35),   elevation: degToRad(30) },
+      top:    { angle: degToRad(0),    elevation: degToRad(89) },
+      bottom: { angle: degToRad(0),    elevation: degToRad(-89) },
+      front:  { angle: degToRad(0),    elevation: degToRad(0) },
+      back:   { angle: degToRad(180),  elevation: degToRad(0) },
+      right:  { angle: degToRad(90),   elevation: degToRad(0) },
+      left:   { angle: degToRad(-90),  elevation: degToRad(0) },
+    };
+
+    const preset = presets[dir];
+    this.camera.setOrbit(preset.angle, preset.elevation, this.camera.orbitDistanceVal);
   }
 
   private async handleUpload(file: File): Promise<void> {
@@ -358,6 +414,7 @@ export class WebGPUApp {
     this.crossSectionRenderer?.destroy();
     this.pointCloudRenderer?.destroy();
     this.overlayRenderer?.destroy();
+    this.navGizmo?.destroy();
     this.depthTexture?.destroy();
   }
 }

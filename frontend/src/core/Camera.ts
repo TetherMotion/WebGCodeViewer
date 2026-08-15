@@ -1,9 +1,12 @@
 /**
  * @file Camera.ts
  * @brief Orbit camera with smooth interpolation for WebGPU viewer.
+ * Supports both perspective and orthographic projection modes.
  */
 
-import { Vec3, Mat4, mat4Perspective, mat4LookAt, mat4Multiply, degToRad, clamp, lerp } from './MathUtils';
+import { Vec3, Mat4, mat4Perspective, mat4Ortho, mat4LookAt, mat4Multiply, degToRad, clamp, lerp } from './MathUtils';
+
+export type ProjectionMode = 'perspective' | 'orthographic';
 
 export class Camera {
   private _eye: Vec3 = { x: 200, y: -200, z: 200 };
@@ -13,6 +16,8 @@ export class Camera {
   private _aspect: number = 1.0;
   private _near: number = 0.1;
   private _far: number = 10000;
+  private _projectionMode: ProjectionMode = 'perspective';
+  private _orthoScale: number = 200; // half-height of ortho frustum
 
   // Target values for smooth interpolation
   private targetEye: Vec3 = { ...this._eye };
@@ -30,9 +35,18 @@ export class Camera {
   get eye(): Vec3 { return { ...this._eye }; }
   get target(): Vec3 { return { ...this._target }; }
   get fov(): number { return this._fov; }
+  get projectionMode(): ProjectionMode { return this._projectionMode; }
+  get orthoScale(): number { return this._orthoScale; }
+  get orbitAngleVal(): number { return this.orbitAngle; }
+  get orbitElevationVal(): number { return this.orbitElevation; }
+  get orbitDistanceVal(): number { return this.orbitDistance; }
 
   setAspect(aspect: number): void {
     this._aspect = aspect;
+  }
+
+  setProjectionMode(mode: ProjectionMode): void {
+    this._projectionMode = mode;
   }
 
   setTarget(target: Vec3): void {
@@ -54,8 +68,12 @@ export class Camera {
   }
 
   zoom(factor: number): void {
-    this.orbitDistance = Math.max(1, this.orbitDistance * factor);
-    this.updateOrbitPosition();
+    if (this._projectionMode === 'orthographic') {
+      this._orthoScale = Math.max(1, this._orthoScale * factor);
+    } else {
+      this.orbitDistance = Math.max(1, this.orbitDistance * factor);
+      this.updateOrbitPosition();
+    }
   }
 
   pan(dx: number, dy: number): void {
@@ -106,11 +124,31 @@ export class Camera {
   }
 
   get projectionMatrix(): Mat4 {
+    if (this._projectionMode === 'orthographic') {
+      const halfH = this._orthoScale;
+      const halfW = halfH * this._aspect;
+      return mat4Ortho(-halfW, halfW, -halfH, halfH, this._near, this._far);
+    }
     return mat4Perspective(this._fov, this._aspect, this._near, this._far);
   }
 
   get viewProjectionMatrix(): Mat4 {
     return mat4Multiply(this.projectionMatrix, this.viewMatrix);
+  }
+
+  /**
+   * Get the rotation-only matrix (view matrix without translation).
+   * Used by the navigation gizmo to match camera orientation.
+   */
+  get viewRotationMatrix(): Mat4 {
+    const view = this.viewMatrix;
+    const rot = new Float32Array(16);
+    // Copy rotation part (3x3), zero translation
+    rot[0] = view[0]; rot[1] = view[1]; rot[2] = view[2]; rot[3] = 0;
+    rot[4] = view[4]; rot[5] = view[5]; rot[6] = view[6]; rot[7] = 0;
+    rot[8] = view[8]; rot[9] = view[9]; rot[10] = view[10]; rot[11] = 0;
+    rot[12] = 0; rot[13] = 0; rot[14] = 0; rot[15] = 1;
+    return rot;
   }
 
   fitToBounds(min: Vec3, max: Vec3, padding: number = 1.2): void {
@@ -127,6 +165,7 @@ export class Camera {
     const distance = size * padding / (2 * Math.tan(this._fov / 2));
     this.setTarget(center);
     this.orbitDistance = Math.max(1, distance);
+    this._orthoScale = size * padding / 2;
     this.updateOrbitPosition();
   }
 }

@@ -16,7 +16,8 @@ async function main(): Promise<void> {
 
   const bottomPanel = document.getElementById('bottom-panel') as HTMLElement | null;
   const gcodePanel = document.getElementById('gcode-panel') as HTMLElement | null;
-  if (!bottomPanel || !gcodePanel) {
+  const navCubeContainer = document.getElementById('nav-cube-container') as HTMLElement | null;
+  if (!bottomPanel || !gcodePanel || !navCubeContainer) {
     console.error('UI containers not found');
     return;
   }
@@ -26,7 +27,7 @@ async function main(): Promise<void> {
   const rpcClient = new RpcClient(transport);
 
   // Create and init the WebGPU app
-  const app = new WebGPUApp(canvas, rpcClient, bottomPanel, gcodePanel);
+  const app = new WebGPUApp(canvas, rpcClient, bottomPanel, gcodePanel, navCubeContainer);
   try {
     await app.init();
     console.log('Tether viewer initialized');

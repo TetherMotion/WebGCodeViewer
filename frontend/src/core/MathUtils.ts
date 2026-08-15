@@ -141,6 +141,21 @@ export function mat4Perspective(fovy: number, aspect: number, near: number, far:
   return m;
 }
 
+export function mat4Ortho(left: number, right: number, bottom: number, top: number, near: number, far: number): Mat4 {
+  const rl = 1 / (right - left);
+  const tb = 1 / (top - bottom);
+  const nf = 1 / (near - far);
+  const m = new Float32Array(16);
+  m[0] = 2 * rl;
+  m[5] = 2 * tb;
+  m[10] = 2 * nf;
+  m[12] = -(right + left) * rl;
+  m[13] = -(top + bottom) * tb;
+  m[14] = (far + near) * nf;
+  m[15] = 1;
+  return m;
+}
+
 export function mat4LookAt(eye: Vec3, center: Vec3, up: Vec3): Mat4 {
   const f = normalize(sub(center, eye));
   const s = normalize(cross(f, up));
