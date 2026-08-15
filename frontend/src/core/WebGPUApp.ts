@@ -14,6 +14,7 @@ import { PointCloudRenderer } from '../renderers/PointCloudRenderer';
 import { OverlayRenderer } from '../renderers/OverlayRenderer';
 import { NavigationGizmo } from '../renderers/NavigationGizmo';
 import { PrintHeadMarker } from '../renderers/PrintHeadMarker';
+import { DirectionCubeRenderer } from '../renderers/DirectionCubeRenderer';
 import { ControlPanel } from '../ui/ControlPanel';
 import { GcodeViewer } from '../ui/GcodeViewer';
 import { NavigationCube, ViewDirection } from '../ui/NavigationCube';
@@ -36,6 +37,7 @@ export class WebGPUApp {
   private overlayRenderer: OverlayRenderer | null = null;
   private navGizmo: NavigationGizmo | null = null;
   private printHeadMarker: PrintHeadMarker | null = null;
+  private dirCubeRenderer: DirectionCubeRenderer | null = null;
 
   private controlPanel: ControlPanel;
   private gcodeViewer: GcodeViewer;
@@ -182,6 +184,10 @@ export class WebGPUApp {
     this.printHeadMarker = new PrintHeadMarker(this.device);
     await this.printHeadMarker.init(this.format);
 
+    // Direction cube renderer (WebGPU-rendered 3D cube buttons)
+    this.dirCubeRenderer = new DirectionCubeRenderer(this.device, this.navCube.dirCanvas);
+    await this.dirCubeRenderer.init();
+
     this.setupInputHandlers();
     this.startRenderLoop();
   }
@@ -234,8 +240,14 @@ export class WebGPUApp {
       this.navGizmo?.resize();
     });
     gizmoResizeObserver.observe(this.navCube.gizmoCanvas);
+    // Observe the direction cube canvas for size changes
+    const dirCubeResizeObserver = new ResizeObserver(() => {
+      this.dirCubeRenderer?.resize();
+    });
+    dirCubeResizeObserver.observe(this.navCube.dirCanvas);
     this.resize();
     this.navGizmo?.resize();
+    this.dirCubeRenderer?.resize();
 
     // Global keyboard shortcuts
     window.addEventListener('keydown', (e) => this.handleKeyDown(e));
@@ -406,6 +418,9 @@ export class WebGPUApp {
 
     // Render navigation gizmo (separate canvas, uses camera rotation only)
     this.navGizmo?.render(this.camera.viewRotationMatrix);
+
+    // Render direction cubes (separate canvas)
+    this.dirCubeRenderer?.render();
   }
 
   private exportImage(): void {
@@ -538,6 +553,7 @@ export class WebGPUApp {
     this.overlayRenderer?.destroy();
     this.navGizmo?.destroy();
     this.printHeadMarker?.destroy();
+    this.dirCubeRenderer?.destroy();
     this.depthTexture?.destroy();
   }
 }

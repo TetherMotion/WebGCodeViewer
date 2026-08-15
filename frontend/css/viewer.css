@@ -156,12 +156,14 @@ body {
     z-index: 20;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
     background: rgba(37, 37, 43, 0.85);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 8px;
     backdrop-filter: blur(8px);
+    width: 152px;  /* 4 cells × 36px + padding */
+    box-sizing: border-box;
 }
 
 .nav-gizmo-canvas {
@@ -171,40 +173,16 @@ body {
     align-self: center;
 }
 
-.nav-dir-buttons {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 3px;
-}
-
-.nav-dir-btn {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 2px;
-    cursor: pointer;
-    transition: all 0.15s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    aspect-ratio: 1;
-}
-
-.nav-dir-btn:hover {
-    background: var(--bg-primary);
-    border-color: var(--accent);
-}
-
-.nav-dir-btn.active {
-    background: var(--bg-primary);
-    border-color: var(--accent);
-    box-shadow: 0 0 4px rgba(74, 158, 255, 0.4);
-}
-
-.nav-cube-svg {
+.nav-dir-canvas {
     width: 100%;
-    height: 100%;
+    height: 72px;  /* 2 rows × 36px */
     display: block;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.nav-dir-canvas:hover {
+    background: rgba(255, 255, 255, 0.05);
 }
 
 .nav-proj-switch {
