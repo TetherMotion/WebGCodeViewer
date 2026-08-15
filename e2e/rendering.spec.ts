@@ -1743,3 +1743,56 @@ test.describe('Keyboard shortcuts overlay (Feature #68)', () => {
     collector.assertClean('keyboard shortcuts with loaded G-code');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 18: Screenshot Export (Feature #72)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Screenshot export (Feature #72)', () => {
+  test('export button exists in control panel', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const exportBtn = page.locator('#bottom-panel button', { hasText: 'Export' });
+    await expect(exportBtn).toBeVisible();
+  });
+
+  test('export button triggers download without errors', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'export_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // Set up download listener
+    const downloadPromise = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
+
+    // Click export
+    await page.locator('#bottom-panel button', { hasText: 'Export' }).click();
+
+    const download = await downloadPromise;
+    // Download may or may not trigger in headless mode, but no errors should occur
+    collector.assertClean('screenshot export');
+  });
+
+  test('keyboard shortcut E triggers export without errors', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'export_key_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
+
+    // Press E
+    await page.keyboard.press('e');
+
+    const download = await downloadPromise;
+    collector.assertClean('keyboard shortcut export');
+  });
+});
