@@ -1392,6 +1392,17 @@ input[type="checkbox"] {
     backdrop-filter: blur(8px);
 }
 
+/* Feature #86: Drag-and-drop active state */
+body.drag-active::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(74, 158, 255, 0.15);
+    border: 3px dashed var(--accent);
+    z-index: 9999;
+    pointer-events: none;
+}
+
 /* Feature #68: Help overlay */
 .help-overlay {
     position: fixed;

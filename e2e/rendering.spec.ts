@@ -1796,3 +1796,104 @@ test.describe('Screenshot export (Feature #72)', () => {
     collector.assertClean('keyboard shortcut export');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 19: Drag-and-Drop File Upload (Feature #86)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Drag-and-drop file upload (Feature #86)', () => {
+  test('drag-over adds drag-active class to body', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Simulate dragover event
+    await page.evaluate(() => {
+      const event = new DragEvent('dragover', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: new DataTransfer(),
+      });
+      document.body.dispatchEvent(event);
+    });
+    await page.waitForTimeout(200);
+
+    const bodyClass = await page.locator('body').getAttribute('class');
+    expect(bodyClass).toContain('drag-active');
+  });
+
+  test('drag-leave removes drag-active class', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Add drag-active first
+    await page.evaluate(() => {
+      document.body.dispatchEvent(new DragEvent('dragover', {
+        bubbles: true, cancelable: true, dataTransfer: new DataTransfer(),
+      }));
+    });
+    await page.waitForTimeout(200);
+
+    // Then drag-leave
+    await page.evaluate(() => {
+      document.body.dispatchEvent(new DragEvent('dragleave', {
+        bubbles: true, cancelable: true, dataTransfer: new DataTransfer(),
+      }));
+    });
+    await page.waitForTimeout(200);
+
+    const bodyClass = await page.locator('body').getAttribute('class');
+    expect(bodyClass || '').not.toContain('drag-active');
+  });
+
+  test('drop event with G-code file triggers upload without errors', async ({ page }) => {
+    const collector = setupMessageCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Simulate dropping a .gcode file
+    await page.evaluate(async (gcode) => {
+      const file = new File([gcode], 'dropped.gcode', { type: 'text/plain' });
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      const event = new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: dt,
+      });
+      document.body.dispatchEvent(event);
+    }, SQUARE_GCODE);
+
+    // Wait for upload + processing to start
+    await page.waitForTimeout(2000);
+
+    collector.assertClean('drag-and-drop upload');
+  });
+
+  test('drop event ignores non-G-code files', async ({ page }) => {
+    const collector = setupMessageCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Simulate dropping a .txt file (should be ignored)
+    await page.evaluate(() => {
+      const file = new File(['hello world'], 'readme.txt', { type: 'text/plain' });
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      const event = new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: dt,
+      });
+      document.body.dispatchEvent(event);
+    });
+
+    await page.waitForTimeout(1000);
+
+    // Should not trigger any upload or errors
+    collector.assertClean('non-G-code drop ignored');
+  });
+});

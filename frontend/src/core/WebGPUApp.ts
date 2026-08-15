@@ -106,6 +106,47 @@ export class WebGPUApp {
     // Register global keyboard shortcuts early (before WebGPU init)
     // so they work even if WebGPU is not available
     window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+
+    // Feature #86: Drag-and-drop file upload
+    this.setupDragAndDrop();
+  }
+
+  // Feature #86: Drag-and-drop file upload
+  private setupDragAndDrop(): void {
+    const dropZone = document.body;
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.add('drag-active');
+    });
+
+    dropZone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.target === dropZone) {
+        dropZone.classList.remove('drag-active');
+      }
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.remove('drag-active');
+
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        // Find first G-code file
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const name = file.name.toLowerCase();
+          if (name.endsWith('.gcode') || name.endsWith('.g') || name.endsWith('.nc') || name.endsWith('.ngc')) {
+            this.handleUpload(file);
+            break;
+          }
+        }
+      }
+    });
   }
 
   private setupEventHandlers(): void {
