@@ -7,7 +7,31 @@ import { WsTransport } from './core/WsTransport';
 import { RpcClient } from './core/RpcClient';
 import { WebGPUApp } from './core/WebGPUApp';
 
+/**
+ * Dynamically append the build timestamp to the CSS <link> href.
+ *
+ * build.mjs patches index.html at build time, but if index.html itself
+ * is cached by the browser or a CDN, the CSS link may still reference
+ * an old ?v= value. This function re-busts the CSS link at runtime
+ * using the __BUILD_TIMESTAMP__ constant injected into the JS bundle,
+ * guaranteeing the CSS version always matches the JS version.
+ */
+function rebustCssLink(): void {
+  const link = document.querySelector<HTMLLinkElement>('link[href*="viewer.css"]');
+  if (!link) return;
+  const href = link.getAttribute('href');
+  if (!href) return;
+  // Replace any existing ?v=... with the current build timestamp
+  const newHref = href.replace(/\?v=[^&]*/, `?v=${__BUILD_TIMESTAMP__}`);
+  if (newHref !== href) {
+    link.setAttribute('href', newHref);
+  }
+}
+
 async function main(): Promise<void> {
+  // Re-bust CSS link to ensure it matches the JS build version
+  rebustCssLink();
+
   const canvas = document.getElementById('webgpu-canvas') as HTMLCanvasElement | null;
   if (!canvas) {
     console.error('Canvas element not found');

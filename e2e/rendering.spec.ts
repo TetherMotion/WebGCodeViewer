@@ -3230,18 +3230,54 @@ test.describe('Bug fix regression tests', () => {
 
   // ── BUG 13: Stale CSS cache-busting version ──────────────────────────
   test.describe('BUG 13: CSS and JS have cache-busting version', () => {
-    test('index.html references CSS with version parameter', async ({ page }) => {
+    test('index.html references CSS and JS with version parameter', async ({ page }) => {
       const resp = await page.goto('http://localhost:8099/');
       expect(resp?.ok()).toBe(true);
       const html = await resp?.text();
       expect(html).toContain('viewer.css?v=');
       expect(html).toContain('tether-viewer.js?v=');
-      // Version should not be the old stale one
-      expect(html).not.toContain('v=20260815i');
+      // Version should not be the placeholder (build.mjs must have replaced it)
+      expect(html).not.toContain('__BUILD_VERSION__');
     });
 
-    test('CSS file is served correctly with new version', async ({ page }) => {
-      const resp = await page.goto('http://localhost:8099/css/viewer.css?v=20260814a');
+    test('served index.html has a valid build timestamp', async ({ page }) => {
+      const resp = await page.goto('http://localhost:8099/');
+      expect(resp?.ok()).toBe(true);
+      const html = await resp?.text();
+      // Extract the version string — should be a timestamp like YYYYMMDDTHHMMSS
+      const match = html.match(/viewer\.css\?v=([^\s"']+)/);
+      expect(match).not.toBeNull();
+      const version = match![1];
+      // Should match the timestamp format (digits + T + digits)
+      expect(version).toMatch(/^\d{8}T\d{6}$/);
+    });
+
+    test('JS and CSS use the same version string', async ({ page }) => {
+      const resp = await page.goto('http://localhost:8099/');
+      expect(resp?.ok()).toBe(true);
+      const html = await resp?.text();
+      const cssMatch = html.match(/viewer\.css\?v=([^\s"']+)/);
+      const jsMatch = html.match(/tether-viewer\.js\?v=([^\s"']+)/);
+      expect(cssMatch).not.toBeNull();
+      expect(jsMatch).not.toBeNull();
+      expect(cssMatch![1]).toBe(jsMatch![1]);
+    });
+
+    test('build-version.txt is served and matches index.html version', async ({ request }) => {
+      const indexResp = await request.get('http://localhost:8099/');
+      const html = await indexResp.text();
+      const cssMatch = html.match(/viewer\.css\?v=([^\s"']+)/);
+      expect(cssMatch).not.toBeNull();
+      const htmlVersion = cssMatch![1];
+
+      const versionResp = await request.get('http://localhost:8099/dist/build-version.txt');
+      expect(versionResp.ok()).toBe(true);
+      const txtVersion = (await versionResp.text()).trim();
+      expect(txtVersion).toBe(htmlVersion);
+    });
+
+    test('CSS file is served correctly with version parameter', async ({ page }) => {
+      const resp = await page.goto('http://localhost:8099/css/viewer.css');
       expect(resp?.ok()).toBe(true);
       const css = await resp?.text();
       // Should contain the BUG 12 fix (theme-aware overlay)
