@@ -1011,6 +1011,7 @@ export class WebGPUApp {
   private async handleUpload(file: File): Promise<void> {
     this.currentFilename = file.name;
     this.controlPanel.setStatus('Uploading...');
+    this.controlPanel.setFileInfo(file.name); // Feature #84
 
     // Load raw G-code text into the viewer immediately (for the G-code panel)
     const text = await file.text();

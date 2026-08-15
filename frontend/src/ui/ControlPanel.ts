@@ -386,7 +386,11 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
         this.statusEl.textContent = `Processing: ${pct}% (${status.sampleCount} samples)`;
         break;
       case 'ready':
-        this.statusEl.textContent = `Ready: ${status.sampleCount} samples, ${status.duration.toFixed(2)}s, ${status.pathLength.toFixed(1)}mm`;
+        // Feature #84: Enhanced status bar with print info
+        const timeStr = status.duration >= 60
+          ? `${Math.floor(status.duration / 60)}m ${Math.round(status.duration % 60)}s`
+          : `${status.duration.toFixed(2)}s`;
+        this.statusEl.textContent = `Ready: ${status.sampleCount} samples | ${timeStr} | ${status.pathLength.toFixed(1)}mm`;
         // Show time slider when data is ready
         this.timeGroup.style.display = 'flex';
         break;
@@ -395,6 +399,16 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
         break;
       default:
         this.statusEl.textContent = status.state;
+    }
+  }
+
+  /**
+   * Feature #84: Set file name in status bar.
+   */
+  setFileInfo(filename: string): void {
+    // Prepend filename to status if we have one
+    if (filename) {
+      this.statusEl.title = filename;
     }
   }
 
