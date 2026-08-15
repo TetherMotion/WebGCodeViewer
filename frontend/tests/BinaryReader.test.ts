@@ -94,4 +94,54 @@ describe('BinaryReader', () => {
     expect(arr[0]).toBeCloseTo(1.0);
     expect(arr[3]).toBeCloseTo(4.0);
   });
+
+  it('reads float32 array from unaligned offset', () => {
+    // Build a buffer with a leading byte to force misalignment, then 3 floats
+    const floats = new Float32Array([1.5, 2.5, 3.5]);
+    const buf = new Uint8Array(1 + floats.byteLength);
+    buf[0] = 42;
+    buf.set(new Uint8Array(floats.buffer), 1);
+    const reader = new BinaryReader(buf);
+    reader.readUint8(); // advance offset by 1 -> byteOffset % 4 !== 0
+    const arr = reader.readFloat32Array(3);
+    expect(arr.length).toBe(3);
+    expect(arr[0]).toBeCloseTo(1.5);
+    expect(arr[1]).toBeCloseTo(2.5);
+    expect(arr[2]).toBeCloseTo(3.5);
+  });
+
+  it('throws when float32 array reads past end', () => {
+    const buf = new Float32Array([1.0, 2.0]).buffer;
+    const reader = new BinaryReader(buf);
+    expect(() => reader.readFloat32Array(3)).toThrow(RangeError);
+  });
+
+  it('reads float64 array (aligned)', () => {
+    const buf = new Float64Array([1.0, 2.0, 3.0, 4.0]).buffer;
+    const reader = new BinaryReader(buf);
+    const arr = reader.readFloat64Array(4);
+    expect(arr.length).toBe(4);
+    expect(arr[0]).toBeCloseTo(1.0);
+    expect(arr[3]).toBeCloseTo(4.0);
+  });
+
+  it('reads float64 array from unaligned offset', () => {
+    // Build a buffer with a leading byte to force misalignment, then 2 doubles
+    const doubles = new Float64Array([1.25, 2.75]);
+    const buf = new Uint8Array(1 + doubles.byteLength);
+    buf[0] = 7;
+    buf.set(new Uint8Array(doubles.buffer), 1);
+    const reader = new BinaryReader(buf);
+    reader.readUint8(); // advance offset by 1 -> byteOffset % 8 !== 0
+    const arr = reader.readFloat64Array(2);
+    expect(arr.length).toBe(2);
+    expect(arr[0]).toBeCloseTo(1.25);
+    expect(arr[1]).toBeCloseTo(2.75);
+  });
+
+  it('throws when float64 array reads past end', () => {
+    const buf = new Float64Array([1.0]).buffer;
+    const reader = new BinaryReader(buf);
+    expect(() => reader.readFloat64Array(2)).toThrow(RangeError);
+  });
 });

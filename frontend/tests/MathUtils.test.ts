@@ -8,6 +8,7 @@ import {
   vec3, add, sub, scale, dot, cross, length, normalize, distance,
   lerp, clamp, degToRad, radToDeg, centroid, boundingBox,
   mat4Identity, mat4Multiply, mat4Perspective, mat4Ortho, mat4LookAt,
+  mat4Translate, mat4Scale, lerpColor,
 } from '../src/core/MathUtils';
 
 describe('MathUtils', () => {
@@ -89,6 +90,11 @@ describe('MathUtils', () => {
       expect(c.z).toBeCloseTo(2/3);
     });
 
+    it('returns zero centroid for empty array', () => {
+      const c = centroid([]);
+      expect(c).toEqual({ x: 0, y: 0, z: 0 });
+    });
+
     it('computes bounding box', () => {
       const points = [vec3(-1, -2, -3), vec3(1, 2, 3)];
       const bb = boundingBox(points)!;
@@ -153,6 +159,39 @@ describe('MathUtils', () => {
     it('lookAt matrix', () => {
       const m = mat4LookAt(vec3(0, 0, 10), vec3(0, 0, 0), vec3(0, 1, 0));
       expect(m[15]).toBe(1);
+    });
+
+    it('mat4Translate adds translation', () => {
+      const id = mat4Identity();
+      const t = mat4Translate(id, vec3(5, 10, 15));
+      expect(t[12]).toBe(5);
+      expect(t[13]).toBe(10);
+      expect(t[14]).toBe(15);
+    });
+
+    it('mat4Scale scales columns', () => {
+      const id = mat4Identity();
+      const s = mat4Scale(id, vec3(2, 3, 4));
+      expect(s[0]).toBe(2);
+      expect(s[5]).toBe(3);
+      expect(s[10]).toBe(4);
+    });
+
+    it('lerpColor interpolates between two colors', () => {
+      const c = lerpColor([0, 0, 0], [1, 1, 1], 0.5);
+      expect(c[0]).toBeCloseTo(0.5);
+      expect(c[1]).toBeCloseTo(0.5);
+      expect(c[2]).toBeCloseTo(0.5);
+    });
+
+    it('lerpColor at t=0 returns first color', () => {
+      const c = lerpColor([0.1, 0.2, 0.3], [0.9, 0.8, 0.7], 0);
+      expect(c).toEqual([0.1, 0.2, 0.3]);
+    });
+
+    it('lerpColor at t=1 returns second color', () => {
+      const c = lerpColor([0.1, 0.2, 0.3], [0.9, 0.8, 0.7], 1);
+      expect(c).toEqual([0.9, 0.8, 0.7]);
     });
   });
 });

@@ -129,4 +129,71 @@ describe('TthrParser', () => {
     const layer = extractZLayer(data, 100, 200);
     expect(layer.header.sampleCount).toBe(0);
   });
+
+  it('extractZLayer copies motionType and deviation', () => {
+    const sampleCount = 4;
+    const flags = TTHR_FLAGS.POSITIONS | TTHR_FLAGS.SEGMENT_INFO | TTHR_FLAGS.DEVIATION;
+    const headerBuf = buildTTHRHeader(sampleCount, flags);
+    // positions: 4 samples * 3 axes * 4 bytes = 48
+    // segmentIndex: 4 * 4 = 16
+    // blockIndex: 4 * 4 = 16
+    // motionType: 4 * 1 = 4
+    // deviation: 4 * 4 = 16
+    const dataSize = 48 + 16 + 16 + 4 + 16;
+    const fullBuf = new ArrayBuffer(92 + dataSize);
+    new Uint8Array(fullBuf).set(new Uint8Array(headerBuf), 0);
+    const view = new DataView(fullBuf, 92);
+    // Positions: (0,0,0), (10,0,5), (20,0,5), (30,0,10)
+    const positions = [0, 0, 0, 10, 0, 5, 20, 0, 5, 30, 0, 10];
+    for (let i = 0; i < positions.length; i++) {
+      view.setFloat32(i * 4, positions[i], true);
+    }
+    let off = 48;
+    // segmentIndex (Int32)
+    const segIdx = [0, 1, 1, 2];
+    for (let i = 0; i < segIdx.length; i++) {
+      view.setInt32(off + i * 4, segIdx[i], true);
+    }
+    off += 16;
+    // blockIndex (Int32)
+    const blkIdx = [10, 11, 11, 12];
+    for (let i = 0; i < blkIdx.length; i++) {
+      view.setInt32(off + i * 4, blkIdx[i], true);
+    }
+    off += 16;
+    // motionType (Uint8)
+    const motionTypes = [0, 1, 2, 3];
+    for (let i = 0; i < motionTypes.length; i++) {
+      view.setUint8(off + i, motionTypes[i]);
+    }
+    off += 4;
+    // deviation (Float32)
+    const deviations = [0.0, 50.0, 75.0, 100.0];
+    for (let i = 0; i < deviations.length; i++) {
+      view.setFloat32(off + i * 4, deviations[i], true);
+    }
+    const data = parseTTHR(fullBuf);
+    expect(data.motionType).toBeDefined();
+    expect(data.deviation).toBeDefined();
+    // Extract Z layer for samples with Z in [4, 6] -> samples 1 and 2
+    const layer = extractZLayer(data, 4, 6);
+    expect(layer.header.sampleCount).toBe(2);
+    // motionType copied correctly
+    expect(layer.motionType).toBeDefined();
+    expect(layer.motionType!.length).toBe(2);
+    expect(layer.motionType![0]).toBe(1);
+    expect(layer.motionType![1]).toBe(2);
+    // deviation copied correctly
+    expect(layer.deviation).toBeDefined();
+    expect(layer.deviation!.length).toBe(2);
+    expect(layer.deviation![0]).toBeCloseTo(50.0);
+    expect(layer.deviation![1]).toBeCloseTo(75.0);
+  });
+
+  it('extractZLayer returns data unchanged when no positions', () => {
+    const headerBuf = buildTTHRHeader(0, TTHR_FLAGS.DEVIATION);
+    const data = parseTTHR(headerBuf);
+    const layer = extractZLayer(data, 0, 100);
+    expect(layer).toBe(data);
+  });
 });

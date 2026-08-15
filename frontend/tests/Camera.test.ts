@@ -141,4 +141,85 @@ describe('Camera', () => {
     // After update, eye should have moved
     expect(eye1.x).not.toBeCloseTo(eye2.x, 1);
   });
+
+  it('pan moves target', () => {
+    const cam = new Camera();
+    const t1 = cam.target;
+    cam.pan(100, 50);
+    cam.update(1.0);
+    const t2 = cam.target;
+    expect(Math.abs(t1.x - t2.x) + Math.abs(t1.y - t2.y)).toBeGreaterThan(0.01);
+  });
+
+  it('pan with zero-length forward does nothing', () => {
+    const cam = new Camera();
+    // Force eye == target to get zero-length forward
+    cam.setTarget({ x: 0, y: 0, z: 0 });
+    // Override internal state via setOrbit to make distance 0
+    cam.setOrbit(0, 0.01, 1);
+    const t1 = cam.target;
+    cam.pan(100, 100);
+    const t2 = cam.target;
+    // Should not crash and target should remain essentially the same
+    expect(t2.x).toBeCloseTo(t1.x, 5);
+    expect(t2.y).toBeCloseTo(t1.y, 5);
+  });
+
+  it('setProjectionMode switches to orthographic', () => {
+    const cam = new Camera();
+    expect(cam.projectionMode).toBe('perspective');
+    cam.setProjectionMode('orthographic');
+    expect(cam.projectionMode).toBe('orthographic');
+    // Projection matrix should be orthographic
+    const proj = cam.projectionMatrix;
+    expect(proj.length).toBe(16);
+  });
+
+  it('zoom in orthographic mode changes orthoScale', () => {
+    const cam = new Camera();
+    cam.setProjectionMode('orthographic');
+    const scale1 = cam.orthoScale;
+    cam.zoom(0.5);
+    const scale2 = cam.orthoScale;
+    expect(scale2).toBeLessThan(scale1);
+  });
+
+  it('viewRotationMatrix returns rotation-only matrix', () => {
+    const cam = new Camera();
+    const rot = cam.viewRotationMatrix;
+    expect(rot.length).toBe(16);
+    // Translation column should be zeroed
+    expect(rot[12]).toBe(0);
+    expect(rot[13]).toBe(0);
+    expect(rot[14]).toBe(0);
+    expect(rot[15]).toBe(1);
+  });
+
+  it('setOrbit clamps elevation and distance', () => {
+    const cam = new Camera();
+    cam.setOrbit(1.0, 10, -50); // extreme values
+    expect(cam.orbitElevationVal).toBeLessThan(Math.PI / 2);
+    expect(cam.orbitElevationVal).toBeGreaterThan(-Math.PI / 2);
+    expect(cam.orbitDistanceVal).toBeGreaterThanOrEqual(1);
+  });
+
+  it('orbit clamps elevation', () => {
+    const cam = new Camera();
+    cam.orbit(0, 10); // large delta
+    expect(cam.orbitElevationVal).toBeLessThan(Math.PI / 2);
+  });
+
+  it('getters return expected values', () => {
+    const cam = new Camera();
+    expect(cam.fov).toBeGreaterThan(0);
+    expect(cam.orbitAngleVal).toBe(0);
+    expect(cam.orbitElevationVal).toBeGreaterThan(0);
+    expect(cam.orbitDistanceVal).toBeGreaterThan(0);
+  });
+
+  it('viewMatrix is 16 elements', () => {
+    const cam = new Camera();
+    const v = cam.viewMatrix;
+    expect(v.length).toBe(16);
+  });
 });

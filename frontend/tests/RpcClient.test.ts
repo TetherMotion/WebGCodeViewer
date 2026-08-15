@@ -117,4 +117,44 @@ describe('RpcClient', () => {
     await client.getZLayerRangeBinary('job-1', 2, 5);
     expect(transport.unary).toHaveBeenCalledWith('getZLayerRangeBinary', expect.anything());
   });
+
+  it('listJobs calls transport.unary with listJobs case', async () => {
+    const { transport } = createMockTransport();
+    const client = new RpcClient(transport as any);
+    const result = await client.listJobs();
+    expect(transport.unary).toHaveBeenCalledWith('listJobs', expect.anything());
+    expect(result.jobs).toEqual([]);
+  });
+
+  it('getZLayersHttp fetches z-layers via HTTP and returns JSON', async () => {
+    const { transport } = createMockTransport();
+    const client = new RpcClient(transport as any);
+    const mockLayers = {
+      layers: [{ layerIndex: 0, zHeight: 0.2, pieceStart: 0, pieceEnd: 10, pieceCount: 1 }],
+      totalLayers: 1,
+    };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => mockLayers,
+    } as Response);
+    const result = await client.getZLayersHttp('job-1', 0.05);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${client.httpBaseUrl}/api/trajectory/job-1/zlayers?zTolerance=0.05`,
+    );
+    expect(result.totalLayers).toBe(1);
+    expect(result.layers.length).toBe(1);
+    fetchSpy.mockRestore();
+  });
+
+  it('getZLayersHttp throws ViewerRpcError on non-ok response', async () => {
+    const { transport } = createMockTransport();
+    const client = new RpcClient(transport as any);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+    } as Response);
+    await expect(client.getZLayersHttp('job-1')).rejects.toThrow('HTTP 500');
+    fetchSpy.mockRestore();
+  });
 });

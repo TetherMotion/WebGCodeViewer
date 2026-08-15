@@ -143,4 +143,39 @@ describe('WsTransport', () => {
     const transport = new WsTransport('https://localhost:8080/api/ws');
     expect(transport['resolveWsUrl']()).toBe('wss://localhost:8080/api/ws');
   });
+
+  it('reauth sends a new auth message on an open connection', async () => {
+    const transport = new WsTransport('ws://localhost:8080/api/ws');
+    await transport['ensureConnected']();
+    await new Promise(r => setTimeout(r, 10));
+
+    const ws = MockWebSocket.instances[0];
+    expect(ws.sentMessages.length).toBe(1); // initial auth
+
+    transport.reauth();
+    expect(ws.sentMessages.length).toBe(2); // reauth message
+  });
+
+  it('reauth does nothing when not connected', () => {
+    const transport = new WsTransport('ws://localhost:8080/api/ws');
+    // Never connected, so reauth should be a no-op (no ws, no throw)
+    expect(() => transport.reauth()).not.toThrow();
+    expect(MockWebSocket.instances.length).toBe(0);
+  });
+
+  it('close clears pending reconnect timer', async () => {
+    const transport = new WsTransport('ws://localhost:8080/api/ws');
+    await transport['ensureConnected']();
+    await new Promise(r => setTimeout(r, 10));
+
+    const ws = MockWebSocket.instances[0];
+    // Simulate an unexpected close (not intentionally closed) to trigger scheduleReconnect
+    ws.onclose?.(new CloseEvent('close'));
+    // A reconnect timer should now be scheduled
+    expect(transport['reconnectTimer']).not.toBeNull();
+
+    // Now call close() — it should clear the reconnect timer
+    transport.close();
+    expect(transport['reconnectTimer']).toBeNull();
+  });
 });
