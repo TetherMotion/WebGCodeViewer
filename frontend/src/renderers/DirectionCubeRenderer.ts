@@ -59,6 +59,10 @@ export class DirectionCubeRenderer {
   private rows = 2;
   private cellSize = 36; // CSS pixels per cell
 
+  // Uniform buffer slot size must be 256-byte aligned for dynamic offsets
+  private static readonly UNIFORM_SLOT_SIZE = 256;
+  private static readonly NUM_CUBES = 7;
+
   constructor(device: GPUDevice, canvas: HTMLCanvasElement) {
     this.device = device;
     this.canvas = canvas;
@@ -135,8 +139,21 @@ export class DirectionCubeRenderer {
       `,
     });
 
+    // Explicit bind group layout with dynamic offset for per-cube uniforms
+    const bindGroupLayout = this.device.createBindGroupLayout({
+      entries: [{
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        buffer: { type: 'uniform', hasDynamicOffset: true },
+      }],
+    });
+
+    const pipelineLayout = this.device.createPipelineLayout({
+      bindGroupLayouts: [bindGroupLayout],
+    });
+
     this.pipeline = this.device.createRenderPipeline({
-      layout: 'auto',
+      layout: pipelineLayout,
       vertex: {
         module: shader,
         entryPoint: 'vs_main',
@@ -220,8 +237,14 @@ export class DirectionCubeRenderer {
     this.device.queue.writeBuffer(this.indexBuffer, 0, indices);
 
     this.uniformBuffer = this.device.createBuffer({
-      size: 80, // 64 (viewProj) + 4 (highlightedFace) + 12 (padding)
+      size: DirectionCubeRenderer.UNIFORM_SLOT_SIZE * DirectionCubeRenderer.NUM_CUBES,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Create bind group once — dynamic offset is set per-draw
+    this.bindGroup = this.device.createBindGroup({
+      layout: bindGroupLayout,
+      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
     });
 
     this.resize();
@@ -259,12 +282,34 @@ export class DirectionCubeRenderer {
   }
 
   render(): void {
-    if (!this.device || !this.context || !this.pipeline) return;
+    if (!this.device || !this.context || !this.pipeline || !this.bindGroup) return;
+    if (!this.vertexBuffer || !this.indexBuffer || !this.uniformBuffer || !this.depthTexture) return;
 
     const dpr = window.devicePixelRatio || 1;
     const cellW = Math.max(1, this.canvas.clientWidth * dpr / this.cols);
     const cellH = Math.max(1, this.canvas.clientHeight * dpr / this.rows);
 
+    // ── Write all per-cube uniform data BEFORE recording the render pass ──
+    // Each cube gets its own 256-byte slot in the uniform buffer.
+    // We write all 7 slots now, then use dynamic offsets in setBindGroup.
+    for (let i = 0; i < DIRECTIONS.length; i++) {
+      const dir = DIRECTIONS[i];
+      const params = VIEW_PARAMS[dir];
+      const view = mat4LookAt(params.eye, { x: 0, y: 0, z: 0 }, params.up);
+      const proj = mat4Ortho(-0.8, 0.8, -0.8, 0.8, 0.1, 10);
+      const viewProj = mat4Multiply(proj, view);
+
+      const slotSize = DirectionCubeRenderer.UNIFORM_SLOT_SIZE;
+      const uniformData = new ArrayBuffer(slotSize);
+      const viewArr = new Float32Array(uniformData);
+      for (let j = 0; j < 16; j++) viewArr[j] = viewProj[j];
+      viewArr[16] = HIGHLIGHT_MAP[dir]; // highlightedFace
+      this.device.queue.writeBuffer(
+        this.uniformBuffer, i * slotSize, uniformData, 0, 80,
+      );
+    }
+
+    // ── Record render pass ──
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
@@ -274,7 +319,7 @@ export class DirectionCubeRenderer {
         storeOp: 'store',
       }],
       depthStencilAttachment: {
-        view: this.depthTexture!.createView(),
+        view: this.depthTexture.createView(),
         depthClearValue: 1.0,
         depthLoadOp: 'clear',
         depthStoreOp: 'store',
@@ -282,11 +327,12 @@ export class DirectionCubeRenderer {
     });
 
     pass.setPipeline(this.pipeline);
-    pass.setVertexBuffer(0, this.vertexBuffer!);
-    pass.setIndexBuffer(this.indexBuffer!, 'uint32');
+    pass.setVertexBuffer(0, this.vertexBuffer);
+    pass.setIndexBuffer(this.indexBuffer, 'uint32');
+
+    const slotSize = DirectionCubeRenderer.UNIFORM_SLOT_SIZE;
 
     for (let i = 0; i < DIRECTIONS.length; i++) {
-      const dir = DIRECTIONS[i];
       const col = i % this.cols;
       const row = Math.floor(i / this.cols);
 
@@ -301,26 +347,8 @@ export class DirectionCubeRenderer {
         cellW, cellH,
       );
 
-      // Compute view-projection matrix
-      const params = VIEW_PARAMS[dir];
-      const view = mat4LookAt(params.eye, { x: 0, y: 0, z: 0 }, params.up);
-      const proj = mat4Ortho(-0.8, 0.8, -0.8, 0.8, 0.1, 10);
-      const viewProj = mat4Multiply(proj, view);
-
-      // Write uniform
-      const uniformData = new ArrayBuffer(80);
-      const viewArr = new Float32Array(uniformData);
-      for (let j = 0; j < 16; j++) viewArr[j] = viewProj[j];
-      viewArr[16] = HIGHLIGHT_MAP[dir]; // highlightedFace
-      this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
-
-      if (!this.bindGroup) {
-        this.bindGroup = this.device.createBindGroup({
-          layout: this.pipeline.getBindGroupLayout(0),
-          entries: [{ binding: 0, resource: { buffer: this.uniformBuffer! } }],
-        });
-      }
-      pass.setBindGroup(0, this.bindGroup);
+      // Bind uniform with dynamic offset for this cube's slot
+      pass.setBindGroup(0, this.bindGroup, [i * slotSize]);
       pass.drawIndexed(36);
     }
 
