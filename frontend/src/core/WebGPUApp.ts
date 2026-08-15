@@ -17,6 +17,7 @@ import { NavigationGizmo } from '../renderers/NavigationGizmo';
 import { PrintHeadMarker } from '../renderers/PrintHeadMarker';
 import { DirectionCubeRenderer } from '../renderers/DirectionCubeRenderer';
 import { NurbsRenderer } from '../renderers/NurbsRenderer';
+import { GridLabels } from '../ui/GridLabels';
 import { ControlPanel } from '../ui/ControlPanel';
 import { GcodeViewer } from '../ui/GcodeViewer';
 import { NavigationCube, ViewDirection } from '../ui/NavigationCube';
@@ -41,6 +42,7 @@ export class WebGPUApp {
   private printHeadMarker: PrintHeadMarker | null = null;
   private dirCubeRenderer: DirectionCubeRenderer | null = null;
   private nurbsRenderer: NurbsRenderer | null = null;
+  private gridLabels: GridLabels | null = null;
 
   private controlPanel: ControlPanel;
   private gcodeViewer: GcodeViewer;
@@ -199,6 +201,12 @@ export class WebGPUApp {
     // NURBS renderer (replaces ToolpathRenderer for large files)
     this.nurbsRenderer = new NurbsRenderer(this.device);
     await this.nurbsRenderer.init(this.format);
+
+    // Grid labels overlay (2D canvas for numeric tick labels)
+    const gridLabelsCanvas = document.getElementById('grid-labels-canvas') as HTMLCanvasElement | null;
+    if (gridLabelsCanvas) {
+      this.gridLabels = new GridLabels(gridLabelsCanvas);
+    }
 
     this.setupInputHandlers();
     this.startRenderLoop();
@@ -431,6 +439,16 @@ export class WebGPUApp {
 
     // Render direction cubes (separate canvas)
     this.dirCubeRenderer?.render();
+
+    // Render grid labels overlay (2D canvas, projects 3D ticks to screen)
+    if (this.gridLabels && this.gridRenderer) {
+      this.gridLabels.render(
+        this.gridRenderer.ticks,
+        viewProj,
+        this.canvas.clientWidth,
+        this.canvas.clientHeight,
+      );
+    }
   }
 
   private exportImage(): void {

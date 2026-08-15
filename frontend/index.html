@@ -4,13 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tether G-code Viewer</title>
-    <link rel="stylesheet" href="css/viewer.css?v=20260815c">
+    <link rel="stylesheet" href="css/viewer.css?v=20260815d">
 </head>
 <body>
     <div id="app">
         <div id="main-content">
             <div id="canvas-container">
                 <canvas id="webgpu-canvas"></canvas>
+                <canvas id="grid-labels-canvas"></canvas>
                 <div id="nav-cube-container"></div>
                 <div id="error-message" style="display:none;"></div>
                 <div id="loading-overlay" style="display:none;">
@@ -22,6 +23,6 @@
         </div>
         <div id="bottom-panel"></div>
     </div>
-    <script type="module" src="dist/tether-viewer.js?v=20260815c"></script>
+    <script type="module" src="dist/tether-viewer.js?v=20260815d"></script>
 </body>
 </html>

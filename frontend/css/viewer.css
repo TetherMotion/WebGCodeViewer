@@ -221,6 +221,16 @@ body {
     display: block;
 }
 
+#grid-labels-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+}
+
 #gcode-panel {
     width: 420px;
     flex-shrink: 0;
