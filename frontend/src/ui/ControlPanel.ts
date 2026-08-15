@@ -35,6 +35,19 @@ export interface ControlPanelEvents {
   printerSpeedChanged: number;   // speed multiplier (0.5, 1, 2, 5, 10)
   printerDirectionChanged: 'forward' | 'backward';
   returnToRealtime: void;     // button to return to realtime view
+  // Analysis features
+  toggleInfoPanel: void;      // toggle the analysis info panel
+  toggleComparison: void;     // toggle the comparison panel
+  exportReport: void;         // export analysis report as JSON
+  toolFilterChanged: number;  // tool number to filter by, -1 = all tools
+  toggleDiff: void;           // toggle G-code diff panel
+  toggleOverhang: void;       // toggle overhang highlighting
+  toggleZSeam: void;          // toggle Z-seam visualization
+  toggleProbeMarkers: void;   // toggle probe point markers
+  toggleDrillMarkers: void;   // toggle drilling cycle markers
+  toggleHackPanel: void;      // toggle G-code hack/transform panel
+  toggleBridges: void;        // toggle bridge highlighting
+  toggleSupport: void;        // toggle support structure highlighting
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -55,6 +68,10 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
   private layerGroup: HTMLElement;
   private layerSlider: HTMLInputElement;
   private layerLabel: HTMLElement;
+
+  // Tool filter (CNC)
+  private toolGroup: HTMLElement;
+  private toolSelect: HTMLSelectElement;
 
   // Time slider
   private timeGroup: HTMLElement;
@@ -114,7 +131,7 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     const attrLabel = document.createElement('label');
     attrLabel.textContent = 'Color:';
     const attrSelect = document.createElement('select');
-    for (const attr of ['velocity', 'acceleration', 'jerk', 'curvature', 'deviation', 'zHeight', 'extruderSpeed', 'motion', 'solid']) {
+    for (const attr of ['velocity', 'acceleration', 'jerk', 'curvature', 'deviation', 'zHeight', 'extruderSpeed', 'motion', 'solid', 'feedRate', 'spindleRpm', 'toolNumber', 'coolant', 'featureType']) {
       const opt = document.createElement('option');
       opt.value = attr;
       opt.textContent = attr;
@@ -267,6 +284,113 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     };
     viewGroup.appendChild(layerCountBtn);
 
+    // Analysis: Info panel toggle
+    const infoBtn = document.createElement('button');
+    infoBtn.textContent = 'Info';
+    infoBtn.title = 'Toggle analysis info panel';
+    infoBtn.onclick = () => {
+      infoBtn.classList.toggle('active');
+      this.emit('toggleInfoPanel', undefined);
+    };
+    viewGroup.appendChild(infoBtn);
+
+    // Analysis: Export report
+    const reportBtn = document.createElement('button');
+    reportBtn.textContent = 'Report';
+    reportBtn.title = 'Export analysis report as JSON';
+    reportBtn.onclick = () => this.emit('exportReport', undefined);
+    viewGroup.appendChild(reportBtn);
+
+    // Analysis: Comparison panel toggle
+    const compareBtn = document.createElement('button');
+    compareBtn.textContent = 'Compare';
+    compareBtn.title = 'Toggle comparison panel';
+    compareBtn.onclick = () => {
+      compareBtn.classList.toggle('active');
+      this.emit('toggleComparison', undefined);
+    };
+    viewGroup.appendChild(compareBtn);
+
+    // Analysis: G-code diff
+    const diffBtn = document.createElement('button');
+    diffBtn.textContent = 'Diff';
+    diffBtn.title = 'Compare two G-code files';
+    diffBtn.onclick = () => {
+      diffBtn.classList.toggle('active');
+      this.emit('toggleDiff', undefined);
+    };
+    viewGroup.appendChild(diffBtn);
+
+    // Analysis: Overhang highlighting (3DP)
+    const overhangBtn = document.createElement('button');
+    overhangBtn.textContent = 'Overhang';
+    overhangBtn.title = 'Highlight overhang regions';
+    overhangBtn.onclick = () => {
+      overhangBtn.classList.toggle('active');
+      this.emit('toggleOverhang', undefined);
+    };
+    viewGroup.appendChild(overhangBtn);
+
+    // Analysis: Z-seam visualization (3DP)
+    const seamBtn = document.createElement('button');
+    seamBtn.textContent = 'Seam';
+    seamBtn.title = 'Visualize Z-seam positions';
+    seamBtn.onclick = () => {
+      seamBtn.classList.toggle('active');
+      this.emit('toggleZSeam', undefined);
+    };
+    viewGroup.appendChild(seamBtn);
+
+    // Analysis: Probe markers (CNC)
+    const probeBtn = document.createElement('button');
+    probeBtn.textContent = 'Probe';
+    probeBtn.title = 'Show probe point markers';
+    probeBtn.onclick = () => {
+      probeBtn.classList.toggle('active');
+      this.emit('toggleProbeMarkers', undefined);
+    };
+    viewGroup.appendChild(probeBtn);
+
+    // Analysis: Drilling cycle markers (CNC)
+    const drillBtn = document.createElement('button');
+    drillBtn.textContent = 'Drill';
+    drillBtn.title = 'Show drilling cycle positions';
+    drillBtn.onclick = () => {
+      drillBtn.classList.toggle('active');
+      this.emit('toggleDrillMarkers', undefined);
+    };
+    viewGroup.appendChild(drillBtn);
+
+    // Analysis: G-code hack/transform panel
+    const hackBtn = document.createElement('button');
+    hackBtn.textContent = 'Hack';
+    hackBtn.title = 'Transform G-code (translate, rotate, mirror, scale)';
+    hackBtn.onclick = () => {
+      hackBtn.classList.toggle('active');
+      this.emit('toggleHackPanel', undefined);
+    };
+    viewGroup.appendChild(hackBtn);
+
+    // Analysis: Bridge highlighting (3DP)
+    const bridgeBtn = document.createElement('button');
+    bridgeBtn.textContent = 'Bridges';
+    bridgeBtn.title = 'Highlight bridge regions';
+    bridgeBtn.onclick = () => {
+      bridgeBtn.classList.toggle('active');
+      this.emit('toggleBridges', undefined);
+    };
+    viewGroup.appendChild(bridgeBtn);
+
+    // Analysis: Support structure highlighting (3DP)
+    const supportBtn = document.createElement('button');
+    supportBtn.textContent = 'Support';
+    supportBtn.title = 'Highlight support structure';
+    supportBtn.onclick = () => {
+      supportBtn.classList.toggle('active');
+      this.emit('toggleSupport', undefined);
+    };
+    viewGroup.appendChild(supportBtn);
+
     this.element.appendChild(viewGroup);
 
     // Miniplot group
@@ -342,6 +466,28 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     this.layerGroup.appendChild(allLayersBtn);
 
     this.element.appendChild(this.layerGroup);
+
+    // Tool filter group (CNC: isolate toolpath by tool number)
+    this.toolGroup = document.createElement('div');
+    this.toolGroup.className = 'control-group tool-group';
+    this.toolGroup.style.display = 'none'; // hidden until tools are detected
+
+    const toolTitle = document.createElement('span');
+    toolTitle.className = 'group-title';
+    toolTitle.textContent = 'Tool';
+    this.toolGroup.appendChild(toolTitle);
+
+    this.toolSelect = document.createElement('select');
+    const allToolsOpt = document.createElement('option');
+    allToolsOpt.value = '-1';
+    allToolsOpt.textContent = 'All Tools';
+    this.toolSelect.appendChild(allToolsOpt);
+    this.toolSelect.onchange = () => {
+      this.emit('toolFilterChanged', parseInt(this.toolSelect.value));
+    };
+    this.toolGroup.appendChild(this.toolSelect);
+
+    this.element.appendChild(this.toolGroup);
 
     // Time slider group
     this.timeGroup = document.createElement('div');
@@ -569,6 +715,28 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     // BUG 11 FIX: Set initial opacity for "All" state
     this.layerSlider.style.opacity = '0.5';
     this.layerLabel.textContent = 'All';
+  }
+
+  /**
+   * Update the tool filter dropdown with available tool numbers.
+   */
+  updateTools(tools: number[]): void {
+    // Clear existing options except "All Tools"
+    while (this.toolSelect.options.length > 1) {
+      this.toolSelect.remove(1);
+    }
+    if (tools.length === 0) {
+      this.toolGroup.style.display = 'none';
+      return;
+    }
+    this.toolGroup.style.display = 'flex';
+    for (const t of tools) {
+      const opt = document.createElement('option');
+      opt.value = String(t);
+      opt.textContent = `T${t}`;
+      this.toolSelect.appendChild(opt);
+    }
+    this.toolSelect.value = '-1'; // default to All
   }
 
   /**

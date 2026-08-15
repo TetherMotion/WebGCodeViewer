@@ -13,6 +13,13 @@ export interface ComparisonEvents {
 
 export class ComparisonPanel extends EventDispatcher<ComparisonEvents> {
   private element: HTMLElement;
+  private visibleFlag = false;
+
+  get visible(): boolean { return this.visibleFlag; }
+  set visible(v: boolean) {
+    this.visibleFlag = v;
+    this.element.style.display = v ? '' : 'none';
+  }
 
   constructor(container: HTMLElement) {
     super();
