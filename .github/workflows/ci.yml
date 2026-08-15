@@ -89,7 +89,7 @@ jobs:
       - name: Install protoc (for proto:generate)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends protobuf-compiler
+          sudo apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
