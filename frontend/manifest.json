@@ -1,10 +1,12 @@
 {
-    "name": "Tether G-code Viewer",
-    "short_name": "Tether Viewer",
-    "description": "WebGPU-based G-code visualization and dissection tool",
-    "start_url": "/index.html",
-    "display": "standalone",
-    "background_color": "#1a1a1e",
-    "theme_color": "#4a9eff",
-    "icons": []
+  "name": "Tether G-code Viewer",
+  "short_name": "Tether Viewer",
+  "description": "WebGPU-based 3D G-code viewer for 3D printing analysis",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#2e2e36",
+  "theme_color": "#4a9eff",
+  "icons": [],
+  "orientation": "any",
+  "categories": ["productivity", "utilities"]
 }

@@ -205,6 +205,9 @@ if(WGV_BUILD_FRONTEND)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${WGV_FRONTEND_DIR}/index.html"
                 "${CMAKE_BINARY_DIR}/web/frontend/index.html"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${WGV_FRONTEND_DIR}/manifest.json"
+                "${CMAKE_BINARY_DIR}/web/frontend/manifest.json"
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${WGV_FRONTEND_DIR}/css"
                 "${CMAKE_BINARY_DIR}/web/frontend/css"

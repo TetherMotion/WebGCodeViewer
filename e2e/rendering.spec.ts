@@ -2422,3 +2422,62 @@ test.describe('Touch gesture support (Feature #150)', () => {
     collector.assertClean('touch events with loaded G-code');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 26: PWA / Web App Manifest (Feature #149)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('PWA / Web App Manifest (Feature #149)', () => {
+  test('manifest.json is served with correct content type', async ({ request }) => {
+    const resp = await request.get(`${BASE}/manifest.json`);
+    expect(resp.status()).toBe(200);
+    const contentType = resp.headers()['content-type'] || '';
+    expect(contentType).toContain('json');
+  });
+
+  test('manifest.json has correct PWA fields', async ({ request }) => {
+    const resp = await request.get(`${BASE}/manifest.json`);
+    const manifest = await resp.json();
+    expect(manifest.name).toBeDefined();
+    expect(manifest.short_name).toBeDefined();
+    expect(manifest.start_url).toBeDefined();
+    expect(manifest.display).toBeDefined();
+    expect(manifest.background_color).toBeDefined();
+    expect(manifest.theme_color).toBeDefined();
+  });
+
+  test('index.html references manifest', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+
+    const manifestLink = page.locator('link[rel="manifest"]');
+    await expect(manifestLink).toHaveAttribute('href', 'manifest.json');
+  });
+
+  test('theme-color meta tag is present', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+
+    const metaTag = page.locator('meta[name="theme-color"]');
+    await expect(metaTag).toHaveCount(1);
+    const content = await metaTag.getAttribute('content');
+    expect(content).toMatch(/^#[0-9a-fA-F]{6}$/);
+  });
+
+  test('description meta tag is present', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+
+    const metaTag = page.locator('meta[name="description"]');
+    await expect(metaTag).toHaveCount(1);
+    const content = await metaTag.getAttribute('content');
+    expect(content).toBeTruthy();
+    expect(content!.length).toBeGreaterThan(10);
+  });
+
+  test('manifest has standalone display mode', async ({ request }) => {
+    const resp = await request.get(`${BASE}/manifest.json`);
+    const manifest = await resp.json();
+    expect(manifest.display).toBe('standalone');
+  });
+});

@@ -144,6 +144,19 @@ void WebServer::registerStaticAssets() {
             }
             cb(resp);
         }, {drogon::Get});
+
+    // Feature #149: Serve PWA manifest.json explicitly
+    app.registerHandler("/manifest.json",
+        [this](const drogon::HttpRequestPtr& req,
+               std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+            auto resp = drogon::HttpResponse::newFileResponse(
+                config_.webRoot + "/manifest.json");
+            resp->setContentTypeString("application/manifest+json");
+            if (config_.enableCors) {
+                resp->addHeader("Access-Control-Allow-Origin", "*");
+            }
+            cb(resp);
+        }, {drogon::Get});
 }
 
 } // namespace tether::web
