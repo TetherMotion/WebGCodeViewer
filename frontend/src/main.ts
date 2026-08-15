@@ -47,6 +47,12 @@ async function main(): Promise<void> {
   if (jobId) {
     app.loadJobFromUrl(jobId);
   }
+
+  // Feature #145: Apply camera position from URL (?cam=angle,elevation,distance)
+  const camParam = urlParams.get('cam');
+  if (camParam) {
+    app.applyCameraFromUrl(camParam);
+  }
 }
 
 main().catch(console.error);

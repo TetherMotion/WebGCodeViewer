@@ -2481,3 +2481,49 @@ test.describe('PWA / Web App Manifest (Feature #149)', () => {
     expect(manifest.display).toBe('standalone');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 27: URL Deep Linking for Camera (Feature #145)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('URL deep linking for camera (Feature #145)', () => {
+  test('camera param is applied without errors', async ({ page }) => {
+    const collector = setupMessageCollector(page);
+    await page.goto('http://localhost:8099/?cam=1.0,0.5,300');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    collector.assertClean('camera URL param');
+  });
+
+  test('invalid camera param logs warning but no error', async ({ page }) => {
+    const collector = setupMessageCollector(page);
+    await page.goto('http://localhost:8099/?cam=invalid');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Should warn but not error
+    collector.assertClean('invalid camera URL param');
+  });
+
+  test('camera param works with job param', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'cam_url_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}&cam=0.5,0.3,200`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    collector.assertClean('camera + job URL params');
+  });
+
+  test('camera param with negative elevation is clamped without error', async ({ page }) => {
+    const collector = setupMessageCollector(page);
+    await page.goto('http://localhost:8099/?cam=0,-1.5,100');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    collector.assertClean('negative elevation camera param');
+  });
+});

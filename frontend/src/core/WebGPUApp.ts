@@ -1324,6 +1324,20 @@ export class WebGPUApp {
   }
 
   /**
+   * Feature #145: Apply camera position from URL parameter.
+   * Format: "angle,elevation,distance" (e.g. "0.5,0.3,400")
+   */
+  applyCameraFromUrl(camParam: string): void {
+    const parts = camParam.split(',').map(parseFloat);
+    if (parts.length >= 3 && parts.every(v => !isNaN(v))) {
+      this.camera.setOrbit(parts[0], parts[1], parts[2]);
+      console.info(`Camera applied from URL: angle=${parts[0]}, elev=${parts[1]}, dist=${parts[2]}`);
+    } else {
+      console.info('Invalid camera URL parameter:', camParam);
+    }
+  }
+
+  /**
    * Get the current Z bounds from NBP or TTHR data.
    */
   private getCurrentBounds(): { zMin: number; zMax: number } | null {
