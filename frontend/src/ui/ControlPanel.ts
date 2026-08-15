@@ -25,6 +25,7 @@ export interface ControlPanelEvents {
   lineWidthChanged: number;   // Feature #2: line width adjustment
   toggleRetractions: void;    // Feature #3: highlight retraction moves
   toggleTheme: void;          // Feature #66: dark/light theme toggle
+  toggleFullscreen: void;     // Feature #73: fullscreen mode
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -221,6 +222,12 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
       this.emit('toggleRetractions', undefined);
     };
     viewGroup.appendChild(retractionBtn);
+
+    // Feature #73: Fullscreen toggle
+    const fullscreenBtn = document.createElement('button');
+    fullscreenBtn.textContent = 'Fullscreen';
+    fullscreenBtn.onclick = () => this.emit('toggleFullscreen', undefined);
+    viewGroup.appendChild(fullscreenBtn);
 
     this.element.appendChild(viewGroup);
 

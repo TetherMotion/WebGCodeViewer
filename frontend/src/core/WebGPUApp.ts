@@ -222,6 +222,14 @@ export class WebGPUApp {
       this.lightTheme = !this.lightTheme;
       document.documentElement.classList.toggle('light-theme', this.lightTheme);
     });
+    // Feature #73: Toggle fullscreen mode
+    this.controlPanel.on('toggleFullscreen', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
     this.controlPanel.on('toggleCrossSection', () => {
       if (this.crossSectionRenderer) {
         this.crossSectionRenderer.visible = !this.crossSectionRenderer.visible;

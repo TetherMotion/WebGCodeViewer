@@ -1897,3 +1897,50 @@ test.describe('Drag-and-drop file upload (Feature #86)', () => {
     collector.assertClean('non-G-code drop ignored');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 20: Fullscreen Mode (Feature #73)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Fullscreen mode (Feature #73)', () => {
+  test('fullscreen button exists in control panel', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Fullscreen' });
+    await expect(btn).toBeVisible();
+  });
+
+  test('clicking fullscreen button does not cause errors', async ({ page }) => {
+    const collector = setupMessageCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Fullscreen' });
+    await btn.click();
+    await page.waitForTimeout(500);
+
+    // Fullscreen may not be allowed in headless mode, but no errors should occur
+    collector.assertClean('fullscreen toggle');
+  });
+
+  test('fullscreen works with loaded G-code without errors', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'fullscreen_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Fullscreen' });
+    await btn.click();
+    await page.waitForTimeout(500);
+    await btn.click();
+    await page.waitForTimeout(500);
+
+    collector.assertClean('fullscreen with loaded G-code');
+  });
+});
