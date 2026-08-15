@@ -193,6 +193,22 @@ export class RpcClient {
     return new Uint8Array(buf);
   }
 
+  /**
+   * Fetch NURBS path data (NBP format) via HTTP.
+   * This returns compact NURBS control points instead of dense sampled
+   * points, dramatically reducing transfer size for large G-code files.
+   */
+  async getNurbsPathHttp(jobId: string): Promise<Uint8Array> {
+    const url = `${this.httpBaseUrl}/api/trajectory/${jobId}/nurbs`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new ViewerRpcError(`HTTP ${resp.status}: ${text || resp.statusText}`, resp.status);
+    }
+    const buf = await resp.arrayBuffer();
+    return new Uint8Array(buf);
+  }
+
   async getBlocks(jobId: string): Promise<GetBlocksResponse> {
     return this.transport.unary(
       'getBlocks',

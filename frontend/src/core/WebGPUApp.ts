@@ -7,6 +7,7 @@ import { Camera } from './Camera';
 import { RpcClient } from './RpcClient';
 import { ColorMap } from './ColorMap';
 import { parseTTHR, TTHRData, extractZLayer } from './TthrParser';
+import { parseNBP, NBPData } from './NurbsParser';
 import { ToolpathRenderer, ColorAttribute } from '../renderers/ToolpathRenderer';
 import { GridRenderer } from '../renderers/GridRenderer';
 import { CrossSectionRenderer } from '../renderers/CrossSectionRenderer';
@@ -15,6 +16,7 @@ import { OverlayRenderer } from '../renderers/OverlayRenderer';
 import { NavigationGizmo } from '../renderers/NavigationGizmo';
 import { PrintHeadMarker } from '../renderers/PrintHeadMarker';
 import { DirectionCubeRenderer } from '../renderers/DirectionCubeRenderer';
+import { NurbsRenderer } from '../renderers/NurbsRenderer';
 import { ControlPanel } from '../ui/ControlPanel';
 import { GcodeViewer } from '../ui/GcodeViewer';
 import { NavigationCube, ViewDirection } from '../ui/NavigationCube';
@@ -38,6 +40,7 @@ export class WebGPUApp {
   private navGizmo: NavigationGizmo | null = null;
   private printHeadMarker: PrintHeadMarker | null = null;
   private dirCubeRenderer: DirectionCubeRenderer | null = null;
+  private nurbsRenderer: NurbsRenderer | null = null;
 
   private controlPanel: ControlPanel;
   private gcodeViewer: GcodeViewer;
@@ -46,6 +49,7 @@ export class WebGPUApp {
   private currentJobId: string | null = null;
   private currentData: TTHRData | null = null;
   private fullData: TTHRData | null = null;  // unfiltered data (for layer reset)
+  private currentNBP: NBPData | null = null;
   private currentFilename: string = '';
   private animationId: number | null = null;
   private lastFrameTime = 0;
@@ -191,6 +195,10 @@ export class WebGPUApp {
     // Direction cube renderer (WebGPU-rendered 3D cube buttons)
     this.dirCubeRenderer = new DirectionCubeRenderer(this.device, this.navCube.dirCanvas);
     await this.dirCubeRenderer.init();
+
+    // NURBS renderer (replaces ToolpathRenderer for large files)
+    this.nurbsRenderer = new NurbsRenderer(this.device);
+    await this.nurbsRenderer.init(this.format);
 
     this.setupInputHandlers();
     this.startRenderLoop();
@@ -408,6 +416,7 @@ export class WebGPUApp {
 
     const viewProj = this.camera.viewProjectionMatrix;
     this.gridRenderer?.render(pass, viewProj);
+    this.nurbsRenderer?.render(pass, viewProj);
     this.toolpathRenderer?.render(pass, viewProj);
     this.crossSectionRenderer?.render(pass, viewProj);
     this.pointCloudRenderer?.render(pass, viewProj);
@@ -485,34 +494,37 @@ export class WebGPUApp {
   }
 
   private async loadJobData(jobId: string): Promise<void> {
-    // Check job status to get sample count for auto-downsampling
-    const status = await this.rpcClient.getJobStatus(jobId);
-    const sampleCount = status.sampleCount;
+    // Fetch NURBS path data — compact curve representation (typically <1MB
+    // even for huge G-code files, vs 2GB+ for sampled trajectory data)
+    try {
+      const nbpBinary = await this.rpcClient.getNurbsPathHttp(jobId);
+      this.currentNBP = parseNBP(nbpBinary);
+      this.nurbsRenderer?.updateData(this.currentNBP);
+      console.info(`NURBS data loaded: ${this.currentNBP.header.pieceCount} pieces, ` +
+                   `${this.currentNBP.header.totalControlPoints} control points, ` +
+                   `${nbpBinary.byteLength} bytes`);
 
-    // Auto-downsample if the trajectory is very large.
-    // Each sample uses ~40-80 bytes in TTHR format (pos + vel + acc + jerk + metrics).
-    // At 500M samples, that's 20-40GB — way too much. Cap at ~5M samples for smooth rendering.
-    const MAX_SAMPLES = 5_000_000;
-    let downsample = 1;
-    if (sampleCount > MAX_SAMPLES) {
-      downsample = Math.ceil(sampleCount / MAX_SAMPLES);
-      console.info(`Auto-downsampling: ${sampleCount} samples → ~${Math.floor(sampleCount / downsample)} (downsample=${downsample})`);
+      // Fit camera to NURBS bounds
+      const h = this.currentNBP.header;
+      this.camera.fitToBounds(
+        { x: h.boundsMin[0], y: h.boundsMin[1], z: h.boundsMin[2] },
+        { x: h.boundsMax[0], y: h.boundsMax[1], z: h.boundsMax[2] },
+      );
+    } catch (e) {
+      console.error('Failed to load NURBS data, falling back to TTHR:', e);
+      // Fallback to TTHR (sampled data) if NURBS conversion fails
+      const binaryData = await this.rpcClient.getBinaryHttp(jobId);
+      this.currentData = parseTTHR(binaryData);
+      this.fullData = this.currentData;
+      this.toolpathRenderer?.updateData(this.currentData!);
+      this.crossSectionRenderer?.updateData(this.currentData!);
+
+      const h = this.currentData!.header;
+      this.camera.fitToBounds(
+        { x: h.boundsMin[0], y: h.boundsMin[1], z: h.boundsMin[2] },
+        { x: h.boundsMax[0], y: h.boundsMax[1], z: h.boundsMax[2] },
+      );
     }
-
-    // Use HTTP fetch for binary data — bypasses protobuf's 2GB limit
-    // and supports very large G-code files
-    const binaryData = await this.rpcClient.getBinaryHttp(jobId, { downsample });
-    this.currentData = parseTTHR(binaryData);
-    this.fullData = this.currentData;
-    this.toolpathRenderer?.updateData(this.currentData!);
-    this.crossSectionRenderer?.updateData(this.currentData!);
-
-    // Fit camera
-    const h = this.currentData!.header;
-    this.camera.fitToBounds(
-      { x: h.boundsMin[0], y: h.boundsMin[1], z: h.boundsMin[2] },
-      { x: h.boundsMax[0], y: h.boundsMax[1], z: h.boundsMax[2] },
-    );
 
     // Load blocks (G-code metadata with line numbers)
     try {
@@ -564,6 +576,7 @@ export class WebGPUApp {
   destroy(): void {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
     this.toolpathRenderer?.destroy();
+    this.nurbsRenderer?.destroy();
     this.gridRenderer?.destroy();
     this.crossSectionRenderer?.destroy();
     this.pointCloudRenderer?.destroy();

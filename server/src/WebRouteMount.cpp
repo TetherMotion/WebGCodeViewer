@@ -269,6 +269,34 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
             cb(resp);
         }, {drogon::Get});
 
+    // ── GET /api/trajectory/{jobId}/nurbs ──
+    // Get NURBS binary data (NBP format) — compact curve representation
+    app.registerHandler("/api/trajectory/{jobId}/nurbs",
+        [jobManager, enableCors](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& cb,
+           const std::string& jobId) {
+            if (jobManager->getJobState(jobId) != JobState::Ready) {
+                cb(makeErrorResponse(404, "Job not ready", enableCors));
+                return;
+            }
+
+            auto binary = jobManager->getNurbsBinary(jobId);
+            if (binary.empty()) {
+                cb(makeErrorResponse(404, "No NURBS data available", enableCors));
+                return;
+            }
+
+            auto resp = drogon::HttpResponse::newHttpResponse();
+            resp->setContentTypeString("application/octet-stream");
+            resp->addHeader("Content-Disposition",
+                            "attachment; filename=\"trajectory.nbp\"");
+            resp->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            resp->setBody(std::string(reinterpret_cast<const char*>(binary.data()),
+                                       binary.size()));
+            if (enableCors) addCorsHeaders(resp);
+            cb(resp);
+        }, {drogon::Get});
+
     // ── GET /api/trajectory/{jobId}/blocks ──
     app.registerHandler("/api/trajectory/{jobId}/blocks",
         [jobManager, enableCors](const drogon::HttpRequestPtr& req,

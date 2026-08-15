@@ -1,5 +1,7 @@
 #include "tether/web/JobManager.hpp"
 
+#include "tether/motion_replanner/TrajectorySampleConverter.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -161,6 +163,29 @@ std::vector<uint8_t> JobManager::getBinary(
     auto job = getJob(jobId);
     if (!job || job->state != JobState::Ready) return {};
     return serializeTrajectory(job->result.samples, job->result.blocks, options);
+}
+
+std::vector<uint8_t> JobManager::getNurbsBinary(const std::string& jobId) const
+{
+    auto job = getJob(jobId);
+    if (!job || job->state != JobState::Ready) return {};
+    if (job->result.samples.empty()) return {};
+
+    // Convert trajectory samples → PiecewiseNurbsPath
+    tether::motion::replanner::SegmentToPieceMap map;
+    auto path = tether::motion::replanner::convertTrajectory(
+        job->result.samples, map);
+
+    // Extract motion types per piece
+    std::vector<uint8_t> motionTypes;
+    motionTypes.reserve(path.numPieces());
+    for (std::size_t i = 0; i < path.numPieces(); ++i) {
+        // Default to linear; the converter groups by segmentIndex
+        motionTypes.push_back(1);
+    }
+
+    // Build block metadata from the job result
+    return serializeNurbsPath(path, job->result.blocks, motionTypes);
 }
 
 std::string JobManager::getBlocksJson(const std::string& jobId) const {

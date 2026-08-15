@@ -8,6 +8,7 @@
 
 #include "tether/web/GCodeProcessor.hpp"
 #include "tether/web/TrajectorySerializer.hpp"
+#include "tether/web/NurbsSerializer.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -89,6 +90,13 @@ public:
     std::vector<uint8_t> getBinary(
         const std::string& jobId,
         const SerializeOptions& options = {}) const;
+
+    /// @brief Get serialized NURBS binary data (NBP format) for a job.
+    /// Converts the trajectory samples to a PiecewiseNurbsPath via
+    /// TrajectorySampleConverter, then serializes to NBP format.
+    /// @param jobId Job ID
+    /// @return Binary NBP data, or empty if job not ready
+    std::vector<uint8_t> getNurbsBinary(const std::string& jobId) const;
 
     /// @brief Get block metadata for a job as JSON.
     std::string getBlocksJson(const std::string& jobId) const;
