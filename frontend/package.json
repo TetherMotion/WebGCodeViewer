@@ -1,0 +1,26 @@
+{
+  "name": "webgcodeviewer-frontend",
+  "version": "1.0.0",
+  "description": "WebGPU-based G-code trajectory viewer frontend",
+  "type": "module",
+  "scripts": {
+    "proto:generate": "mkdir -p src/generated && protoc --proto_path=../proto --plugin=protoc-gen-es=./node_modules/.bin/protoc-gen-es --es_out=src/generated --es_opt=target=ts ../proto/tether_viewer.proto",
+    "build": "tsc && esbuild src/main.ts --bundle --minify --sourcemap --outfile=dist/tether-viewer.js",
+    "build:dev": "tsc && esbuild src/main.ts --bundle --sourcemap --outfile=dist/tether-viewer.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.14.0"
+  },
+  "devDependencies": {
+    "@bufbuild/protoc-gen-es": "^2.14.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "@webgpu/types": "^0.1.71",
+    "esbuild": "^0.23.0",
+    "jsdom": "^24.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

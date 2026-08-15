@@ -1,0 +1,10 @@
+{
+    "name": "Tether G-code Viewer",
+    "short_name": "Tether Viewer",
+    "description": "WebGPU-based G-code visualization and dissection tool",
+    "start_url": "/index.html",
+    "display": "standalone",
+    "background_color": "#1a1a1e",
+    "theme_color": "#4a9eff",
+    "icons": []
+}

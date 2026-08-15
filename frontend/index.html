@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tether G-code Viewer</title>
+    <link rel="stylesheet" href="css/viewer.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+    <div id="app">
+        <div id="toolbar-container"></div>
+        <div id="main-content">
+            <div id="left-panel"></div>
+            <div id="canvas-container">
+                <canvas id="webgpu-canvas"></canvas>
+                <div id="error-message" style="display:none;"></div>
+                <div id="loading-overlay" style="display:none;">
+                    <div class="spinner"></div>
+                    <p id="loading-text">Loading...</p>
+                </div>
+            </div>
+            <div id="right-panel"></div>
+        </div>
+        <div id="bottom-panel"></div>
+    </div>
+    <script type="module" src="dist/tether-viewer.js"></script>
+</body>
+</html>
