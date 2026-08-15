@@ -2527,3 +2527,86 @@ test.describe('URL deep linking for camera (Feature #145)', () => {
     collector.assertClean('negative elevation camera param');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 28: Copy View URL to Clipboard (Feature #92)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Copy view URL to clipboard (Feature #92)', () => {
+  test('Copy URL button exists in control panel', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+    await expect(btn).toBeVisible();
+  });
+
+  test('clicking Copy URL does not cause errors', async ({ page }) => {
+    const collector = setupMessageCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Grant clipboard permission
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+    await btn.click();
+    await page.waitForTimeout(500);
+
+    collector.assertClean('copy URL click');
+  });
+
+  test('Copy URL writes shareable URL to clipboard', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+    await btn.click();
+    await page.waitForTimeout(500);
+
+    // Read clipboard
+    const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clipboardText).toContain('cam=');
+    expect(clipboardText).toMatch(/^http/);
+  });
+
+  test('Copy URL includes job ID when G-code is loaded', async ({ page, request }) => {
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'copy_url_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+    await btn.click();
+    await page.waitForTimeout(500);
+
+    const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clipboardText).toContain(`job=${jobId}`);
+    expect(clipboardText).toContain('cam=');
+  });
+
+  test('Copy URL shows status message after click', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+    await btn.click();
+    await page.waitForTimeout(300);
+
+    const statusEl = page.locator('.status-text');
+    const text = await statusEl.textContent();
+    expect(text).toContain('copied');
+  });
+});

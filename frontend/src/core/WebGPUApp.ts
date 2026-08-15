@@ -272,6 +272,30 @@ export class WebGPUApp {
         if (this.bboxEl) this.bboxEl.style.display = 'none';
       }
     });
+    // Feature #92: Copy current view URL to clipboard
+    this.controlPanel.on('copyViewUrl', () => {
+      const url = this.buildViewUrl();
+      navigator.clipboard.writeText(url).then(() => {
+        this.controlPanel.setStatus('URL copied to clipboard!');
+        setTimeout(() => {
+          if (this.currentJobId) {
+            this.controlPanel.setStatus(`Ready: ${this.currentFilename}`);
+          } else {
+            this.controlPanel.setStatus('Ready');
+          }
+        }, 2000);
+      }).catch(() => {
+        // Fallback: create a temporary input element
+        const input = document.createElement('input');
+        input.value = url;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        this.controlPanel.setStatus('URL copied to clipboard!');
+        setTimeout(() => this.controlPanel.setStatus('Ready'), 2000);
+      });
+    });
     this.controlPanel.on('toggleCrossSection', () => {
       if (this.crossSectionRenderer) {
         this.crossSectionRenderer.visible = !this.crossSectionRenderer.visible;
@@ -1335,6 +1359,23 @@ export class WebGPUApp {
     } else {
       console.info('Invalid camera URL parameter:', camParam);
     }
+  }
+
+  /**
+   * Feature #92: Build a shareable URL with current view state.
+   * Includes job ID and camera position parameters.
+   */
+  buildViewUrl(): string {
+    const base = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams();
+    if (this.currentJobId) {
+      params.set('job', this.currentJobId);
+    }
+    const angle = this.camera.orbitAngleVal.toFixed(4);
+    const elev = this.camera.orbitElevationVal.toFixed(4);
+    const dist = this.camera.orbitDistanceVal.toFixed(2);
+    params.set('cam', `${angle},${elev},${dist}`);
+    return `${base}?${params.toString()}`;
   }
 
   /**

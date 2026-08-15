@@ -28,6 +28,7 @@ export interface ControlPanelEvents {
   toggleFullscreen: void;     // Feature #73: fullscreen mode
   toggleStats: void;          // Feature #120: render statistics
   toggleBoundingBox: void;    // Feature #48: bounding box dimensions
+  copyViewUrl: void;          // Feature #92: copy current view URL
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -371,6 +372,13 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
       this.emit('toggleStats', undefined);
     };
     statusGroup.appendChild(statsBtn);
+
+    // Feature #92: Copy current view URL to clipboard
+    const copyUrlBtn = document.createElement('button');
+    copyUrlBtn.textContent = 'Copy URL';
+    copyUrlBtn.className = 'copy-url-btn';
+    copyUrlBtn.onclick = () => this.emit('copyViewUrl', undefined);
+    statusGroup.appendChild(copyUrlBtn);
 
     this.statusEl = document.createElement('span');
     this.statusEl.className = 'status-text';
