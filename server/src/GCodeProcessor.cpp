@@ -52,12 +52,17 @@ ProcessResult GCodeProcessor::process(
     // ── Step 2: Compute segment times from feed rates ──
     computeSegmentTimes(segments);
 
+    // ── Step 2b: Compute per-segment corner deviation (%) from G64 tolerance ──
+    computeCornerDeviation(segments);
+
     if (progress) progress(0.4);
 
     // ── Step 3: Build NURBS path directly from segments (FAST) ──
     // This is O(segments) — typically milliseconds, not minutes.
     try {
-        result.nurbsPath = buildNurbsFromSegments(segments);
+        auto [path, deviations] = buildNurbsFromSegments(segments);
+        result.nurbsPath = std::move(path);
+        result.deviations = std::move(deviations);
         result.pathLength = result.nurbsPath->totalLength();
     } catch (const std::exception& e) {
         result.success = false;
@@ -201,6 +206,7 @@ void GCodeProcessor::parseGCode(
     bool unitsMm = true;      // G21
     InterpolationPlane plane = InterpolationPlane::XY;
     double currentFeedRate = 1000.0; // mm/min default
+    double currentBlendTolerance = 0.0; // G64 P value (0 = no blending)
 
     while (std::getline(stream, line)) {
         ++lineNumber;
@@ -219,9 +225,10 @@ void GCodeProcessor::parseGCode(
         bool hasFeed = false;
         Position target = currentPos;
         bool hasAnyPos = false;
-        double iVal = 0, jVal = 0, kVal = 0, rVal = 0;
-        bool hasI = false, hasJ = false, hasK = false, hasR = false;
+        double iVal = 0, jVal = 0, kVal = 0, rVal = 0, pVal = 0;
+        bool hasI = false, hasJ = false, hasK = false, hasR = false, hasP = false;
         int motionCode = -1; // 0, 1, 2, 3
+        bool isG64 = false;
 
         for (const auto& w : words) {
             switch (w.letter) {
@@ -246,6 +253,11 @@ void GCodeProcessor::parseGCode(
                             plane = InterpolationPlane::XZ;
                         } else if (gval == 19) {
                             plane = InterpolationPlane::YZ;
+                        } else if (gval == 64) {
+                            isG64 = true;
+                        } else if (gval == 61) {
+                            // G61/G61.1: exact stop — disable blending
+                            currentBlendTolerance = 0.0;
                         }
                     }
                     break;
@@ -303,9 +315,16 @@ void GCodeProcessor::parseGCode(
                     kVal = w.value; hasK = true; break;
                 case 'R':
                     rVal = w.value; hasR = true; break;
+                case 'P':
+                    pVal = w.value; hasP = true; break;
                 default:
                     break;
             }
+        }
+
+        // Handle G64 path blending mode
+        if (isG64) {
+            currentBlendTolerance = hasP ? pVal : 0.01; // default 0.01mm if no P
         }
 
         // Update feed rate if specified (even without motion)
@@ -356,6 +375,7 @@ void GCodeProcessor::parseGCode(
         seg.blockIndex = blockIndex;
         seg.feedRate = currentFeedRate;
         seg.isRapid = (motionCode == 0);
+        seg.blendTolerance = currentBlendTolerance;
 
         switch (motionCode) {
             case 0:
@@ -476,16 +496,98 @@ void GCodeProcessor::computeSegmentTimes(
     }
 }
 
+// ── Corner deviation computation ──────────────────────────────────────────────
+
+void GCodeProcessor::computeCornerDeviation(
+    std::vector<PlanningSegment>& segments)
+{
+    // For each segment, compute the corner deviation as a percentage (0-100)
+    // of the G64 blend tolerance. The deviation is based on the turn angle
+    // between the incoming direction (prev seg → this seg) and the outgoing
+    // direction (this seg → next seg).
+    //
+    // The chord deviation at a corner with half-angle α and blend radius r is:
+    //   e = r * (1 - cos(α))
+    // Given tolerance P, the blend radius is:
+    //   r = P * cos(α) / (1 - cos(α))
+    // So the actual deviation e = P * cos(α) — i.e., the effective deviation
+    // is P * cos(α), which ranges from P (straight, α=0) to 0 (reversal, α=90°).
+    //
+    // We report the deviation as a percentage of P:
+    //   deviation% = cos(α) * 100
+    // where α is the half-angle of the turn (0° = straight, 90° = full reversal).
+    //
+    // For segments with blendTolerance = 0 (G61 exact stop), deviation = 0.
+    // The deviation is stored on the *outgoing* segment (the one leaving the corner).
+
+    for (size_t i = 0; i < segments.size(); ++i) {
+        auto& seg = segments[i];
+        if (seg.blendTolerance <= 0.0) {
+            seg.entryVelocity = 0.0; // reuse entryVelocity as deviation storage
+            continue;
+        }
+
+        // Need previous segment to compute the incoming direction
+        if (i == 0) {
+            seg.entryVelocity = 0.0;
+            continue;
+        }
+
+        const auto& prev = segments[i - 1];
+        // Direction of previous segment (XYZ only)
+        double px = prev.end[0] - prev.start[0];
+        double py = prev.end[1] - prev.start[1];
+        double pz = prev.end[2] - prev.start[2];
+        double plen = std::sqrt(px*px + py*py + pz*pz);
+        if (plen < 1e-9) {
+            seg.entryVelocity = 0.0;
+            continue;
+        }
+        px /= plen; py /= plen; pz /= plen;
+
+        // Direction of current segment
+        double cx = seg.end[0] - seg.start[0];
+        double cy = seg.end[1] - seg.start[1];
+        double cz = seg.end[2] - seg.start[2];
+        double clen = std::sqrt(cx*cx + cy*cy + cz*cz);
+        if (clen < 1e-9) {
+            seg.entryVelocity = 0.0;
+            continue;
+        }
+        cx /= clen; cy /= clen; cz /= clen;
+
+        // Turn angle θ between prev direction and current direction
+        double dot = px*cx + py*cy + pz*cz;
+        dot = std::max(-1.0, std::min(1.0, dot));
+        double turnAngle = std::acos(dot); // 0 = straight, π = reversal
+
+        // Half-angle α = θ/2
+        double halfAngle = turnAngle * 0.5;
+
+        // Deviation as percentage of tolerance:
+        // deviation% = cos(α) * 100
+        // (100% = straight, 0% = full reversal)
+        double deviationPct = std::cos(halfAngle) * 100.0;
+
+        // Store in entryVelocity (repurposed for visualization — it's 0.0
+        // by default and not used by the viewer). The NBP serializer will
+        // read this as the deviation value.
+        seg.entryVelocity = deviationPct;
+    }
+}
+
 // ── NURBS path construction from segments ────────────────────────────────────
 
 using tether::motion::NurbsCurve;
 using tether::motion::PiecewiseNurbsPath;
 using tether::motion::RVec;
 
-tether::motion::PiecewiseNurbsPath GCodeProcessor::buildNurbsFromSegments(
+std::pair<tether::motion::PiecewiseNurbsPath, std::vector<float>>
+GCodeProcessor::buildNurbsFromSegments(
     const std::vector<PlanningSegment>& segments)
 {
     std::vector<NurbsCurve> curves;
+    std::vector<float> deviations;
     curves.reserve(segments.size());
 
     for (const auto& seg : segments) {
@@ -500,6 +602,9 @@ tether::motion::PiecewiseNurbsPath GCodeProcessor::buildNurbsFromSegments(
         double dz = end[2] - start[2];
         double len = std::sqrt(dx*dx + dy*dy + dz*dz);
         if (len < 1e-6) continue;
+
+        // Deviation for this segment (stored in entryVelocity by computeCornerDeviation)
+        float segDeviation = static_cast<float>(seg.entryVelocity);
 
         if (seg.isArc() && seg.arcRadius > 1e-9) {
             // Build arc NURBS
@@ -537,23 +642,26 @@ tether::motion::PiecewiseNurbsPath GCodeProcessor::buildNurbsFromSegments(
                     center, seg.arcRadius, axis1, axis2,
                     startAngle, sweepAngle);
                 curves.push_back(std::move(curve));
+                deviations.push_back(segDeviation);
             } catch (...) {
                 // Fall back to line if arc construction fails
                 try {
                     curves.push_back(NurbsCurve::fromLine(start, end));
+                    deviations.push_back(segDeviation);
                 } catch (...) {}
             }
         } else {
             // Linear or rapid — build line NURBS
             try {
                 curves.push_back(NurbsCurve::fromLine(start, end));
+                deviations.push_back(segDeviation);
             } catch (...) {
                 // Skip degenerate segments
             }
         }
     }
 
-    return PiecewiseNurbsPath(std::move(curves));
+    return {PiecewiseNurbsPath(std::move(curves)), std::move(deviations)};
 }
 
 // ── Statistics computation ───────────────────────────────────────────────────

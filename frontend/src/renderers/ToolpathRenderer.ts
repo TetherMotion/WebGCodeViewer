@@ -7,7 +7,7 @@ import type { TTHRData } from '../core/TthrParser';
 import { ColorMap } from '../core/ColorMap';
 import { Mat4 } from '../core/MathUtils';
 
-export type ColorAttribute = 'velocity' | 'acceleration' | 'jerk' | 'curvature' | 'motion' | 'segment' | 'solid';
+export type ColorAttribute = 'velocity' | 'acceleration' | 'jerk' | 'curvature' | 'deviation' | 'motion' | 'segment' | 'solid';
 
 export interface ToolpathRenderOptions {
   colorAttribute: ColorAttribute;
@@ -202,6 +202,7 @@ export class ToolpathRenderer {
       case 'acceleration': sourceArray = data.linearAcceleration; break;
       case 'jerk': sourceArray = data.linearJerk; break;
       case 'curvature': sourceArray = data.curvature; break;
+      case 'deviation': sourceArray = data.deviation; break;
       case 'motion': sourceArray = undefined; break;
       default: sourceArray = undefined;
     }

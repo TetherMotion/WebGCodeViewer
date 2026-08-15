@@ -136,9 +136,9 @@ test.describe('Binary data', () => {
     const magic = String.fromCharCode(buf[0], buf[1], buf[2], buf[3]);
     expect(magic).toBe('TNBP');
 
-    // Check version (u16 LE at offset 4)
+    // Check version (u16 LE at offset 4) — v2 adds per-piece deviation field
     const version = buf[4] | (buf[5] << 8);
-    expect(version).toBe(1);
+    expect(version).toBe(2);
 
     // Check dim (u8 at offset 6)
     const dim = buf[6];

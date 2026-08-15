@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 #include <atomic>
 #include <functional>
@@ -53,6 +54,10 @@ struct ProcessResult {
     size_t sampleCount = 0;
     bool success = false;
     std::string errorMessage;
+
+    /// Per-piece G64 corner deviation % (0-100). One entry per NURBS piece.
+    /// Populated by computeCornerDeviation() during processing.
+    std::vector<float> deviations;
 };
 
 /// @brief Processes G-code text into trajectory samples.
@@ -88,10 +93,16 @@ private:
     /// @brief Compute segment time from feed rate and distance.
     void computeSegmentTimes(std::vector<GCode::PlanningSegment>& segments);
 
+    /// @brief Compute per-segment corner deviation (%) from G64 tolerance.
+    /// Stores deviation in seg.entryVelocity (repurposed for visualization).
+    void computeCornerDeviation(std::vector<GCode::PlanningSegment>& segments);
+
     /// @brief Build a PiecewiseNurbsPath directly from PlanningSegments.
     /// Uses NurbsCurve::fromLine for linear/rapid segments and
     /// NurbsCurve::fromArc for arc segments. O(segments) — fast.
-    tether::motion::PiecewiseNurbsPath buildNurbsFromSegments(
+    /// @return {path, per-piece deviation values}
+    std::pair<tether::motion::PiecewiseNurbsPath, std::vector<float>>
+    buildNurbsFromSegments(
         const std::vector<GCode::PlanningSegment>& segments);
 
     /// @brief Compute statistics from samples.

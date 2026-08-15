@@ -35,6 +35,14 @@ void writeF64(std::vector<uint8_t>& buf, double v) {
     }
 }
 
+void writeF32(std::vector<uint8_t>& buf, float v) {
+    uint32_t bits;
+    std::memcpy(&bits, &v, 4);
+    for (int i = 0; i < 4; ++i) {
+        buf.push_back(static_cast<uint8_t>((bits >> (i * 8)) & 0xFF));
+    }
+}
+
 uint8_t readU8(const uint8_t*& p) { return *p++; }
 
 uint16_t readU16(const uint8_t*& p) {
@@ -48,6 +56,15 @@ uint32_t readU32(const uint8_t*& p) {
     uint32_t v = 0;
     for (int i = 0; i < 4; ++i)
         v |= static_cast<uint32_t>(*p++) << (i * 8);
+    return v;
+}
+
+float readF32(const uint8_t*& p) {
+    uint32_t bits = 0;
+    for (int i = 0; i < 4; ++i)
+        bits |= static_cast<uint32_t>(*p++) << (i * 8);
+    float v;
+    std::memcpy(&v, &bits, 4);
     return v;
 }
 
@@ -65,7 +82,8 @@ double readF64(const uint8_t*& p) {
 std::vector<uint8_t> serializeNurbsPath(
     const tether::motion::PiecewiseNurbsPath& path,
     const std::vector<BlockMetadata>& blocks,
-    const std::vector<uint8_t>& motionTypes)
+    const std::vector<uint8_t>& motionTypes,
+    const std::vector<float>& deviations)
 {
     const auto& pieces = path.pieces();
     const auto dim = path.dim();
@@ -119,6 +137,8 @@ std::vector<uint8_t> serializeNurbsPath(
         uint8_t mt = i < motionTypes.size() ? motionTypes[i] : 1;
         writeU8(buf, mt);
         writeU8(buf, 0); writeU8(buf, 0); writeU8(buf, 0); // reserved
+        float dev = i < deviations.size() ? deviations[i] : 0.0f;
+        writeF32(buf, dev);
     }
 
     // ── Write control points (all pieces, contiguous) ──
@@ -205,6 +225,12 @@ ParsedNBP parseNurbsPath(std::span<const uint8_t> data) {
         uint32_t cpCount = readU32(p);
         uint32_t knotCount = readU32(p);
         result.pieces[i].motionType = readU8(p); p += 3;
+        // v2+ has deviation field (f32); v1 does not
+        if (result.header.version >= 2) {
+            result.pieces[i].deviation = readF32(p);
+        } else {
+            result.pieces[i].deviation = 0.0f;
+        }
         result.pieces[i].controlPoints.resize(cpCount, std::vector<double>(dim));
         result.pieces[i].weights.resize(cpCount);
         result.pieces[i].knots.resize(knotCount);

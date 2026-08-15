@@ -14,8 +14,11 @@ import { Mat4 } from '../core/MathUtils';
 import { NBPData, NBPPiece, tessellatePiece } from '../core/NurbsParser';
 import { ColorMap } from '../core/ColorMap';
 
+export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'motion' | 'solid';
+
 export interface NurbsRenderOptions {
   colorMap: ColorMap;
+  colorAttribute: NurbsColorAttribute;
   lineWidth: number;
   visible: boolean;
 }
@@ -36,6 +39,7 @@ export class NurbsRenderer {
 
   options: NurbsRenderOptions = {
     colorMap: new ColorMap('viridis'),
+    colorAttribute: 'pieceIndex',
     lineWidth: 2.0,
     visible: true,
   };
@@ -91,9 +95,10 @@ export class NurbsRenderer {
       `,
     });
 
-    // Color LUT texture
+    // Color LUT texture (1D, RGBA — shader declares texture_1d<f32>)
     this.colorLUTTexture = this.device.createTexture({
       size: [256],
+      dimension: '1d',
       format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
@@ -185,8 +190,30 @@ export class NurbsRenderer {
 
       const positions = tessellatePiece(piece, dim, segments);
 
-      // Color value: map piece index to 0..1 across all pieces
-      const colorValue = pieces.length > 1 ? i / (pieces.length - 1) : 0.5;
+      // Color value depends on the selected color attribute
+      let colorValue: number;
+      switch (this.options.colorAttribute) {
+        case 'deviation': {
+          // Deviation is 0-100, normalize to 0-1
+          colorValue = piece.deviation / 100.0;
+          break;
+        }
+        case 'motion': {
+          // Map motion type to discrete colors (0=rapid, 1=linear, 2=arcCW, 3=arcCCW)
+          colorValue = piece.motionType / 7.0;
+          break;
+        }
+        case 'solid': {
+          colorValue = 0.5;
+          break;
+        }
+        case 'pieceIndex':
+        default: {
+          // Map piece index to 0..1 across all pieces
+          colorValue = pieces.length > 1 ? i / (pieces.length - 1) : 0.5;
+          break;
+        }
+      }
 
       for (let j = 0; j <= segments; j++) {
         allPositions.push(positions[j * 3], positions[j * 3 + 1], positions[j * 3 + 2]);
@@ -250,11 +277,18 @@ export class NurbsRenderer {
 
   private updateColorLUT(): void {
     if (!this.colorLUTTexture) return;
-    const lut = this.options.colorMap.generateLUT(256);
-    const data = new Uint8Array(lut);
+    const lut = this.options.colorMap.generateLUT(256); // RGB: 256×3 = 768 bytes
+    // Convert RGB → RGBA for rgba8unorm texture (256×4 = 1024 bytes)
+    const rgba = new Uint8Array(256 * 4);
+    for (let i = 0; i < 256; i++) {
+      rgba[i * 4] = lut[i * 3];
+      rgba[i * 4 + 1] = lut[i * 3 + 1];
+      rgba[i * 4 + 2] = lut[i * 3 + 2];
+      rgba[i * 4 + 3] = 255;
+    }
     this.device.queue.writeTexture(
       { texture: this.colorLUTTexture },
-      data,
+      rgba,
       { bytesPerRow: 256 * 4 },
       { width: 256 },
     );

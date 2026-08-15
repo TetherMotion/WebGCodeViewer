@@ -184,7 +184,10 @@ std::vector<uint8_t> JobManager::getNurbsBinary(const std::string& jobId) const
                 motionTypes.push_back(1); // default linear
             }
 
-            return serializeNurbsPath(path, job->result.blocks, motionTypes);
+            // Per-piece deviations from G64 corner deviation computation
+            const auto& deviations = job->result.deviations;
+
+            return serializeNurbsPath(path, job->result.blocks, motionTypes, deviations);
         }
 
         // Fallback: convert from samples (slow, only if nurbsPath wasn't built)

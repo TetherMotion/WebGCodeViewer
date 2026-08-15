@@ -17,7 +17,8 @@ export const TTHR_FLAGS = {
   LINEAR_METRICS: 0x0010,
   CURVATURE: 0x0020,
   SEGMENT_INFO: 0x0040,
-  ALL: 0x007F,
+  DEVIATION: 0x0080,
+  ALL: 0x00FF,
 } as const;
 
 export interface TTHRHeader {
@@ -48,6 +49,7 @@ export interface TTHRData {
   segmentIndex?: Int32Array;
   blockIndex?: Int32Array;
   motionType?: Uint8Array;
+  deviation?: Float32Array;       // G64 corner deviation % (0-100)
 }
 
 export function parseTTHR(data: Uint8Array | ArrayBuffer): TTHRData {
@@ -124,6 +126,9 @@ export function parseTTHR(data: Uint8Array | ArrayBuffer): TTHRData {
     result.blockIndex = new Int32Array(blkBytes.slice().buffer);
     result.motionType = reader.readBytes(sampleCount).slice();
   }
+  if (flags & TTHR_FLAGS.DEVIATION) {
+    result.deviation = reader.readFloat32Array(sampleCount);
+  }
 
   return result;
 }
@@ -197,6 +202,9 @@ export function extractZLayer(data: TTHRData, zMin: number, zMax: number): TTHRD
     const dst = new Uint8Array(newCount);
     for (let i = 0; i < newCount; i++) dst[i] = data.motionType[indices[i]];
     result.motionType = dst;
+  }
+  if (data.deviation) {
+    result.deviation = copyPerSample(data.deviation);
   }
 
   return result;

@@ -200,6 +200,9 @@ std::vector<uint8_t> serializeTrajectory(
         for (const auto* s : filtered) writeI32(buf, s->blockIndex);
         for (const auto* s : filtered) writeU8(buf, s->motionType);
     }
+    if (flags & TTHRFlags::Deviation) {
+        for (const auto* s : filtered) writeF64(buf, s->deviation);
+    }
 
     return buf;
 }
@@ -291,6 +294,9 @@ ParsedTTHR parseTrajectory(std::span<const uint8_t> data) {
         result.blockIndex = readI32s(n);
         result.motionType = readU8s(n);
     }
+    if (flags & TTHRFlags::Deviation) {
+        result.deviation = readDoubles(n);
+    }
 
     return result;
 }
@@ -315,6 +321,8 @@ size_t computeDataSize(uint32_t sampleCount, uint16_t flags, uint8_t axisCount) 
         size += static_cast<size_t>(sampleCount) * 2 * sizeof(double);
     if (flags & TTHRFlags::SegmentInfo)
         size += static_cast<size_t>(sampleCount) * (2 * sizeof(int32_t) + sizeof(uint8_t));
+    if (flags & TTHRFlags::Deviation)
+        size += static_cast<size_t>(sampleCount) * sizeof(double);
     return size;
 }
 

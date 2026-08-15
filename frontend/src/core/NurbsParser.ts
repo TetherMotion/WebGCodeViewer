@@ -16,11 +16,12 @@
  *     totalLength (f64)
  *     boundsMin[3] (f64)
  *     boundsMax[3] (f64)
- *   Piece table (pieceCount × 16 bytes):
+ *   Piece table (pieceCount × 20 bytes, v2):
  *     degree (u8) + reserved[3]
  *     cpCount (u32)
  *     knotCount (u32)
  *     motionType (u8) + reserved[3]
+ *     deviation (f32)   [v2+]
  *   Control points (totalControlPoints × dim × f64)
  *   Weights (totalControlPoints × f64)
  *   Knots (totalKnots × f64)
@@ -28,7 +29,7 @@
  */
 
 export const NBP_MAGIC = 'TNBP';
-export const NBP_VERSION = 1;
+export const NBP_VERSION = 2;
 
 export interface NBPHeader {
   magic: string;
@@ -49,6 +50,7 @@ export interface NBPPiece {
   weights: number[];
   knots: number[];
   motionType: number;
+  deviation: number;         // G64 corner deviation % (0-100), v2+
 }
 
 export interface NBPBlock {
@@ -77,6 +79,7 @@ class BinaryReader {
   readU16(): number { const v = this.view.getUint16(this.offset, true); this.offset += 2; return v; }
   readU32(): number { const v = this.view.getUint32(this.offset, true); this.offset += 4; return v; }
   readI32(): number { const v = this.view.getInt32(this.offset, true); this.offset += 4; return v; }
+  readF32(): number { const v = this.view.getFloat32(this.offset, true); this.offset += 4; return v; }
   readF64(): number { const v = this.view.getFloat64(this.offset, true); this.offset += 8; return v; }
   readString(len: number): string {
     const s = new TextDecoder().decode(new Uint8Array(this.view.buffer, this.view.byteOffset + this.offset, len));
@@ -95,7 +98,7 @@ export function parseNBP(data: Uint8Array | ArrayBuffer): NBPData {
     throw new Error(`Invalid NBP magic: "${magic}"`);
   }
   const version = reader.readU16();
-  if (version !== NBP_VERSION) {
+  if (version < 1 || version > NBP_VERSION) {
     throw new Error(`Unsupported NBP version: ${version}`);
   }
   const dim = reader.readU8();
@@ -128,12 +131,15 @@ export function parseNBP(data: Uint8Array | ArrayBuffer): NBPData {
     const knotCount = reader.readU32();
     const motionType = reader.readU8();
     reader.readU8(); reader.readU8(); reader.readU8(); // reserved
+    // v2+ has deviation field (f32); v1 does not
+    const deviation = version >= 2 ? reader.readF32() : 0;
     pieces.push({
       degree,
       controlPoints: [],
       weights: [],
       knots: [],
       motionType,
+      deviation,
     });
     // Pre-allocate
     pieces[i].controlPoints = new Array(cpCount * dim);

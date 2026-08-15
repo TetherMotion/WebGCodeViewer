@@ -80,7 +80,7 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     const attrLabel = document.createElement('label');
     attrLabel.textContent = 'Color:';
     const attrSelect = document.createElement('select');
-    for (const attr of ['velocity', 'acceleration', 'jerk', 'curvature', 'motion', 'solid']) {
+    for (const attr of ['velocity', 'acceleration', 'jerk', 'curvature', 'deviation', 'motion', 'solid']) {
       const opt = document.createElement('option');
       opt.value = attr;
       opt.textContent = attr;

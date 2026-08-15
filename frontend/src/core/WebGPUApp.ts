@@ -16,7 +16,7 @@ import { OverlayRenderer } from '../renderers/OverlayRenderer';
 import { NavigationGizmo } from '../renderers/NavigationGizmo';
 import { PrintHeadMarker } from '../renderers/PrintHeadMarker';
 import { DirectionCubeRenderer } from '../renderers/DirectionCubeRenderer';
-import { NurbsRenderer } from '../renderers/NurbsRenderer';
+import { NurbsRenderer, NurbsColorAttribute } from '../renderers/NurbsRenderer';
 import { GridLabels } from '../ui/GridLabels';
 import { ControlPanel } from '../ui/ControlPanel';
 import { GcodeViewer } from '../ui/GcodeViewer';
@@ -91,15 +91,36 @@ export class WebGPUApp {
   private setupEventHandlers(): void {
     this.controlPanel.on('uploadFile', (file) => this.handleUpload(file));
     this.controlPanel.on('colorAttributeChanged', (attr) => {
+      // Map ToolpathRenderer color attributes to NurbsRenderer attributes
+      const nurbsAttrMap: Record<string, NurbsColorAttribute> = {
+        'deviation': 'deviation',
+        'motion': 'motion',
+        'solid': 'solid',
+        'velocity': 'pieceIndex',    // NBP has no per-piece velocity
+        'acceleration': 'pieceIndex',
+        'jerk': 'pieceIndex',
+        'curvature': 'pieceIndex',
+        'segment': 'pieceIndex',
+      };
+      const nurbsAttr = nurbsAttrMap[attr] || 'pieceIndex';
+
       if (this.toolpathRenderer) {
         this.toolpathRenderer.options.colorAttribute = attr as ColorAttribute;
         if (this.currentData) this.toolpathRenderer.updateData(this.currentData);
+      }
+      if (this.nurbsRenderer) {
+        this.nurbsRenderer.options.colorAttribute = nurbsAttr;
+        if (this.currentNBP) this.nurbsRenderer.updateData(this.currentNBP);
       }
     });
     this.controlPanel.on('colorMapChanged', (map) => {
       if (this.toolpathRenderer) {
         this.toolpathRenderer.options.colorMap = new ColorMap(map as any);
         if (this.currentData) this.toolpathRenderer.updateData(this.currentData);
+      }
+      if (this.nurbsRenderer) {
+        this.nurbsRenderer.options.colorMap = new ColorMap(map as any);
+        if (this.currentNBP) this.nurbsRenderer.updateData(this.currentNBP);
       }
     });
     this.controlPanel.on('resetView', () => {

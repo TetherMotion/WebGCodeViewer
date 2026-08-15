@@ -33,7 +33,8 @@ namespace TTHRFlags {
     constexpr uint16_t LinearMetrics= 0x0010; ///< linearVelocity/Accel/Jerk
     constexpr uint16_t Curvature    = 0x0020; ///< curvature, centripetalAccel
     constexpr uint16_t SegmentInfo  = 0x0040; ///< segmentIndex, blockIndex, motionType
-    constexpr uint16_t All          = 0x007F; ///< All attribute groups
+    constexpr uint16_t Deviation    = 0x0080; ///< G64 corner deviation % per sample
+    constexpr uint16_t All          = 0x00FF; ///< All attribute groups
 } // namespace TTHRFlags
 
 /// @brief A G-code block metadata entry for the THDR block section.
@@ -91,6 +92,7 @@ struct ParsedTTHR {
     std::vector<int32_t> segmentIndex;
     std::vector<int32_t> blockIndex;
     std::vector<uint8_t> motionType;
+    std::vector<double> deviation;       ///< G64 corner deviation % (0-100)
 };
 
 /// @brief Serialize trajectory samples + block metadata to TTHR binary format.
