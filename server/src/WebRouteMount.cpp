@@ -348,6 +348,24 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
             cb(makeJsonResponse(jobManager->getSegmentsJson(jobId), enableCors));
         }, {drogon::Get});
 
+    // ── GET /api/trajectory/{jobId}/zlayers ──
+    app.registerHandler("/api/trajectory/{jobId}/zlayers",
+        [jobManager, enableCors](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& cb,
+           const std::string& jobId) {
+            if (jobManager->getJobState(jobId) != JobState::Ready) {
+                cb(makeErrorResponse(404, "Job not ready", enableCors));
+                return;
+            }
+            // Optional zTolerance query param
+            double zTol = 0.01;
+            auto tolParam = req->getParameter("zTolerance");
+            if (!tolParam.empty()) {
+                try { zTol = std::stod(tolParam); } catch (...) {}
+            }
+            cb(makeJsonResponse(jobManager->getZLayersJson(jobId, zTol), enableCors));
+        }, {drogon::Get});
+
     // ── DELETE /api/trajectory/{jobId} ──
     app.registerHandler("/api/trajectory/{jobId}",
         [jobManager, enableCors](const drogon::HttpRequestPtr& req,

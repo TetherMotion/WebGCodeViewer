@@ -5,6 +5,8 @@
  */
 
 import type { TTHRData } from '../core/TthrParser';
+import type { NBPData, NBPPiece } from '../core/NurbsParser';
+import { tessellatePiece } from '../core/NurbsParser';
 import { Mat4, Vec3 } from '../core/MathUtils';
 
 export class CrossSectionRenderer {
@@ -81,6 +83,48 @@ export class CrossSectionRenderer {
       }
     }
 
+    this.uploadVertices(vertices);
+  }
+
+  /**
+   * Update cross-section from NURBS data.
+   * Tessellates each piece and finds Z-plane intersections.
+   */
+  updateFromNurbs(data: NBPData): void {
+    const dim = data.header.dim;
+    const pieces = data.pieces;
+    const vertices: number[] = [];
+
+    for (let i = 0; i < pieces.length; i++) {
+      const piece = pieces[i];
+      const cpCount = piece.controlPoints.length / dim;
+      // Adaptive tessellation — same logic as NurbsRenderer
+      let segments: number;
+      if (piece.degree === 1) {
+        segments = 1;
+      } else {
+        segments = Math.max(8, Math.min(64, cpCount * piece.degree * 4));
+      }
+
+      const positions = tessellatePiece(piece, dim, segments);
+
+      // Find Z-plane crossings in the tessellated line
+      for (let j = 0; j < segments; j++) {
+        const z0 = positions[j * 3 + 2];
+        const z1 = positions[(j + 1) * 3 + 2];
+        if ((z0 - this.planeZ) * (z1 - this.planeZ) < 0) {
+          const t = (this.planeZ - z0) / (z1 - z0);
+          const x = positions[j * 3] + t * (positions[(j + 1) * 3] - positions[j * 3]);
+          const y = positions[j * 3 + 1] + t * (positions[(j + 1) * 3 + 1] - positions[j * 3 + 1]);
+          vertices.push(x, y, this.planeZ);
+        }
+      }
+    }
+
+    this.uploadVertices(vertices);
+  }
+
+  private uploadVertices(vertices: number[]): void {
     const verts = new Float32Array(vertices);
     this.vertexCount = verts.length / 3;
 

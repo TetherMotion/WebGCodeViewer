@@ -7,7 +7,7 @@ import type { TTHRData } from '../core/TthrParser';
 import { ColorMap } from '../core/ColorMap';
 import { Mat4 } from '../core/MathUtils';
 
-export type ColorAttribute = 'velocity' | 'acceleration' | 'jerk' | 'curvature' | 'deviation' | 'motion' | 'segment' | 'solid';
+export type ColorAttribute = 'velocity' | 'acceleration' | 'jerk' | 'curvature' | 'deviation' | 'zHeight' | 'motion' | 'segment' | 'solid';
 
 export interface ToolpathRenderOptions {
   colorAttribute: ColorAttribute;
@@ -203,6 +203,18 @@ export class ToolpathRenderer {
       case 'jerk': sourceArray = data.linearJerk; break;
       case 'curvature': sourceArray = data.curvature; break;
       case 'deviation': sourceArray = data.deviation; break;
+      case 'zHeight': {
+        // Color by Z position — extract Z from positions array
+        if (data.positions) {
+          const axes = data.header.axisCount;
+          const zValues = new Float32Array(n);
+          for (let i = 0; i < n; i++) {
+            zValues[i] = data.positions[i * axes + 2];
+          }
+          sourceArray = zValues;
+        }
+        break;
+      }
       case 'motion': sourceArray = undefined; break;
       default: sourceArray = undefined;
     }

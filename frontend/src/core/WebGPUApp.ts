@@ -57,6 +57,7 @@ export class WebGPUApp {
   private fullData: TTHRData | null = null;  // unfiltered data (for layer reset)
   private currentNBP: NBPData | null = null;
   private currentFilename: string = '';
+  private zLayers: { layerIndex: number; zHeight: number; pieceStart: number; pieceEnd: number; pieceCount: number }[] = [];
   private animationId: number | null = null;
   private lastFrameTime = 0;
 
@@ -94,6 +95,7 @@ export class WebGPUApp {
       // Map ToolpathRenderer color attributes to NurbsRenderer attributes
       const nurbsAttrMap: Record<string, NurbsColorAttribute> = {
         'deviation': 'deviation',
+        'zHeight': 'zHeight',
         'motion': 'motion',
         'solid': 'solid',
         'velocity': 'pieceIndex',    // NBP has no per-piece velocity
@@ -136,7 +138,22 @@ export class WebGPUApp {
       if (this.gridRenderer) this.gridRenderer.visible = !this.gridRenderer.visible;
     });
     this.controlPanel.on('toggleCrossSection', () => {
-      if (this.crossSectionRenderer) this.crossSectionRenderer.visible = !this.crossSectionRenderer.visible;
+      if (this.crossSectionRenderer) {
+        this.crossSectionRenderer.visible = !this.crossSectionRenderer.visible;
+        if (this.crossSectionRenderer.visible) {
+          this.updateCrossSection();
+        }
+      }
+    });
+    this.controlPanel.on('crossSectionZChanged', (frac) => {
+      if (this.crossSectionRenderer) {
+        // Map 0..1 fraction to Z range of current data
+        const bounds = this.getCurrentBounds();
+        if (bounds) {
+          this.crossSectionRenderer.planeZ = bounds.zMin + frac * (bounds.zMax - bounds.zMin);
+          this.updateCrossSection();
+        }
+      }
     });
     this.controlPanel.on('exportImage', () => {
       this.exportImage();
@@ -150,6 +167,17 @@ export class WebGPUApp {
     });
     this.gcodeViewer.on('lineSelected', (_line) => {
       // Line selection is handled via blockSelected above
+    });
+    this.gcodeViewer.on('isolateZLayer', (lineNum) => {
+      this.isolateZLayerForLine(lineNum);
+    });
+    this.gcodeViewer.on('highlightMotion', (blockIndex) => {
+      if (this.toolpathRenderer && this.currentData) {
+        this.toolpathRenderer.setHighlight(new Set([blockIndex]), this.currentData);
+      }
+      // Also highlight in NURBS renderer if we have piece data
+      // (NurbsRenderer doesn't have per-piece highlighting yet, but we can
+      // at least focus the camera on the block's piece)
     });
 
     // Navigation cube → direction selection
@@ -553,6 +581,14 @@ export class WebGPUApp {
         { x: h.boundsMin[0], y: h.boundsMin[1], z: h.boundsMin[2] },
         { x: h.boundsMax[0], y: h.boundsMax[1], z: h.boundsMax[2] },
       );
+
+      // Initialize cross-section plane to midpoint of Z range
+      if (this.crossSectionRenderer) {
+        this.crossSectionRenderer.planeZ = (h.boundsMin[2] + h.boundsMax[2]) / 2;
+        if (this.crossSectionRenderer.visible) {
+          this.crossSectionRenderer.updateFromNurbs(this.currentNBP);
+        }
+      }
     } catch (e) {
       console.error('Failed to load NURBS data, falling back to TTHR:', e);
       // Fallback to TTHR (sampled data) if NURBS conversion fails
@@ -575,10 +611,11 @@ export class WebGPUApp {
       this.gcodeViewer.updateBlocks(blocks);
     } catch (e) { console.error('Failed to load blocks:', e); }
 
-    // Load Z-layers for layer navigation
+    // Load Z-layers for layer navigation (via HTTP — more reliable than WS)
     try {
-      const layers = await this.rpcClient.getZLayers(jobId);
-      this.controlPanel.updateLayers(layers);
+      const layersResp = await this.rpcClient.getZLayersHttp(jobId);
+      this.zLayers = layersResp.layers;
+      this.controlPanel.updateLayersFromHttp(layersResp);
     } catch (e) { console.error('Failed to load Z-layers:', e); }
 
     // Reset playback
@@ -593,26 +630,58 @@ export class WebGPUApp {
    * Pass -1 to show all layers.
    */
   private applyLayerFilter(layerIdx: number): void {
-    if (!this.fullData) return;
-
     if (layerIdx < 0) {
-      // Show all layers
-      this.currentData = this.fullData;
-    } else {
-      // Extract the specific Z-layer
-      // Compute Z range for the layer using the layer height
-      const h = this.fullData.header;
-      const zMin = h.boundsMin[2];
-      const zMax = h.boundsMax[2];
-      const totalLayers = Math.max(1, Math.ceil((zMax - zMin) / 0.2)); // estimate 0.2mm layers
-      const layerHeight = (zMax - zMin) / totalLayers;
-      const layerZMin = zMin + layerIdx * layerHeight;
-      const layerZMax = layerZMin + layerHeight;
-      this.currentData = extractZLayer(this.fullData, layerZMin, layerZMax);
+      // Show all layers — reset NBP and TTHR data
+      if (this.currentNBP) {
+        this.nurbsRenderer?.updateData(this.currentNBP);
+      }
+      if (this.fullData) {
+        this.currentData = this.fullData;
+        this.toolpathRenderer?.updateData(this.currentData);
+        this.crossSectionRenderer?.updateData(this.currentData);
+      }
+      this.updatePlayPosition();
+      return;
     }
 
-    this.toolpathRenderer?.updateData(this.currentData!);
-    this.crossSectionRenderer?.updateData(this.currentData!);
+    // Use actual Z-layer data from the server
+    if (layerIdx < this.zLayers.length) {
+      const layer = this.zLayers[layerIdx];
+      const zHeight = layer.zHeight;
+
+      // Filter NBP pieces to only this layer's piece range
+      if (this.currentNBP) {
+        const filteredNBP: NBPData = {
+          header: { ...this.currentNBP.header, pieceCount: layer.pieceCount },
+          pieces: this.currentNBP.pieces.slice(layer.pieceStart, layer.pieceEnd + 1),
+          blocks: this.currentNBP.blocks,
+        };
+        this.nurbsRenderer?.updateData(filteredNBP);
+      }
+
+      // Also filter TTHR data if available
+      if (this.fullData) {
+        const zTol = 0.02; // 20µm tolerance
+        this.currentData = extractZLayer(this.fullData, zHeight - zTol, zHeight + zTol);
+        this.toolpathRenderer?.updateData(this.currentData);
+        this.crossSectionRenderer?.updateData(this.currentData);
+      }
+      this.updatePlayPosition();
+      return;
+    }
+
+    // Fallback: old estimation method
+    if (!this.fullData) return;
+    const h = this.fullData.header;
+    const zMin = h.boundsMin[2];
+    const zMax = h.boundsMax[2];
+    const totalLayers = Math.max(1, this.zLayers.length || Math.ceil((zMax - zMin) / 0.2));
+    const layerHeight = (zMax - zMin) / totalLayers;
+    const layerZMin = zMin + layerIdx * layerHeight;
+    const layerZMax = layerZMin + layerHeight;
+    this.currentData = extractZLayer(this.fullData, layerZMin, layerZMax);
+    this.toolpathRenderer?.updateData(this.currentData);
+    this.crossSectionRenderer?.updateData(this.currentData);
     this.updatePlayPosition();
   }
 
@@ -635,5 +704,85 @@ export class WebGPUApp {
     this.dirCubeRenderer?.destroy();
     this.depthTexture?.destroy();
     this.depthTexture = null;
+  }
+
+  /**
+   * Isolate the Z-layer for a given G-code line number.
+   * Switches to orthographic + top view, then filters to the Z-layer
+   * that contains the block associated with this line.
+   */
+  private isolateZLayerForLine(lineNum: number): void {
+    // 1. Switch to orthographic + top view
+    this.camera.setProjectionMode('orthographic');
+    this.setViewDirection('top');
+
+    // 2. Find the block for this line
+    // The GcodeViewer has lineToBlock mapping, but we need it here.
+    // We can find the block from the NBP blocks or TTHR blockIndex.
+    // Use NBP blocks if available, otherwise estimate from Z-layers.
+
+    // 3. Find which Z-layer contains this line's block
+    // Approximate: block index ≈ piece index (since both are sequential)
+    // Find which Z-layer's piece range contains this block
+    if (this.currentNBP && this.currentNBP.blocks.length > 0) {
+      // Find the block for this line
+      let blockIdx = -1;
+      for (const blk of this.currentNBP.blocks) {
+        if (blk.lineNumber === lineNum) {
+          blockIdx = blk.blockIndex;
+          break;
+        }
+      }
+      if (blockIdx < 0) return;
+
+      // Find which Z-layer contains this piece index (approximate: blockIdx ≈ pieceIdx)
+      for (const layer of this.zLayers) {
+        if (blockIdx >= layer.pieceStart && blockIdx <= layer.pieceEnd) {
+          this.applyLayerFilter(layer.layerIndex);
+          // Update the layer slider UI
+          this.controlPanel.setLayerValue(layer.layerIndex);
+          return;
+        }
+      }
+    }
+
+    // Fallback: if no NBP blocks, try to find Z from TTHR data
+    if (this.fullData && this.fullData.blockIndex) {
+      // Find the sample for this block
+      // This is less precise but works for TTHR-only mode
+      const n = this.fullData.header.sampleCount;
+      const axes = this.fullData.header.axisCount;
+      // Find first sample with this block
+      // We don't have line→block mapping here, so use the layer slider approach
+      // Just switch to top view and let user pick a layer
+      return;
+    }
+  }
+
+  /**
+   * Get the current Z bounds from NBP or TTHR data.
+   */
+  private getCurrentBounds(): { zMin: number; zMax: number } | null {
+    if (this.currentNBP) {
+      const h = this.currentNBP.header;
+      return { zMin: h.boundsMin[2], zMax: h.boundsMax[2] };
+    }
+    if (this.fullData) {
+      const h = this.fullData.header;
+      return { zMin: h.boundsMin[2], zMax: h.boundsMax[2] };
+    }
+    return null;
+  }
+
+  /**
+   * Update the cross-section renderer from current data (NBP or TTHR).
+   */
+  private updateCrossSection(): void {
+    if (!this.crossSectionRenderer) return;
+    if (this.currentNBP) {
+      this.crossSectionRenderer.updateFromNurbs(this.currentNBP);
+    } else if (this.currentData) {
+      this.crossSectionRenderer.updateData(this.currentData);
+    }
   }
 }

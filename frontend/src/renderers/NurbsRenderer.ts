@@ -14,7 +14,7 @@ import { Mat4 } from '../core/MathUtils';
 import { NBPData, NBPPiece, tessellatePiece } from '../core/NurbsParser';
 import { ColorMap } from '../core/ColorMap';
 
-export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'motion' | 'solid';
+export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'motion' | 'solid';
 
 export interface NurbsRenderOptions {
   colorMap: ColorMap;
@@ -196,6 +196,16 @@ export class NurbsRenderer {
         case 'deviation': {
           // Deviation is 0-100, normalize to 0-1
           colorValue = piece.deviation / 100.0;
+          break;
+        }
+        case 'zHeight': {
+          // Color by Z position of the piece's first control point
+          // Normalized using the header's Z bounds
+          const zMin = data.header.boundsMin[2];
+          const zMax = data.header.boundsMax[2];
+          const zRange = zMax - zMin > 1e-12 ? zMax - zMin : 1;
+          const z = piece.controlPoints.length >= dim ? piece.controlPoints[2] : 0;
+          colorValue = (z - zMin) / zRange;
           break;
         }
         case 'motion': {

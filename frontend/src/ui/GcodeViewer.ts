@@ -13,6 +13,8 @@ import type { GetBlocksResponse } from '../generated/tether_viewer_pb';
 export interface GcodeViewerEvents {
   lineSelected: number;  // line number (0-based)
   blockSelected: number; // block index
+  isolateZLayer: number; // line number — switch to ortho+top, isolate this line's Z-layer
+  highlightMotion: number; // block index — highlight only this motion in 3D
 }
 
 interface BlockInfo {
@@ -332,6 +334,38 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
 
       lineEl.appendChild(numEl);
       lineEl.appendChild(contentEl);
+
+      // Per-line icon buttons (only for lines that have a block association)
+      const blockIdx = this.lineToBlock.get(lineNum) ?? -1;
+      if (blockIdx >= 0) {
+        const actionsEl = document.createElement('span');
+        actionsEl.className = 'gcode-line-actions';
+
+        // Icon 1: Isolate Z-layer (ortho + top view)
+        const isoBtn = document.createElement('button');
+        isoBtn.className = 'gcode-line-icon gcode-icon-iso';
+        isoBtn.title = 'Ortho + Top + Isolate Z-layer';
+        isoBtn.innerHTML = '&#9650;'; // ▲ (up arrow / top view)
+        isoBtn.onclick = (e) => {
+          e.stopPropagation();
+          this.emit('isolateZLayer', lineNum);
+        };
+        actionsEl.appendChild(isoBtn);
+
+        // Icon 2: Highlight only this motion
+        const motBtn = document.createElement('button');
+        motBtn.className = 'gcode-line-icon gcode-icon-motion';
+        motBtn.title = 'Highlight this motion only';
+        motBtn.innerHTML = '&#9679;'; // ● (circle / highlight)
+        motBtn.onclick = (e) => {
+          e.stopPropagation();
+          this.highlightBlock(blockIdx);
+          this.emit('highlightMotion', blockIdx);
+        };
+        actionsEl.appendChild(motBtn);
+
+        lineEl.appendChild(actionsEl);
+      }
 
       lineEl.onclick = () => {
         const ln = parseInt(lineEl.dataset.line!, 10);

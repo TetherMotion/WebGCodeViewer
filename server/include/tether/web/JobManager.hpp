@@ -107,6 +107,12 @@ public:
     /// @brief Get segment boundaries for a job as JSON.
     std::string getSegmentsJson(const std::string& jobId) const;
 
+    /// @brief Get Z-layers for a job as JSON.
+    /// Computes layers from NURBS path pieces or dense samples.
+    /// @param jobId Job ID
+    /// @param zTolerance Z height tolerance for grouping (mm)
+    std::string getZLayersJson(const std::string& jobId, double zTolerance = 0.01) const;
+
     /// @brief Delete a job and free its memory.
     /// @return true if job was deleted, false if not found
     bool deleteJob(const std::string& jobId);

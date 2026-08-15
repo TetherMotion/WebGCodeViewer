@@ -251,6 +251,22 @@ export class RpcClient {
     );
   }
 
+  /**
+   * Fetch Z-layers via HTTP (more reliable than WebSocket for this).
+   * Returns JSON: { layers: [...], totalLayers: N }
+   */
+  async getZLayersHttp(jobId: string, zTolerance: number = 0.01): Promise<{
+    layers: { layerIndex: number; zHeight: number; pieceStart: number; pieceEnd: number; pieceCount: number }[];
+    totalLayers: number;
+  }> {
+    const url = `${this.httpBaseUrl}/api/trajectory/${jobId}/zlayers?zTolerance=${zTolerance}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new ViewerRpcError(`HTTP ${resp.status}: ${resp.statusText}`, resp.status);
+    }
+    return resp.json();
+  }
+
   async getZLayerBinary(jobId: string, layerIndex: number, fields: number = 0, axes: number = 0): Promise<BinaryDataResponse> {
     return this.transport.unary(
       'getZLayerBinary',

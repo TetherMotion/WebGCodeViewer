@@ -263,6 +263,99 @@ std::string JobManager::getSegmentsJson(const std::string& jobId) const {
     return ss.str();
 }
 
+std::string JobManager::getZLayersJson(const std::string& jobId, double zTolerance) const {
+    auto job = getJob(jobId);
+    if (!job || job->state != JobState::Ready) return "{\"error\":\"job not ready\"}";
+
+    const auto& result = job->result;
+    std::ostringstream ss;
+    ss << "{\"layers\":[";
+
+    // Path 1: dense samples
+    if (!result.samples.empty()) {
+        const auto& samples = result.samples;
+        const uint32_t n = static_cast<uint32_t>(samples.size());
+        double currentZ = samples[0].position[2];
+        uint32_t layerStart = 0;
+        size_t layerIdx = 0;
+
+        for (uint32_t i = 1; i < n; i++) {
+            double z = samples[i].position[2];
+            if (std::abs(z - currentZ) > zTolerance) {
+                if (layerIdx > 0) ss << ",";
+                ss << "{\"layerIndex\":" << layerIdx
+                   << ",\"zHeight\":" << currentZ
+                   << ",\"pieceStart\":" << layerStart
+                   << ",\"pieceEnd\":" << (i - 1)
+                   << ",\"pieceCount\":" << (i - layerStart)
+                   << "}";
+                layerIdx++;
+                currentZ = z;
+                layerStart = i;
+            }
+        }
+        if (layerStart < n) {
+            if (layerIdx > 0) ss << ",";
+            ss << "{\"layerIndex\":" << layerIdx
+               << ",\"zHeight\":" << currentZ
+               << ",\"pieceStart\":" << layerStart
+               << ",\"pieceEnd\":" << (n - 1)
+               << ",\"pieceCount\":" << (n - layerStart)
+               << "}";
+            layerIdx++;
+        }
+        ss << "],\"totalLayers\":" << layerIdx << "}";
+        return ss.str();
+    }
+
+    // Path 2: NURBS path pieces
+    if (result.nurbsPath && result.nurbsPath->numPieces() > 0) {
+        const auto& pieces = result.nurbsPath->pieces();
+        const uint32_t pieceCount = static_cast<uint32_t>(pieces.size());
+
+        auto pieceStartZ = [&](uint32_t i) -> double {
+            const auto& cps = pieces[i].controlPoints();
+            if (cps.empty()) return 0.0;
+            return cps.front()[2];
+        };
+
+        double currentZ = pieceStartZ(0);
+        uint32_t layerStart = 0;
+        size_t layerIdx = 0;
+
+        for (uint32_t i = 1; i < pieceCount; i++) {
+            double z = pieceStartZ(i);
+            if (std::abs(z - currentZ) > zTolerance) {
+                if (layerIdx > 0) ss << ",";
+                ss << "{\"layerIndex\":" << layerIdx
+                   << ",\"zHeight\":" << currentZ
+                   << ",\"pieceStart\":" << layerStart
+                   << ",\"pieceEnd\":" << (i - 1)
+                   << ",\"pieceCount\":" << (i - layerStart)
+                   << "}";
+                layerIdx++;
+                currentZ = z;
+                layerStart = i;
+            }
+        }
+        if (layerStart < pieceCount) {
+            if (layerIdx > 0) ss << ",";
+            ss << "{\"layerIndex\":" << layerIdx
+               << ",\"zHeight\":" << currentZ
+               << ",\"pieceStart\":" << layerStart
+               << ",\"pieceEnd\":" << (pieceCount - 1)
+               << ",\"pieceCount\":" << (pieceCount - layerStart)
+               << "}";
+            layerIdx++;
+        }
+        ss << "],\"totalLayers\":" << layerIdx << "}";
+        return ss.str();
+    }
+
+    ss << "],\"totalLayers\":0}";
+    return ss.str();
+}
+
 bool JobManager::deleteJob(const std::string& jobId) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(jobId);

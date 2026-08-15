@@ -200,6 +200,20 @@ test.describe('Binary data', () => {
     await ctx.dispose();
   });
 
+  test('fetch zlayers JSON for processed job', async () => {
+    const { jobId, status } = await uploadAndProcess(SIMPLE_GCODE);
+    expect(status).toBe('ready');
+
+    const ctx = await request.newContext();
+    const resp = await ctx.get(`${BASE}/api/trajectory/${jobId}/zlayers`);
+    expect(resp.ok()).toBe(true);
+    const json = await resp.json();
+    expect(json.layers).toBeDefined();
+    expect(json.totalLayers).toBeDefined();
+    expect(json.totalLayers).toBeGreaterThanOrEqual(0);
+    await ctx.dispose();
+  });
+
   test('fetch statistics JSON for processed job', async () => {
     const { jobId, status } = await uploadAndProcess(SIMPLE_GCODE);
     expect(status).toBe('ready');

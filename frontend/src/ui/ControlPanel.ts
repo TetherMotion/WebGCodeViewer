@@ -13,6 +13,7 @@ export interface ControlPanelEvents {
   colorMapChanged: string;
   toggleGrid: void;
   toggleCrossSection: void;
+  crossSectionZChanged: number;  // 0..1 fraction of Z range
   resetView: void;
   exportImage: void;
   layerChanged: number;       // layer index, -1 = all layers
@@ -27,6 +28,11 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
   private crossBtn: HTMLButtonElement;
   private gridActive = false;
   private crossActive = false;
+
+  // Cross-section Z slider
+  private crossSectionGroup: HTMLElement;
+  private crossSlider: HTMLInputElement;
+  private crossLabel: HTMLElement;
 
   // Layer slider
   private layerGroup: HTMLElement;
@@ -80,7 +86,7 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     const attrLabel = document.createElement('label');
     attrLabel.textContent = 'Color:';
     const attrSelect = document.createElement('select');
-    for (const attr of ['velocity', 'acceleration', 'jerk', 'curvature', 'deviation', 'motion', 'solid']) {
+    for (const attr of ['velocity', 'acceleration', 'jerk', 'curvature', 'deviation', 'zHeight', 'motion', 'solid']) {
       const opt = document.createElement('option');
       opt.value = attr;
       opt.textContent = attr;
@@ -122,9 +128,40 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     this.crossBtn.onclick = () => {
       this.crossActive = !this.crossActive;
       this.crossBtn.classList.toggle('active', this.crossActive);
+      this.crossSectionGroup.style.display = this.crossActive ? 'flex' : 'none';
       this.emit('toggleCrossSection', undefined);
     };
     viewGroup.appendChild(this.crossBtn);
+
+    // Cross-section Z-plane slider (hidden until cross-section is activated)
+    this.crossSectionGroup = document.createElement('div');
+    this.crossSectionGroup.className = 'control-group cross-section-group';
+    this.crossSectionGroup.style.display = 'none';
+
+    const crossTitle = document.createElement('div');
+    crossTitle.className = 'slider-label';
+    crossTitle.textContent = 'Z-Plane:';
+    this.crossSectionGroup.appendChild(crossTitle);
+
+    this.crossSlider = document.createElement('input');
+    this.crossSlider.type = 'range';
+    this.crossSlider.min = '0';
+    this.crossSlider.max = '100';
+    this.crossSlider.value = '50';
+    this.crossSlider.step = '0.1';
+    this.crossSlider.className = 'cross-slider';
+    this.crossSlider.oninput = () => {
+      const frac = parseFloat(this.crossSlider.value) / 100;
+      this.crossLabel.textContent = this.crossSlider.value + '%';
+      this.emit('crossSectionZChanged', frac);
+    };
+    this.crossSectionGroup.appendChild(this.crossSlider);
+
+    this.crossLabel = document.createElement('span');
+    this.crossLabel.className = 'slider-value';
+    this.crossLabel.textContent = '50%';
+    this.crossSectionGroup.appendChild(this.crossLabel);
+    this.element.appendChild(this.crossSectionGroup);
 
     const resetBtn = document.createElement('button');
     resetBtn.textContent = 'Reset View';
@@ -253,9 +290,36 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
   }
 
   /**
+   * Set the layer slider value programmatically.
+   */
+  setLayerValue(layerIdx: number): void {
+    this.layerSlider.value = String(layerIdx);
+    this.layerLabel.textContent = layerIdx < 0 ? 'All' : `${layerIdx}`;
+    this.emit('layerChanged', layerIdx);
+  }
+
+  /**
    * Update the layer slider with Z-layer data from the server.
    */
   updateLayers(layers: GetZLayersResponse): void {
+    if (layers.totalLayers <= 0) {
+      this.layerGroup.style.display = 'none';
+      return;
+    }
+    this.layerGroup.style.display = 'flex';
+    this.layerSlider.min = '0';
+    this.layerSlider.max = String(layers.totalLayers - 1);
+    this.layerSlider.value = String(layers.totalLayers - 1);
+    this.layerLabel.textContent = 'All';
+  }
+
+  /**
+   * Update the layer slider with Z-layer data from HTTP endpoint.
+   */
+  updateLayersFromHttp(layers: {
+    layers: { layerIndex: number; zHeight: number; pieceStart: number; pieceEnd: number; pieceCount: number }[];
+    totalLayers: number;
+  }): void {
     if (layers.totalLayers <= 0) {
       this.layerGroup.style.display = 'none';
       return;

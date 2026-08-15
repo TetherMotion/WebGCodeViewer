@@ -335,6 +335,44 @@ body {
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
+    flex: 1;
+}
+
+.gcode-line-actions {
+    display: none;
+    flex-shrink: 0;
+    gap: 2px;
+    margin-left: 4px;
+}
+
+.gcode-line:hover .gcode-line-actions {
+    display: inline-flex;
+}
+
+.gcode-line-icon {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 0 3px;
+    font-size: 11px;
+    line-height: 16px;
+    cursor: pointer;
+    color: var(--text-muted);
+    vertical-align: middle;
+}
+
+.gcode-line-icon:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border);
+    color: var(--accent);
+}
+
+.gcode-icon-iso:hover {
+    color: #4a9eff;
+}
+
+.gcode-icon-motion:hover {
+    color: #ffc800;
 }
 
 .gcode-line-content .gcode-word {
@@ -529,7 +567,7 @@ body {
     text-align: right;
 }
 
-.layer-slider, .time-slider {
+.layer-slider, .time-slider, .cross-slider {
     width: 120px;
     cursor: pointer;
 }

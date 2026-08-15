@@ -527,30 +527,54 @@ std::string ViewerRpcHandler::handleGetVersion(const std::string& /*requestBytes
 std::vector<ViewerRpcHandler::ZLayer>
 ViewerRpcHandler::computeZLayers(const std::string& jobId, double zTolerance) {
     auto* result = jobManager_->getResult(jobId);
-    if (!result || !result->success || result->samples.empty()) {
+    if (!result || !result->success) {
         return {};
     }
 
-    const auto& samples = result->samples;
-    const uint32_t n = static_cast<uint32_t>(samples.size());
+    // Path 1: Use dense samples if available (nurbsOnly=false)
+    if (!result->samples.empty()) {
+        const auto& samples = result->samples;
+        const uint32_t n = static_cast<uint32_t>(samples.size());
 
-    std::vector<ZLayer> layers;
-    if (n == 0) return layers;
+        std::vector<ZLayer> layers;
+        if (n == 0) return layers;
 
-    double currentZ = samples[0].position[2];
-    uint32_t layerStart = 0;
+        double currentZ = samples[0].position[2];
+        uint32_t layerStart = 0;
 
-    for (uint32_t i = 1; i < n; i++) {
-        double z = samples[i].position[2];
-        if (std::abs(z - currentZ) > zTolerance) {
+        for (uint32_t i = 1; i < n; i++) {
+            double z = samples[i].position[2];
+            if (std::abs(z - currentZ) > zTolerance) {
+                ZLayer layer;
+                layer.layerIndex = static_cast<uint32_t>(layers.size());
+                layer.zHeight = currentZ;
+                layer.sampleStart = layerStart;
+                layer.sampleEnd = i - 1;
+                layer.sampleCount = i - layerStart;
+                double pathLen = 0;
+                for (uint32_t j = layerStart; j + 1 < i; j++) {
+                    double dx = samples[j+1].position[0] - samples[j].position[0];
+                    double dy = samples[j+1].position[1] - samples[j].position[1];
+                    double dz = samples[j+1].position[2] - samples[j].position[2];
+                    pathLen += std::sqrt(dx*dx + dy*dy + dz*dz);
+                }
+                layer.pathLength = pathLen;
+                layers.push_back(layer);
+
+                currentZ = z;
+                layerStart = i;
+            }
+        }
+
+        if (layerStart < n) {
             ZLayer layer;
             layer.layerIndex = static_cast<uint32_t>(layers.size());
             layer.zHeight = currentZ;
             layer.sampleStart = layerStart;
-            layer.sampleEnd = i - 1;
-            layer.sampleCount = i - layerStart;
+            layer.sampleEnd = n - 1;
+            layer.sampleCount = n - layerStart;
             double pathLen = 0;
-            for (uint32_t j = layerStart; j + 1 < i; j++) {
+            for (uint32_t j = layerStart; j + 1 < n; j++) {
                 double dx = samples[j+1].position[0] - samples[j].position[0];
                 double dy = samples[j+1].position[1] - samples[j].position[1];
                 double dz = samples[j+1].position[2] - samples[j].position[2];
@@ -558,31 +582,91 @@ ViewerRpcHandler::computeZLayers(const std::string& jobId, double zTolerance) {
             }
             layer.pathLength = pathLen;
             layers.push_back(layer);
-
-            currentZ = z;
-            layerStart = i;
         }
+
+        return layers;
     }
 
-    if (layerStart < n) {
-        ZLayer layer;
-        layer.layerIndex = static_cast<uint32_t>(layers.size());
-        layer.zHeight = currentZ;
-        layer.sampleStart = layerStart;
-        layer.sampleEnd = n - 1;
-        layer.sampleCount = n - layerStart;
-        double pathLen = 0;
-        for (uint32_t j = layerStart; j + 1 < n; j++) {
-            double dx = samples[j+1].position[0] - samples[j].position[0];
-            double dy = samples[j+1].position[1] - samples[j].position[1];
-            double dz = samples[j+1].position[2] - samples[j].position[2];
-            pathLen += std::sqrt(dx*dx + dy*dy + dz*dz);
+    // Path 2: Compute from NURBS path pieces (nurbsOnly=true, default)
+    if (result->nurbsPath && result->nurbsPath->numPieces() > 0) {
+        const auto& path = *result->nurbsPath;
+        const auto& pieces = path.pieces();
+        const uint32_t pieceCount = static_cast<uint32_t>(pieces.size());
+
+        std::vector<ZLayer> layers;
+        if (pieceCount == 0) return layers;
+
+        // Extract Z values from each piece's first and last control points
+        // For linear pieces (degree 1), these are the start/end Z.
+        // For arcs, they're approximate but sufficient for layer grouping.
+        auto pieceStartZ = [&](uint32_t i) -> double {
+            const auto& cps = pieces[i].controlPoints();
+            if (cps.empty()) return 0.0;
+            return cps.front()[2]; // Z is index 2
+        };
+        auto pieceEndZ = [&](uint32_t i) -> double {
+            const auto& cps = pieces[i].controlPoints();
+            if (cps.empty()) return 0.0;
+            return cps.back()[2];
+        };
+
+        double currentZ = pieceStartZ(0);
+        uint32_t layerStart = 0;
+
+        for (uint32_t i = 1; i < pieceCount; i++) {
+            double z = pieceStartZ(i);
+            if (std::abs(z - currentZ) > zTolerance) {
+                ZLayer layer;
+                layer.layerIndex = static_cast<uint32_t>(layers.size());
+                layer.zHeight = currentZ;
+                layer.sampleStart = layerStart;
+                layer.sampleEnd = i - 1;
+                layer.sampleCount = i - layerStart;
+                // Approximate path length from piece lengths
+                double pathLen = 0;
+                for (uint32_t j = layerStart; j < i; j++) {
+                    // Use piece's contribution to total length
+                    const auto& cps = pieces[j].controlPoints();
+                    if (cps.size() >= 2) {
+                        double dx = cps.back()[0] - cps.front()[0];
+                        double dy = cps.back()[1] - cps.front()[1];
+                        double dz = cps.back()[2] - cps.front()[2];
+                        pathLen += std::sqrt(dx*dx + dy*dy + dz*dz);
+                    }
+                }
+                layer.pathLength = pathLen;
+                layers.push_back(layer);
+
+                currentZ = z;
+                layerStart = i;
+            }
         }
-        layer.pathLength = pathLen;
-        layers.push_back(layer);
+
+        if (layerStart < pieceCount) {
+            ZLayer layer;
+            layer.layerIndex = static_cast<uint32_t>(layers.size());
+            layer.zHeight = currentZ;
+            layer.sampleStart = layerStart;
+            layer.sampleEnd = pieceCount - 1;
+            layer.sampleCount = pieceCount - layerStart;
+            double pathLen = 0;
+            for (uint32_t j = layerStart; j < pieceCount; j++) {
+                const auto& cps = pieces[j].controlPoints();
+                if (cps.size() >= 2) {
+                    double dx = cps.back()[0] - cps.front()[0];
+                    double dy = cps.back()[1] - cps.front()[1];
+                    double dz = cps.back()[2] - cps.front()[2];
+                    pathLen += std::sqrt(dx*dx + dy*dy + dz*dz);
+                }
+            }
+            layer.pathLength = pathLen;
+            layers.push_back(layer);
+        }
+
+        return layers;
     }
 
-    return layers;
+    return {};
 }
 
 } // namespace tether::web
