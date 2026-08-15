@@ -946,7 +946,7 @@ export class WebGPUApp {
         view: this.context.getCurrentTexture().createView(),
         clearValue: this.lightTheme
           ? { r: 0.94, g: 0.94, b: 0.95, a: 1 }
-          : { r: 0.35, g: 0.36, b: 0.40, a: 1 },
+          : { r: 0.55, g: 0.56, b: 0.60, a: 1 },
         loadOp: 'clear',
         storeOp: 'store',
       }],
@@ -1260,11 +1260,25 @@ export class WebGPUApp {
       this.gcodeViewer.updateBlocks(blocks);
     } catch (e) { console.error('Failed to load blocks:', e); }
 
-    // Load Z-layers for layer navigation (via HTTP — more reliable than WS)
+    // Load Z-layers for layer navigation via WebSocket
     try {
-      const layersResp = await this.rpcClient.getZLayersHttp(jobId);
-      this.zLayers = layersResp.layers;
-      this.controlPanel.updateLayersFromHttp(layersResp);
+      const layersResp = await this.rpcClient.getZLayers(jobId);
+      // Map WS response (sampleStart/sampleEnd) to the internal format
+      // (pieceStart/pieceEnd) used by applyLayerFilter.
+      const mappedLayers = layersResp.layers.map(l => ({
+        layerIndex: l.layerIndex,
+        zHeight: l.zHeight,
+        pieceStart: l.sampleStart,
+        pieceEnd: l.sampleEnd,
+        pieceCount: l.sampleCount,
+      }));
+      // Filter out travel-only layers: a layer is only useful for navigation
+      // if it contains at least one extruding piece. Travel-only layers
+      // (e.g., Z-hop moves between print layers) are excluded so the slider
+      // only stops on real print layers.
+      this.zLayers = this.filterExtrudingLayers(mappedLayers);
+      const filteredResp = { layers: this.zLayers, totalLayers: this.zLayers.length };
+      this.controlPanel.updateLayersFromHttp(filteredResp);
       if (this.showLayerCount) this.updateLayerCountDisplay(); // Feature #128
     } catch (e) { console.error('Failed to load Z-layers:', e); }
 
@@ -1290,6 +1304,45 @@ export class WebGPUApp {
       console.info(`Deferred camera params applied: angle=${this.pendingCamParams.angle}, elev=${this.pendingCamParams.elevation}, dist=${this.pendingCamParams.distance}`);
       this.pendingCamParams = null;
     }
+  }
+
+  /**
+   * Filter out travel-only layers from the Z-layer list.
+   * A layer is kept only if at least one piece in its [pieceStart, pieceEnd]
+   * range has a non-zero extruderSpeed (i.e., it's extruding material).
+   * Layers that only contain travel moves (Z-hops, rapid positioning) are
+   * excluded so the layer slider only stops on real print layers.
+   * Layer indices are re-numbered sequentially after filtering.
+   */
+  private filterExtrudingLayers(
+    layers: { layerIndex: number; zHeight: number; pieceStart: number; pieceEnd: number; pieceCount: number }[],
+  ): typeof layers {
+    if (!this.currentNBP || layers.length === 0) return layers;
+
+    const pieces = this.currentNBP.pieces;
+    const filtered: typeof layers = [];
+
+    for (const layer of layers) {
+      let hasExtrusion = false;
+      for (let i = layer.pieceStart; i <= layer.pieceEnd && i < pieces.length; i++) {
+        if (pieces[i].extruderSpeed > 0 || pieces[i].motionType > 0) {
+          hasExtrusion = true;
+          break;
+        }
+      }
+      if (hasExtrusion) {
+        filtered.push({
+          ...layer,
+          layerIndex: filtered.length, // re-number sequentially
+        });
+      }
+    }
+
+    if (filtered.length < layers.length) {
+      console.info(`Filtered Z-layers: ${layers.length} → ${filtered.length} (removed ${layers.length - filtered.length} travel-only layers)`);
+    }
+
+    return filtered.length > 0 ? filtered : layers;
   }
 
   /**

@@ -27,8 +27,8 @@ export class GridLabels {
   // Label formatting
   private fontSize: number = 11;
   private font: string = `${this.fontSize}px sans-serif`;
-  private labelColor: string = '#999';
-  private bgColor: string = 'rgba(20, 20, 30, 0.6)';
+  private labelColor: string = '#ccc';
+  private bgColor: string = 'rgba(30, 30, 35, 0.5)';
 
   /** Minimum pixel spacing between labels on the same axis. */
   private minLabelSpacing: number = 35;

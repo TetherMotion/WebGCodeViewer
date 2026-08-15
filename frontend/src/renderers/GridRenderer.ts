@@ -108,14 +108,14 @@ export class GridRenderer {
   }
 
   private buildGrid(): void {
-    const half = this.gridSize / 2;
+    const size = this.gridSize;
     const step = this.gridSize / this.gridDivisions;
     const tickLen = step * this.tickLength;
 
-    // Single color for grid lines, axes, and ticks
-    const gridColor: [number, number, number] = [0.4, 0.4, 0.4];
-    const axisColor: [number, number, number] = [0.55, 0.55, 0.55]; // slightly brighter
-    const tickColor: [number, number, number] = [0.5, 0.5, 0.5];
+    // Darker colors to contrast with the lighter background
+    const gridColor: [number, number, number] = [0.25, 0.25, 0.27];
+    const axisColor: [number, number, number] = [0.15, 0.15, 0.17]; // darker for axes
+    const tickColor: [number, number, number] = [0.20, 0.20, 0.22];
 
     const lines: number[] = []; // x, y, z, r, g, b per vertex, 2 vertices per line
 
@@ -128,35 +128,35 @@ export class GridRenderer {
       lines.push(x2, y2, z2, color[0], color[1], color[2]);
     };
 
-    // ── Grid lines ──
+    // ── Grid lines — grid starts at (0,0) as its corner, extends to (size, size) ──
     for (let i = 0; i <= this.gridDivisions; i++) {
-      const p = -half + i * step;
-      addLine(p, -half, 0, p, half, 0, gridColor); // vertical (constant X)
-      addLine(-half, p, 0, half, p, 0, gridColor); // horizontal (constant Y)
+      const p = i * step;
+      addLine(p, 0, 0, p, size, 0, gridColor); // vertical (constant X)
+      addLine(0, p, 0, size, p, 0, gridColor); // horizontal (constant Y)
     }
 
-    // ── Axis lines through origin (slightly brighter) ──
-    addLine(-half, 0, 0, half, 0, 0, axisColor); // X axis
-    addLine(0, -half, 0, 0, half, 0, axisColor); // Y axis
+    // ── Axis lines along the edges of the grid (darker) ──
+    addLine(0, 0, 0, size, 0, 0, axisColor); // bottom edge (X axis)
+    addLine(0, 0, 0, 0, size, 0, axisColor); // left edge (Y axis)
 
     // ── Tick marks on the BORDER edges ──
-    // X-axis ticks: along the bottom edge (Y = -half), ticks extend inward (+Y)
+    // X-axis ticks: along the bottom edge (Y = 0), ticks extend inward (+Y)
     this.ticks = [];
     for (let i = 0; i <= this.gridDivisions; i++) {
-      const p = -half + i * step;
+      const p = i * step;
       // Tick mark on bottom edge
-      addLine(p, -half, 0, p, -half + tickLen, 0, tickColor);
+      addLine(p, 0, 0, p, tickLen, 0, tickColor);
       // Label position: just inside the tick, at the bottom edge
-      this.ticks.push({ position: [p, -half + tickLen, 0], value: p, axis: 0 });
+      this.ticks.push({ position: [p, tickLen, 0], value: p, axis: 0 });
     }
 
-    // Y-axis ticks: along the left edge (X = -half), ticks extend inward (+X)
+    // Y-axis ticks: along the left edge (X = 0), ticks extend inward (+X)
     for (let i = 0; i <= this.gridDivisions; i++) {
-      const p = -half + i * step;
+      const p = i * step;
       // Tick mark on left edge
-      addLine(-half, p, 0, -half + tickLen, p, 0, tickColor);
+      addLine(0, p, 0, tickLen, p, 0, tickColor);
       // Label position: just inside the tick, at the left edge
-      this.ticks.push({ position: [-half + tickLen, p, 0], value: p, axis: 1 });
+      this.ticks.push({ position: [tickLen, p, 0], value: p, axis: 1 });
     }
 
     const vertices = new Float32Array(lines);
