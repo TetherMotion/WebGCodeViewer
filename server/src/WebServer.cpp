@@ -75,8 +75,8 @@ bool WebServer::start() {
     if (config_.threads > 0) app.setThreadNum(config_.threads);
 
     // Allow large G-code file uploads (default Drogon limit is 1MB).
-    // G-code files can be 100MB+, so set a generous limit.
-    app.setClientMaxBodySize(512 * 1024 * 1024); // 512MB
+    // G-code files for large prints can be several GB, so set 8GB limit.
+    app.setClientMaxBodySize(8ULL * 1024 * 1024 * 1024); // 8GB
 
     // Run Drogon in the main thread — blocks until quit() is called.
     // Ctrl+C sends SIGINT → Drogon's handler calls quit() → app.run() returns.
