@@ -74,6 +74,10 @@ bool WebServer::start() {
     app.addListener(addr, config_.port);
     if (config_.threads > 0) app.setThreadNum(config_.threads);
 
+    // Allow large G-code file uploads (default Drogon limit is 1MB).
+    // G-code files can be 100MB+, so set a generous limit.
+    app.setClientMaxBodySize(512 * 1024 * 1024); // 512MB
+
     // Run Drogon in the main thread — blocks until quit() is called.
     // Ctrl+C sends SIGINT → Drogon's handler calls quit() → app.run() returns.
     app.run();
@@ -96,6 +100,33 @@ void WebServer::registerStaticAssets() {
     auto& app = drogon::app();
     app.setDocumentRoot(config_.webRoot);
     app.setHomePage("index.html");
+
+    // Serve a minimal favicon to avoid 404 noise
+    app.registerHandler("/favicon.ico",
+        [this](const drogon::HttpRequestPtr& req,
+               std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+            // Try to serve from web root first
+            std::string favPath = config_.webRoot + "/favicon.ico";
+            auto resp = drogon::HttpResponse::newFileResponse(favPath);
+            // If file doesn't exist, Drogon returns 404 — that's fine,
+            // but we can also serve an inline 1x1 PNG to suppress the error
+            if (resp->getStatusCode() == drogon::HttpStatusCode::k404NotFound) {
+                // Minimal 1x1 transparent PNG
+                static const unsigned char png[] = {
+                    0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A,0x00,0x00,0x00,0x0D,
+                    0x49,0x48,0x44,0x52,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,
+                    0x08,0x06,0x00,0x00,0x00,0x1F,0x15,0xC4,0x89,0x00,0x00,0x00,
+                    0x0D,0x49,0x44,0x41,0x54,0x78,0x9C,0x63,0x00,0x01,0x00,0x00,
+                    0x05,0x00,0x01,0x0D,0x0A,0x2D,0xB4,0x00,0x00,0x00,0x00,0x49,
+                    0x45,0x4E,0x44,0xAE,0x42,0x60,0x82
+                };
+                resp = drogon::HttpResponse::newHttpResponse();
+                resp->setContentTypeCode(drogon::CT_IMAGE_PNG);
+                resp->setBody(std::string(reinterpret_cast<const char*>(png), sizeof(png)));
+                resp->addHeader("Cache-Control", "max-age=86400");
+            }
+            cb(resp);
+        }, {drogon::Get});
 
     // SPA fallback: serve index.html for unmatched GET routes
     app.registerHandler("/",
