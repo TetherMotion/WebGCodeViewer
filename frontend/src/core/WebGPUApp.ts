@@ -1139,7 +1139,8 @@ export class WebGPUApp {
 
   /**
    * Set the camera to a standard view direction.
-   * The orbit distance is preserved from the current camera state.
+   * The camera is re-framed on the loaded object's bounding box so the
+   * entire object is visible, then oriented to the requested direction.
    */
   private setViewDirection(dir: ViewDirection): void {
     // Standard view angles (angle, elevation)
@@ -1154,6 +1155,18 @@ export class WebGPUApp {
       left:   { angle: degToRad(-90),  elevation: degToRad(0) },
     };
 
+    // Re-frame on the object's bounding box so the whole object is visible
+    // regardless of any prior zoom/pan. fitToBounds centers the orbit target
+    // on the bbox midpoint and sets the orbit distance to fit the object.
+    const bounds = this.getCurrentFullBounds();
+    if (bounds) {
+      this.camera.fitToBounds(
+        { x: bounds.min[0], y: bounds.min[1], z: bounds.min[2] },
+        { x: bounds.max[0], y: bounds.max[1], z: bounds.max[2] },
+      );
+    }
+
+    // Orient to the requested direction, keeping the distance just computed.
     const preset = presets[dir];
     this.camera.setOrbit(preset.angle, preset.elevation, this.camera.orbitDistanceVal);
   }

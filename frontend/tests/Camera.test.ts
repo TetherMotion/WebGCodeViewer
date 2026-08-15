@@ -69,6 +69,63 @@ describe('Camera', () => {
     expect(t.z).toBeCloseTo(50, 0);
   });
 
+  it('fitToBounds centers on bbox midpoint', () => {
+    const cam = new Camera();
+    cam.setAspect(1.0);
+    cam.fitToBounds(
+      { x: 10, y: 20, z: 30 },
+      { x: 110, y: 120, z: 130 },
+    );
+    cam.update(1.0);
+    const t = cam.target;
+    expect(t.x).toBeCloseTo(60, 5);
+    expect(t.y).toBeCloseTo(70, 5);
+    expect(t.z).toBeCloseTo(80, 5);
+  });
+
+  it('fitToBounds sets distance so the whole object fits from any angle', () => {
+    const cam = new Camera();
+    cam.setAspect(1.0);
+    // A long thin box: 200 x 1 x 1. The bounding sphere radius is ~100.
+    // The old max-dimension approach used size=200 and would clip the
+    // 200-long axis when viewed from an angle; the sphere approach uses
+    // the half-diagonal so the silhouette fits regardless of orientation.
+    cam.fitToBounds(
+      { x: -100, y: -0.5, z: -0.5 },
+      { x: 100, y: 0.5, z: 0.5 },
+    );
+    const dist = cam.orbitDistanceVal;
+    expect(dist).toBeGreaterThan(0);
+    // For a sphere of radius r viewed with vertical half-fov h, the eye must
+    // be at least r / sin(h) away for the sphere to fit. Verify the chosen
+    // distance satisfies this for the default 45° fov.
+    const radius = 0.5 * Math.sqrt(200 * 200 + 1 * 1 + 1 * 1);
+    const halfFov = degToRad(45) / 2;
+    expect(dist).toBeGreaterThanOrEqual(radius / Math.sin(halfFov) - 1e-6);
+  });
+
+  it('fitToBounds accounts for portrait aspect ratio', () => {
+    const cam = new Camera();
+    // Portrait viewport: horizontal fov is the constraint.
+    cam.setAspect(0.5);
+    cam.fitToBounds(
+      { x: -100, y: -1, z: -1 },
+      { x: 100, y: 1, z: 1 },
+    );
+    const distPortrait = cam.orbitDistanceVal;
+
+    // Landscape viewport with the same bounds: vertical fov is the
+    // constraint and is larger, so the required distance is smaller.
+    cam.setAspect(2.0);
+    cam.fitToBounds(
+      { x: -100, y: -1, z: -1 },
+      { x: 100, y: 1, z: 1 },
+    );
+    const distLandscape = cam.orbitDistanceVal;
+
+    expect(distPortrait).toBeGreaterThan(distLandscape);
+  });
+
   it('viewProjectionMatrix is 16 elements', () => {
     const cam = new Camera();
     const vp = cam.viewProjectionMatrix;

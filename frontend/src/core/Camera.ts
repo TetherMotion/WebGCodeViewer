@@ -157,15 +157,23 @@ export class Camera {
       y: (min.y + max.y) / 2,
       z: (min.z + max.z) / 2,
     };
-    const size = Math.max(
-      max.x - min.x,
-      max.y - min.y,
-      max.z - min.z,
-    );
-    const distance = size * padding / (2 * Math.tan(this._fov / 2));
+    // Use the bounding sphere radius so the whole object is visible from
+    // any viewing angle (the sphere's silhouette is a circle of this radius
+    // regardless of orientation). Using only the largest axis dimension would
+    // clip the object when viewed from an angle (e.g. the default iso view),
+    // because the projected silhouette of an axis-aligned box grows as it is
+    // rotated away from the axis.
+    const dx = max.x - min.x, dy = max.y - min.y, dz = max.z - min.z;
+    const radius = 0.5 * Math.sqrt(dx * dx + dy * dy + dz * dz);
+    // Fit against the smaller of the vertical/horizontal half-FOVs so the
+    // sphere fits in both dimensions regardless of viewport aspect ratio.
+    const halfV = this._fov / 2;
+    const halfH = Math.atan(Math.tan(halfV) * this._aspect);
+    const halfFov = Math.min(halfV, halfH);
+    const distance = (radius * padding) / Math.sin(halfFov);
     this.setTarget(center);
     this.orbitDistance = Math.max(1, distance);
-    this._orthoScale = size * padding / 2;
+    this._orthoScale = radius * padding;
     this.updateOrbitPosition();
   }
 }
