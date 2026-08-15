@@ -501,6 +501,55 @@ export class WebGPUApp {
     });
     this.canvas.addEventListener('mouseleave', () => { isDragging = false; isPanning = false; });
 
+    // Feature #150: Touch gesture support
+    let touchLastX = 0, touchLastY = 0;
+    let touchPinchDist = 0;
+    let touchIsPanning = false;
+
+    this.canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        touchLastX = e.touches[0].clientX;
+        touchLastY = e.touches[0].clientY;
+        touchIsPanning = false;
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        touchPinchDist = Math.sqrt(dx * dx + dy * dy);
+      }
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        const dx = e.touches[0].clientX - touchLastX;
+        const dy = e.touches[0].clientY - touchLastY;
+        touchLastX = e.touches[0].clientX;
+        touchLastY = e.touches[0].clientY;
+        if (touchIsPanning) {
+          this.camera.pan(dx, dy);
+        } else {
+          this.camera.orbit(-dx * 0.01, dy * 0.01);
+        }
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (touchPinchDist > 0) {
+          const factor = touchPinchDist / dist;
+          this.camera.zoom(factor);
+        }
+        touchPinchDist = dist;
+      }
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 0) {
+        touchPinchDist = 0;
+      }
+    }, { passive: false });
+
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       const factor = e.deltaY > 0 ? 1.1 : 0.9;

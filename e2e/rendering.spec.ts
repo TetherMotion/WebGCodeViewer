@@ -2277,3 +2277,148 @@ test.describe('Colorblind-friendly color maps (Feature #126)', () => {
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 25: Touch Gesture Support (Feature #150)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Touch gesture support (Feature #150)', () => {
+  test('touch events are handled without errors', async ({ page }) => {
+    const collector = setupMessageCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Simulate touch events on canvas
+    await page.evaluate(() => {
+      const canvas = document.getElementById('webgpu-canvas') as HTMLCanvasElement;
+      const rect = canvas.getBoundingClientRect();
+
+      // Single touch start
+      const touch1 = new Touch({
+        identifier: 0,
+        target: canvas,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+      });
+      canvas.dispatchEvent(new TouchEvent('touchstart', {
+        touches: [touch1],
+        targetTouches: [touch1],
+        changedTouches: [touch1],
+        bubbles: true,
+        cancelable: true,
+      }));
+
+      // Touch move
+      const touch1Move = new Touch({
+        identifier: 0,
+        target: canvas,
+        clientX: rect.left + rect.width / 2 + 20,
+        clientY: rect.top + rect.height / 2 + 20,
+      });
+      canvas.dispatchEvent(new TouchEvent('touchmove', {
+        touches: [touch1Move],
+        targetTouches: [touch1Move],
+        changedTouches: [touch1Move],
+        bubbles: true,
+        cancelable: true,
+      }));
+
+      // Touch end
+      canvas.dispatchEvent(new TouchEvent('touchend', {
+        touches: [],
+        targetTouches: [],
+        changedTouches: [touch1Move],
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    await page.waitForTimeout(500);
+    collector.assertClean('touch events');
+  });
+
+  test('pinch zoom touch events are handled without errors', async ({ page }) => {
+    const collector = setupMessageCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Simulate pinch zoom
+    await page.evaluate(() => {
+      const canvas = document.getElementById('webgpu-canvas') as HTMLCanvasElement;
+      const rect = canvas.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+
+      // Two-finger touch start (pinch)
+      const t1 = new Touch({ identifier: 0, target: canvas, clientX: cx - 50, clientY: cy });
+      const t2 = new Touch({ identifier: 1, target: canvas, clientX: cx + 50, clientY: cy });
+      canvas.dispatchEvent(new TouchEvent('touchstart', {
+        touches: [t1, t2], targetTouches: [t1, t2], changedTouches: [t1, t2],
+        bubbles: true, cancelable: true,
+      }));
+
+      // Pinch in (fingers closer)
+      const t1m = new Touch({ identifier: 0, target: canvas, clientX: cx - 30, clientY: cy });
+      const t2m = new Touch({ identifier: 1, target: canvas, clientX: cx + 30, clientY: cy });
+      canvas.dispatchEvent(new TouchEvent('touchmove', {
+        touches: [t1m, t2m], targetTouches: [t1m, t2m], changedTouches: [t1m, t2m],
+        bubbles: true, cancelable: true,
+      }));
+
+      // Touch end
+      canvas.dispatchEvent(new TouchEvent('touchend', {
+        touches: [], targetTouches: [], changedTouches: [t1m, t2m],
+        bubbles: true, cancelable: true,
+      }));
+    });
+
+    await page.waitForTimeout(500);
+    collector.assertClean('pinch zoom touch events');
+  });
+
+  test('touch events work with loaded G-code without errors', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'touch_gcode_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // Simulate touch orbit
+    await page.evaluate(() => {
+      const canvas = document.getElementById('webgpu-canvas') as HTMLCanvasElement;
+      const rect = canvas.getBoundingClientRect();
+
+      const t1 = new Touch({
+        identifier: 0, target: canvas,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+      });
+      canvas.dispatchEvent(new TouchEvent('touchstart', {
+        touches: [t1], targetTouches: [t1], changedTouches: [t1],
+        bubbles: true, cancelable: true,
+      }));
+
+      const t2 = new Touch({
+        identifier: 0, target: canvas,
+        clientX: rect.left + rect.width / 2 + 30,
+        clientY: rect.top + rect.height / 2 + 30,
+      });
+      canvas.dispatchEvent(new TouchEvent('touchmove', {
+        touches: [t2], targetTouches: [t2], changedTouches: [t2],
+        bubbles: true, cancelable: true,
+      }));
+
+      canvas.dispatchEvent(new TouchEvent('touchend', {
+        touches: [], targetTouches: [], changedTouches: [t2],
+        bubbles: true, cancelable: true,
+      }));
+    });
+
+    await page.waitForTimeout(500);
+    collector.assertClean('touch events with loaded G-code');
+  });
+});
