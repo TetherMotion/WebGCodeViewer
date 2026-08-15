@@ -2,10 +2,9 @@
  * @file DirectionCubeRenderer.ts
  * @brief WebGPU renderer for CAD-like direction cube buttons.
  *
- * Renders 7 small 3D cubes to a single canvas, each viewed from a
- * different direction. Cubes are gray with semi-transparent faces
- * and more opaque edges. The face pointing toward the viewer (the
- * "marked" face) is rendered at higher opacity than the other sides.
+ * Renders 7 small 3D cubes to a single canvas, all viewed from the same
+ * isometric perspective. Each cube highlights a different face (or none
+ * for the iso cube) to indicate which direction it will snap the camera to.
  *
  * Opacity levels:
  *   - Edges (corners):  50%
@@ -15,7 +14,7 @@
  * Uses WebGPU viewports to render each cube in its own grid cell.
  */
 
-import { Mat4, mat4LookAt, mat4Ortho, mat4Multiply, Vec3 } from '../core/MathUtils';
+import { Mat4, mat4LookAt, mat4Ortho, mat4Multiply } from '../core/MathUtils';
 import { ViewDirection } from '../ui/NavigationCube';
 
 // Face indices
@@ -37,16 +36,8 @@ const HIGHLIGHT_MAP: Record<ViewDirection, number> = {
   left:   FACE_NX,
 };
 
-// View directions for each cube
-const VIEW_PARAMS: Record<ViewDirection, { eye: Vec3; up: Vec3 }> = {
-  iso:    { eye: { x: 2, y: -2, z: 2 },  up: { x: 0, y: 0, z: 1 } },
-  top:    { eye: { x: 0, y: 0, z: 2 },   up: { x: 0, y: 1, z: 0 } },
-  bottom: { eye: { x: 0, y: 0, z: -2 },  up: { x: 0, y: 1, z: 0 } },
-  front:  { eye: { x: 0, y: -2, z: 0 },  up: { x: 0, y: 0, z: 1 } },
-  back:   { eye: { x: 0, y: 2, z: 0 },   up: { x: 0, y: 0, z: 1 } },
-  right:  { eye: { x: 2, y: 0, z: 0 },   up: { x: 0, y: 0, z: 1 } },
-  left:   { eye: { x: -2, y: 0, z: 0 },  up: { x: 0, y: 0, z: 1 } },
-};
+// All cubes use the same isometric view — only the highlighted face differs.
+const ISO_VIEW = { eye: { x: 2, y: -2, z: 2 }, up: { x: 0, y: 0, z: 1 } };
 
 const DIRECTIONS: ViewDirection[] = ['iso', 'top', 'front', 'right', 'left', 'back', 'bottom'];
 
@@ -402,12 +393,13 @@ export class DirectionCubeRenderer {
     const cellH = Math.max(1, this.canvas.clientHeight * dpr / this.rows);
 
     // ── Write all per-cube uniform data BEFORE recording the render pass ──
+    // All cubes share the same isometric view; only the highlighted face differs.
+    const view = mat4LookAt(ISO_VIEW.eye, { x: 0, y: 0, z: 0 }, ISO_VIEW.up);
+    const proj = mat4Ortho(-0.8, 0.8, -0.8, 0.8, 0.1, 10);
+    const viewProj = mat4Multiply(proj, view);
+
     for (let i = 0; i < DIRECTIONS.length; i++) {
       const dir = DIRECTIONS[i];
-      const params = VIEW_PARAMS[dir];
-      const view = mat4LookAt(params.eye, { x: 0, y: 0, z: 0 }, params.up);
-      const proj = mat4Ortho(-0.8, 0.8, -0.8, 0.8, 0.1, 10);
-      const viewProj = mat4Multiply(proj, view);
 
       const slotSize = DirectionCubeRenderer.UNIFORM_SLOT_SIZE;
       const uniformData = new ArrayBuffer(slotSize);
