@@ -1,16 +1,11 @@
 /**
  * @file ControlPanel.ts
- * @brief Bottom control panel for file operations, view settings, and status.
- *
- * Replaces the old Toolbar. Contains:
- * - Open G-code button
- * - Color attribute & color map selectors
- * - Grid / Cross-section / Reset view / Export buttons
- * - Job status display
+ * @brief Bottom control panel for file operations, view settings, status,
+ * layer navigation, and time playback.
  */
 
 import { EventDispatcher } from '../core/EventDispatcher';
-import type { GetJobStatusResponse } from '../generated/tether_viewer_pb';
+import type { GetJobStatusResponse, GetZLayersResponse } from '../generated/tether_viewer_pb';
 
 export interface ControlPanelEvents {
   uploadFile: File;
@@ -20,6 +15,9 @@ export interface ControlPanelEvents {
   toggleCrossSection: void;
   resetView: void;
   exportImage: void;
+  layerChanged: number;       // layer index, -1 = all layers
+  timeChanged: number;        // 0..1 fraction of path
+  playStateChanged: boolean;  // true = playing
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -29,6 +27,18 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
   private crossBtn: HTMLButtonElement;
   private gridActive = false;
   private crossActive = false;
+
+  // Layer slider
+  private layerGroup: HTMLElement;
+  private layerSlider: HTMLInputElement;
+  private layerLabel: HTMLElement;
+
+  // Time slider
+  private timeGroup: HTMLElement;
+  private timeSlider: HTMLInputElement;
+  private timeLabel: HTMLElement;
+  private playBtn: HTMLButtonElement;
+  private playing = false;
 
   constructor(container: HTMLElement) {
     super();
@@ -127,6 +137,87 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     viewGroup.appendChild(exportBtn);
     this.element.appendChild(viewGroup);
 
+    // Layer slider group
+    this.layerGroup = document.createElement('div');
+    this.layerGroup.className = 'control-group layer-group';
+    this.layerGroup.style.display = 'none'; // hidden until layers are loaded
+
+    const layerTitle = document.createElement('span');
+    layerTitle.className = 'slider-label';
+    layerTitle.textContent = 'Layer:';
+    this.layerGroup.appendChild(layerTitle);
+
+    this.layerSlider = document.createElement('input');
+    this.layerSlider.type = 'range';
+    this.layerSlider.min = '0';
+    this.layerSlider.max = '0';
+    this.layerSlider.value = '0';
+    this.layerSlider.className = 'layer-slider';
+    this.layerSlider.oninput = () => {
+      const val = parseInt(this.layerSlider.value, 10);
+      this.layerLabel.textContent = val < 0 ? 'All' : `${val}`;
+      this.emit('layerChanged', val);
+    };
+    this.layerGroup.appendChild(this.layerSlider);
+
+    this.layerLabel = document.createElement('span');
+    this.layerLabel.className = 'slider-value';
+    this.layerLabel.textContent = 'All';
+    this.layerGroup.appendChild(this.layerLabel);
+
+    // "All layers" button
+    const allLayersBtn = document.createElement('button');
+    allLayersBtn.textContent = 'All';
+    allLayersBtn.className = 'small-btn';
+    allLayersBtn.onclick = () => {
+      this.layerSlider.value = '-1';
+      this.layerLabel.textContent = 'All';
+      this.emit('layerChanged', -1);
+    };
+    this.layerGroup.appendChild(allLayersBtn);
+
+    this.element.appendChild(this.layerGroup);
+
+    // Time slider group
+    this.timeGroup = document.createElement('div');
+    this.timeGroup.className = 'control-group time-group';
+    this.timeGroup.style.display = 'none'; // hidden until data is loaded
+
+    this.playBtn = document.createElement('button');
+    this.playBtn.textContent = '▶';
+    this.playBtn.className = 'play-btn';
+    this.playBtn.onclick = () => {
+      this.playing = !this.playing;
+      this.playBtn.textContent = this.playing ? '⏸' : '▶';
+      this.emit('playStateChanged', this.playing);
+    };
+    this.timeGroup.appendChild(this.playBtn);
+
+    const timeTitle = document.createElement('span');
+    timeTitle.className = 'slider-label';
+    timeTitle.textContent = 'Time:';
+    this.timeGroup.appendChild(timeTitle);
+
+    this.timeSlider = document.createElement('input');
+    this.timeSlider.type = 'range';
+    this.timeSlider.min = '0';
+    this.timeSlider.max = '1000';
+    this.timeSlider.value = '1000';
+    this.timeSlider.className = 'time-slider';
+    this.timeSlider.oninput = () => {
+      const frac = parseInt(this.timeSlider.value, 10) / 1000;
+      this.timeLabel.textContent = `${(frac * 100).toFixed(1)}%`;
+      this.emit('timeChanged', frac);
+    };
+    this.timeGroup.appendChild(this.timeSlider);
+
+    this.timeLabel = document.createElement('span');
+    this.timeLabel.className = 'slider-value';
+    this.timeLabel.textContent = '100%';
+    this.timeGroup.appendChild(this.timeLabel);
+
+    this.element.appendChild(this.timeGroup);
+
     // Status group (right-aligned)
     const statusGroup = document.createElement('div');
     statusGroup.className = 'control-group status';
@@ -146,6 +237,8 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
         break;
       case 'ready':
         this.statusEl.textContent = `Ready: ${status.sampleCount} samples, ${status.duration.toFixed(2)}s, ${status.pathLength.toFixed(1)}mm`;
+        // Show time slider when data is ready
+        this.timeGroup.style.display = 'flex';
         break;
       case 'failed':
         this.statusEl.textContent = `Failed: ${status.errorMessage || 'unknown error'}`;
@@ -157,5 +250,37 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
 
   setStatus(text: string): void {
     this.statusEl.textContent = text;
+  }
+
+  /**
+   * Update the layer slider with Z-layer data from the server.
+   */
+  updateLayers(layers: GetZLayersResponse): void {
+    if (layers.totalLayers <= 0) {
+      this.layerGroup.style.display = 'none';
+      return;
+    }
+    this.layerGroup.style.display = 'flex';
+    this.layerSlider.min = '0';
+    this.layerSlider.max = String(layers.totalLayers - 1);
+    this.layerSlider.value = String(layers.totalLayers - 1);
+    this.layerLabel.textContent = 'All';
+  }
+
+  /**
+   * Set the time slider position (0..1). Called by the playback animation.
+   */
+  setTimePosition(frac: number): void {
+    this.timeSlider.value = String(Math.round(frac * 1000));
+    this.timeLabel.textContent = `${(frac * 100).toFixed(1)}%`;
+  }
+
+  isPlaying(): boolean {
+    return this.playing;
+  }
+
+  setPlaying(playing: boolean): void {
+    this.playing = playing;
+    this.playBtn.textContent = playing ? '⏸' : '▶';
   }
 }

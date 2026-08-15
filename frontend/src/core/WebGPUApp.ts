@@ -6,13 +6,14 @@
 import { Camera } from './Camera';
 import { RpcClient } from './RpcClient';
 import { ColorMap } from './ColorMap';
-import { parseTTHR, TTHRData } from './TthrParser';
+import { parseTTHR, TTHRData, extractZLayer } from './TthrParser';
 import { ToolpathRenderer, ColorAttribute } from '../renderers/ToolpathRenderer';
 import { GridRenderer } from '../renderers/GridRenderer';
 import { CrossSectionRenderer } from '../renderers/CrossSectionRenderer';
 import { PointCloudRenderer } from '../renderers/PointCloudRenderer';
 import { OverlayRenderer } from '../renderers/OverlayRenderer';
 import { NavigationGizmo } from '../renderers/NavigationGizmo';
+import { PrintHeadMarker } from '../renderers/PrintHeadMarker';
 import { ControlPanel } from '../ui/ControlPanel';
 import { GcodeViewer } from '../ui/GcodeViewer';
 import { NavigationCube, ViewDirection } from '../ui/NavigationCube';
@@ -34,6 +35,7 @@ export class WebGPUApp {
   private pointCloudRenderer: PointCloudRenderer | null = null;
   private overlayRenderer: OverlayRenderer | null = null;
   private navGizmo: NavigationGizmo | null = null;
+  private printHeadMarker: PrintHeadMarker | null = null;
 
   private controlPanel: ControlPanel;
   private gcodeViewer: GcodeViewer;
@@ -41,9 +43,15 @@ export class WebGPUApp {
 
   private currentJobId: string | null = null;
   private currentData: TTHRData | null = null;
+  private fullData: TTHRData | null = null;  // unfiltered data (for layer reset)
   private currentFilename: string = '';
   private animationId: number | null = null;
   private lastFrameTime = 0;
+
+  // Playback state
+  private playing = false;
+  private playProgress = 1.0;  // 0..1
+  private playSpeed = 0.1;     // fraction per second
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -116,6 +124,27 @@ export class WebGPUApp {
     this.navCube.on('projectionChanged', (mode) => {
       this.camera.setProjectionMode(mode);
     });
+
+    // Layer slider → filter toolpath by Z-layer
+    this.controlPanel.on('layerChanged', (layerIdx) => {
+      this.applyLayerFilter(layerIdx);
+    });
+
+    // Time slider → set playback position
+    this.controlPanel.on('timeChanged', (frac) => {
+      this.playProgress = frac;
+      this.playing = false;
+      this.controlPanel.setPlaying(false);
+      this.updatePlayPosition();
+    });
+
+    // Play/pause button
+    this.controlPanel.on('playStateChanged', (playing) => {
+      this.playing = playing;
+      if (playing && this.playProgress >= 1.0) {
+        this.playProgress = 0;
+      }
+    });
   }
 
   async init(): Promise<void> {
@@ -148,6 +177,10 @@ export class WebGPUApp {
     // Navigation gizmo — uses the same device but a separate canvas
     this.navGizmo = new NavigationGizmo(this.device, this.navCube.gizmoCanvas);
     await this.navGizmo.init();
+
+    // Print head marker
+    this.printHeadMarker = new PrintHeadMarker(this.device);
+    await this.printHeadMarker.init(this.format);
 
     this.setupInputHandlers();
     this.startRenderLoop();
@@ -203,6 +236,28 @@ export class WebGPUApp {
     gizmoResizeObserver.observe(this.navCube.gizmoCanvas);
     this.resize();
     this.navGizmo?.resize();
+
+    // Global keyboard shortcuts
+    window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+  }
+
+  private handleKeyDown(e: KeyboardEvent): void {
+    // Ctrl+F → G-code search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      e.preventDefault();
+      if (this.gcodeViewer.isSearchVisible()) {
+        this.gcodeViewer.hideSearch();
+      } else {
+        this.gcodeViewer.showSearch();
+      }
+      return;
+    }
+
+    // Escape → close search if open
+    if (e.key === 'Escape' && this.gcodeViewer.isSearchVisible()) {
+      this.gcodeViewer.hideSearch();
+      return;
+    }
   }
 
   /**
@@ -288,11 +343,36 @@ export class WebGPUApp {
       const dt = (now - this.lastFrameTime) / 1000;
       this.lastFrameTime = now;
       this.camera.update(dt);
+
+      // Playback animation
+      if (this.playing) {
+        this.playProgress += dt * this.playSpeed;
+        if (this.playProgress >= 1.0) {
+          this.playProgress = 1.0;
+          this.playing = false;
+          this.controlPanel.setPlaying(false);
+        }
+        this.controlPanel.setTimePosition(this.playProgress);
+        this.updatePlayPosition();
+      }
+
       this.render();
       this.animationId = requestAnimationFrame(frame);
     };
     this.lastFrameTime = performance.now();
     this.animationId = requestAnimationFrame(frame);
+  }
+
+  private updatePlayPosition(): void {
+    if (this.toolpathRenderer && this.currentData) {
+      this.toolpathRenderer.setProgress(this.playProgress);
+      // Update print head marker position
+      const pos = this.toolpathRenderer.getPositionAt(this.playProgress, this.currentData);
+      if (pos && this.printHeadMarker) {
+        this.printHeadMarker.setPosition(pos[0], pos[1], pos[2]);
+        this.printHeadMarker.visible = this.playProgress < 1.0;
+      }
+    }
   }
 
   private render(): void {
@@ -318,6 +398,7 @@ export class WebGPUApp {
     this.toolpathRenderer?.render(pass, viewProj);
     this.crossSectionRenderer?.render(pass, viewProj);
     this.pointCloudRenderer?.render(pass, viewProj);
+    this.printHeadMarker?.render(pass, viewProj);
     this.overlayRenderer?.render(pass, viewProj);
 
     pass.end();
@@ -390,6 +471,7 @@ export class WebGPUApp {
   private async loadJobData(jobId: string): Promise<void> {
     const binaryResp = await this.rpcClient.getBinary(jobId);
     this.currentData = parseTTHR(binaryResp.data);
+    this.fullData = this.currentData;
     this.toolpathRenderer?.updateData(this.currentData!);
     this.crossSectionRenderer?.updateData(this.currentData!);
 
@@ -405,6 +487,46 @@ export class WebGPUApp {
       const blocks = await this.rpcClient.getBlocks(jobId);
       this.gcodeViewer.updateBlocks(blocks);
     } catch (e) { console.error('Failed to load blocks:', e); }
+
+    // Load Z-layers for layer navigation
+    try {
+      const layers = await this.rpcClient.getZLayers(jobId);
+      this.controlPanel.updateLayers(layers);
+    } catch (e) { console.error('Failed to load Z-layers:', e); }
+
+    // Reset playback
+    this.playProgress = 1.0;
+    this.playing = false;
+    this.controlPanel.setPlaying(false);
+    this.updatePlayPosition();
+  }
+
+  /**
+   * Filter the toolpath to show only a specific Z-layer.
+   * Pass -1 to show all layers.
+   */
+  private applyLayerFilter(layerIdx: number): void {
+    if (!this.fullData) return;
+
+    if (layerIdx < 0) {
+      // Show all layers
+      this.currentData = this.fullData;
+    } else {
+      // Extract the specific Z-layer
+      // Compute Z range for the layer using the layer height
+      const h = this.fullData.header;
+      const zMin = h.boundsMin[2];
+      const zMax = h.boundsMax[2];
+      const totalLayers = Math.max(1, Math.ceil((zMax - zMin) / 0.2)); // estimate 0.2mm layers
+      const layerHeight = (zMax - zMin) / totalLayers;
+      const layerZMin = zMin + layerIdx * layerHeight;
+      const layerZMax = layerZMin + layerHeight;
+      this.currentData = extractZLayer(this.fullData, layerZMin, layerZMax);
+    }
+
+    this.toolpathRenderer?.updateData(this.currentData!);
+    this.crossSectionRenderer?.updateData(this.currentData!);
+    this.updatePlayPosition();
   }
 
   destroy(): void {
@@ -415,6 +537,7 @@ export class WebGPUApp {
     this.pointCloudRenderer?.destroy();
     this.overlayRenderer?.destroy();
     this.navGizmo?.destroy();
+    this.printHeadMarker?.destroy();
     this.depthTexture?.destroy();
   }
 }

@@ -285,14 +285,29 @@ body {
     overflow: auto;
     font-family: var(--font-mono);
     font-size: 12px;
-    line-height: 1.5;
+    line-height: 20px;
+    position: relative;
+}
+
+.gcode-spacer {
+    width: 100%;
+}
+
+.gcode-viewport {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    will-change: transform;
 }
 
 .gcode-line {
     display: flex;
+    height: 20px;
     padding: 0 8px;
     cursor: pointer;
     white-space: pre;
+    box-sizing: border-box;
 }
 
 .gcode-line:hover {
@@ -307,6 +322,16 @@ body {
 
 .gcode-line.highlighted-related {
     background: rgba(74, 158, 255, 0.06);
+}
+
+.gcode-line.search-match {
+    background: rgba(255, 200, 0, 0.12);
+}
+
+.gcode-line.search-current {
+    background: rgba(255, 200, 0, 0.25);
+    border-left: 3px solid #ffc800;
+    padding-left: 5px;
 }
 
 .gcode-line-number {
@@ -339,6 +364,55 @@ body {
 
 .gcode-line-content .gcode-number {
     color: #b8d4a8;
+}
+
+/* Search bar */
+.gcode-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border);
+}
+
+.gcode-search-input {
+    flex: 1;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+    padding: 4px 8px;
+    outline: none;
+}
+
+.gcode-search-input:focus {
+    border-color: var(--accent);
+}
+
+.gcode-search-results {
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+    min-width: 50px;
+    text-align: center;
+}
+
+.gcode-search-nav {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 3px 8px;
+    line-height: 1;
+}
+
+.gcode-search-nav:hover {
+    color: var(--text-primary);
+    border-color: var(--accent);
 }
 
 #error-message {
@@ -450,6 +524,37 @@ body {
 #bottom-panel .status-text {
     font-family: var(--font-mono);
     font-size: 11px;
+}
+
+/* Sliders in control panel */
+.slider-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.slider-value {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-primary);
+    min-width: 36px;
+    text-align: right;
+}
+
+.layer-slider, .time-slider {
+    width: 120px;
+    cursor: pointer;
+}
+
+.play-btn {
+    font-size: 14px;
+    padding: 2px 8px;
+    line-height: 1;
+}
+
+.small-btn {
+    font-size: 10px;
+    padding: 2px 6px;
 }
 
 /* Panels */

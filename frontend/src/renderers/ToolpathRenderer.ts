@@ -21,12 +21,14 @@ export class ToolpathRenderer {
   private positionBuffer: GPUBuffer | null = null;
   private colorBuffer: GPUBuffer | null = null;
   private highlightBuffer: GPUBuffer | null = null;
+  private sampleIndexBuffer: GPUBuffer | null = null;
   private indexBuffer: GPUBuffer | null = null;
   private indexCount: number = 0;
   private uniformBuffer: GPUBuffer | null = null;
   private bindGroup: GPUBindGroup | null = null;
   private sampleCount: number = 0;
   private hasHighlight = false;
+  private progress: number = 1.0; // 0..1 fraction of path to show
 
   options: ToolpathRenderOptions = {
     colorAttribute: 'velocity',
@@ -45,6 +47,10 @@ export class ToolpathRenderer {
       code: `
         struct Uniforms {
           viewProj: mat4x4<f32>,
+          progress: f32,    // 0..1 fraction of path to show
+          _pad0: f32,
+          _pad1: f32,
+          _pad2: f32,
         };
         @group(0) @binding(0) var<uniform> uniforms: Uniforms;
         @group(0) @binding(1) var colorLUT: texture_1d<f32>;
@@ -54,12 +60,14 @@ export class ToolpathRenderer {
           @location(0) position: vec3<f32>,
           @location(1) colorValue: f32,
           @location(2) highlight: f32,
+          @location(3) sampleIdx: f32,
         };
 
         struct VertexOutput {
           @builtin(position) clipPosition: vec4<f32>,
           @location(0) colorValue: f32,
           @location(1) highlight: f32,
+          @location(2) dimmed: f32,
         };
 
         @vertex
@@ -68,6 +76,13 @@ export class ToolpathRenderer {
           output.clipPosition = uniforms.viewProj * vec4<f32>(input.position, 1.0);
           output.colorValue = input.colorValue;
           output.highlight = input.highlight;
+          // Dim samples beyond the progress cutoff
+          let cutoff = uniforms.progress * f32(1000000.0);
+          if (input.sampleIdx > cutoff) {
+            output.dimmed = 1.0;
+          } else {
+            output.dimmed = 0.0;
+          }
           return output;
         }
 
@@ -77,7 +92,9 @@ export class ToolpathRenderer {
           // Blend toward bright white-yellow when highlighted
           let highlightColor = vec3<f32>(1.0, 0.95, 0.3);
           let blended = mix(color.rgb, highlightColor, input.highlight * 0.8);
-          return vec4<f32>(blended, 1.0);
+          // Dim untraced portion to 20% brightness
+          let finalColor = blended * (1.0 - input.dimmed * 0.8);
+          return vec4<f32>(finalColor, 1.0);
         }
       `,
     });
@@ -113,6 +130,10 @@ export class ToolpathRenderer {
             arrayStride: 4,
             attributes: [{ shaderLocation: 2, offset: 0, format: 'float32' }],
           },
+          {
+            arrayStride: 4,
+            attributes: [{ shaderLocation: 3, offset: 0, format: 'float32' }],
+          },
         ],
       },
       fragment: {
@@ -129,7 +150,7 @@ export class ToolpathRenderer {
     });
 
     this.uniformBuffer = this.device.createBuffer({
-      size: 64,
+      size: 80, // 64 (viewProj) + 4 (progress) + 12 (padding)
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
   }
@@ -213,6 +234,16 @@ export class ToolpathRenderer {
     this.device.queue.writeBuffer(this.highlightBuffer, 0, new Float32Array(n));
     this.hasHighlight = false;
 
+    // Sample index buffer (0, 1, 2, ... n-1) for progress cutoff
+    const sampleIndices = new Float32Array(n);
+    for (let i = 0; i < n; i++) sampleIndices[i] = i;
+    if (this.sampleIndexBuffer) this.sampleIndexBuffer.destroy();
+    this.sampleIndexBuffer = this.device.createBuffer({
+      size: sampleIndices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.sampleIndexBuffer, 0, sampleIndices);
+
     // Update color LUT
     this.updateColorLUT();
   }
@@ -246,6 +277,30 @@ export class ToolpathRenderer {
     this.hasHighlight = false;
   }
 
+  /**
+   * Set the progress fraction (0..1) for time-based playback.
+   * Samples beyond this fraction are dimmed.
+   */
+  setProgress(frac: number): void {
+    this.progress = Math.max(0, Math.min(1, frac));
+  }
+
+  /**
+   * Get the position at a given progress fraction (0..1).
+   * Returns null if no data is loaded.
+   */
+  getPositionAt(frac: number, data: TTHRData): [number, number, number] | null {
+    if (!data.positions) return null;
+    const n = data.header.sampleCount;
+    const axes = data.header.axisCount;
+    const idx = Math.min(n - 1, Math.max(0, Math.floor(frac * (n - 1))));
+    return [
+      data.positions[idx * axes],
+      data.positions[idx * axes + 1],
+      data.positions[idx * axes + 2],
+    ];
+  }
+
   private updateColorLUT(): void {
     if (!this.colorLUTTexture) return;
     const lut = this.options.colorMap.generateLUT(256);
@@ -268,10 +323,11 @@ export class ToolpathRenderer {
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.options.visible || !this.pipeline || !this.positionBuffer || this.sampleCount < 2) return;
 
-    // Update uniforms
-    const uniformData = new ArrayBuffer(64);
+    // Update uniforms (viewProj + progress)
+    const uniformData = new ArrayBuffer(80);
     const view = new Float32Array(uniformData);
     for (let i = 0; i < 16; i++) view[i] = viewProj[i];
+    view[16] = this.progress; // progress at offset 64 bytes (index 16)
     this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
 
     if (!this.bindGroup) {
@@ -290,6 +346,7 @@ export class ToolpathRenderer {
     pass.setVertexBuffer(0, this.positionBuffer);
     pass.setVertexBuffer(1, this.colorBuffer!);
     pass.setVertexBuffer(2, this.highlightBuffer!);
+    pass.setVertexBuffer(3, this.sampleIndexBuffer!);
     pass.setIndexBuffer(this.indexBuffer!, 'uint32');
     pass.drawIndexed(this.indexCount);
   }
@@ -298,6 +355,7 @@ export class ToolpathRenderer {
     this.positionBuffer?.destroy();
     this.colorBuffer?.destroy();
     this.highlightBuffer?.destroy();
+    this.sampleIndexBuffer?.destroy();
     this.indexBuffer?.destroy();
     this.uniformBuffer?.destroy();
     this.colorLUTTexture?.destroy();

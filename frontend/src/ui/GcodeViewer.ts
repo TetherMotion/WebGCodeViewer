@@ -1,11 +1,10 @@
 /**
  * @file GcodeViewer.ts
- * @brief Right-side panel showing G-code text with line highlighting.
+ * @brief Right-side panel showing G-code text with virtual scrolling,
+ * syntax highlighting, search, and line highlighting.
  *
- * Displays the raw G-code text with syntax highlighting and line numbers.
- * Clicking a line highlights the corresponding toolpath segment.
- * When a toolpath segment is hovered/clicked, the corresponding line is
- * highlighted and scrolled into view.
+ * Uses virtual scrolling to efficiently render millions of lines — only
+ * the visible viewport (plus a small overscan) is rendered as DOM.
  */
 
 import { EventDispatcher } from '../core/EventDispatcher';
@@ -26,26 +25,42 @@ interface BlockInfo {
 // Maps block index → line range [startLine, endLine] (inclusive)
 type BlockLineMap = Map<number, { start: number; end: number }>;
 
-const motionTypeNames = ['Rapid', 'Linear', 'Arc CW', 'Arc CCW'];
+const LINE_HEIGHT = 20; // px per line (must match CSS)
+const OVERSCAN = 10;    // extra lines above/below viewport
 
 export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
   private container: HTMLElement;
   private headerEl: HTMLElement;
-  private listEl: HTMLElement;
+  private searchEl: HTMLElement;
+  private searchInput: HTMLInputElement;
+  private searchResultsEl: HTMLElement;
+  private listEl: HTMLElement;       // scroll container
+  private spacerEl: HTMLElement;     // tall spacer to create scrollbar
+  private viewportEl: HTMLElement;   // positioned div holding visible lines
   private filenameEl: HTMLElement;
   private lineCountEl: HTMLElement;
+
   private lines: string[] = [];
   private blocks: BlockInfo[] = [];
   private blockLineMap: BlockLineMap = new Map();
-  private lineToBlock: Map<number, number> = new Map(); // line → blockIndex
+  private lineToBlock: Map<number, number> = new Map();
   private highlightedLine: number = -1;
   private highlightedBlock: number = -1;
+
+  // Virtual scroll state
+  private firstVisibleLine = 0;
+  private visibleCount = 0;
+
+  // Search state
+  private searchMatches: number[] = []; // line numbers matching search
+  private currentMatchIdx = -1;
 
   constructor(container: HTMLElement) {
     super();
     this.container = container;
     this.container.innerHTML = '';
 
+    // Header
     this.headerEl = document.createElement('div');
     this.headerEl.id = 'gcode-panel-header';
     this.filenameEl = document.createElement('span');
@@ -57,31 +72,94 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
     this.headerEl.appendChild(this.lineCountEl);
     this.container.appendChild(this.headerEl);
 
+    // Search bar (hidden by default, toggled with Ctrl+F)
+    this.searchEl = document.createElement('div');
+    this.searchEl.className = 'gcode-search-bar';
+    this.searchEl.style.display = 'none';
+
+    this.searchInput = document.createElement('input');
+    this.searchInput.type = 'text';
+    this.searchInput.className = 'gcode-search-input';
+    this.searchInput.placeholder = 'Search...';
+
+    this.searchResultsEl = document.createElement('span');
+    this.searchResultsEl.className = 'gcode-search-results';
+
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'gcode-search-nav';
+    prevBtn.textContent = '↑';
+    prevBtn.title = 'Previous match';
+    prevBtn.onclick = () => this.navigateMatch(-1);
+
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'gcode-search-nav';
+    nextBtn.textContent = '↓';
+    nextBtn.title = 'Next match';
+    nextBtn.onclick = () => this.navigateMatch(1);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'gcode-search-nav';
+    closeBtn.textContent = '✕';
+    closeBtn.title = 'Close search';
+    closeBtn.onclick = () => this.hideSearch();
+
+    this.searchEl.appendChild(this.searchInput);
+    this.searchEl.appendChild(this.searchResultsEl);
+    this.searchEl.appendChild(prevBtn);
+    this.searchEl.appendChild(nextBtn);
+    this.searchEl.appendChild(closeBtn);
+    this.container.appendChild(this.searchEl);
+
+    // Virtual scroll container
     this.listEl = document.createElement('div');
     this.listEl.id = 'gcode-list';
+
+    this.spacerEl = document.createElement('div');
+    this.spacerEl.className = 'gcode-spacer';
+
+    this.viewportEl = document.createElement('div');
+    this.viewportEl.className = 'gcode-viewport';
+
+    this.listEl.appendChild(this.spacerEl);
+    this.listEl.appendChild(this.viewportEl);
     this.container.appendChild(this.listEl);
+
+    // Scroll handler for virtual rendering
+    this.listEl.addEventListener('scroll', () => this.renderVisibleLines());
+
+    // Search input handler
+    this.searchInput.addEventListener('input', () => this.performSearch());
+    this.searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.navigateMatch(e.shiftKey ? -1 : 1);
+      } else if (e.key === 'Escape') {
+        this.hideSearch();
+      }
+    });
   }
 
   /**
    * Load G-code text from the raw file content.
-   * Called when a file is uploaded — shows the raw text immediately.
    */
   loadGcodeText(text: string, filename: string = ''): void {
     this.lines = text.split('\n');
     this.filenameEl.textContent = filename || 'G-code';
-    this.lineCountEl.textContent = `${this.lines.length} lines`;
+    this.lineCountEl.textContent = `${this.lines.length.toLocaleString()} lines`;
     this.blocks = [];
     this.blockLineMap.clear();
     this.lineToBlock.clear();
     this.highlightedLine = -1;
     this.highlightedBlock = -1;
-    this.renderLines();
+    this.searchMatches = [];
+    this.currentMatchIdx = -1;
+    this.updateSpacer();
+    this.renderVisibleLines();
+    this.listEl.scrollTop = 0;
   }
 
   /**
    * Update block metadata from the server's GetBlocks response.
-   * This maps block indices to line numbers so we can highlight
-   * the correct lines when a toolpath segment is selected.
    */
   updateBlocks(blocks: GetBlocksResponse): void {
     this.blocks = blocks.blocks.map(b => ({
@@ -91,11 +169,9 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
       gcodeText: b.gcodeText,
     }));
 
-    // Build line → block mapping
     this.blockLineMap.clear();
     this.lineToBlock.clear();
 
-    // Sort blocks by line number
     const sorted = [...this.blocks].sort((a, b) => a.lineNumber - b.lineNumber);
 
     for (let i = 0; i < sorted.length; i++) {
@@ -109,10 +185,6 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
     }
   }
 
-  /**
-   * Highlight a specific G-code line and scroll it into view.
-   * Called when a toolpath segment is clicked/hovered.
-   */
   highlightLine(line: number): void {
     this.highlightedLine = line;
     this.highlightedBlock = this.lineToBlock.get(line) ?? -1;
@@ -120,10 +192,6 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
     this.scrollToLine(line);
   }
 
-  /**
-   * Highlight all lines belonging to a block.
-   * Called when a toolpath segment is clicked/hovered.
-   */
   highlightBlock(blockIndex: number): void {
     this.highlightedBlock = blockIndex;
     const range = this.blockLineMap.get(blockIndex);
@@ -140,89 +208,173 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
     this.updateHighlight();
   }
 
-  private renderLines(): void {
-    // Use document fragment for performance with large files
+  // --- Search ---
+
+  showSearch(): void {
+    this.searchEl.style.display = 'flex';
+    this.searchInput.focus();
+    this.searchInput.select();
+  }
+
+  hideSearch(): void {
+    this.searchEl.style.display = 'none';
+    this.searchMatches = [];
+    this.currentMatchIdx = -1;
+    this.searchInput.value = '';
+    this.searchResultsEl.textContent = '';
+    this.renderVisibleLines();
+  }
+
+  private performSearch(): void {
+    const query = this.searchInput.value.toLowerCase();
+    if (!query) {
+      this.searchMatches = [];
+      this.currentMatchIdx = -1;
+      this.searchResultsEl.textContent = '';
+      this.renderVisibleLines();
+      return;
+    }
+
+    // Search all lines (binary search would be faster for sorted, but text is unsorted)
+    this.searchMatches = [];
+    for (let i = 0; i < this.lines.length; i++) {
+      if (this.lines[i].toLowerCase().includes(query)) {
+        this.searchMatches.push(i);
+      }
+    }
+
+    if (this.searchMatches.length > 0) {
+      this.currentMatchIdx = 0;
+      const matchLine = this.searchMatches[0];
+      this.scrollToLine(matchLine);
+      this.searchResultsEl.textContent = `1/${this.searchMatches.length}`;
+    } else {
+      this.currentMatchIdx = -1;
+      this.searchResultsEl.textContent = '0/0';
+    }
+    this.renderVisibleLines();
+  }
+
+  private navigateMatch(direction: number): void {
+    if (this.searchMatches.length === 0) return;
+    this.currentMatchIdx = (this.currentMatchIdx + direction + this.searchMatches.length) % this.searchMatches.length;
+    const matchLine = this.searchMatches[this.currentMatchIdx];
+    this.scrollToLine(matchLine);
+    this.searchResultsEl.textContent = `${this.currentMatchIdx + 1}/${this.searchMatches.length}`;
+    this.renderVisibleLines();
+  }
+
+  isSearchVisible(): boolean {
+    return this.searchEl.style.display !== 'none';
+  }
+
+  // --- Virtual scrolling ---
+
+  private updateSpacer(): void {
+    const totalHeight = this.lines.length * LINE_HEIGHT;
+    this.spacerEl.style.height = `${totalHeight}px`;
+  }
+
+  private renderVisibleLines(): void {
+    const scrollTop = this.listEl.scrollTop;
+    const viewportHeight = this.listEl.clientHeight;
+    const firstLine = Math.max(0, Math.floor(scrollTop / LINE_HEIGHT) - OVERSCAN);
+    const lastLine = Math.min(
+      this.lines.length - 1,
+      Math.ceil((scrollTop + viewportHeight) / LINE_HEIGHT) + OVERSCAN,
+    );
+    const count = lastLine - firstLine + 1;
+
+    this.firstVisibleLine = firstLine;
+    this.visibleCount = count;
+
+    // Position the viewport div
+    this.viewportEl.style.transform = `translateY(${firstLine * LINE_HEIGHT}px)`;
+
+    // Build visible line elements
     const fragment = document.createDocumentFragment();
-    const maxLines = Math.min(this.lines.length, 50000); // cap for performance
-    for (let i = 0; i < maxLines; i++) {
+    const query = this.searchInput.value.toLowerCase();
+
+    for (let i = 0; i < count; i++) {
+      const lineNum = firstLine + i;
       const lineEl = document.createElement('div');
       lineEl.className = 'gcode-line';
-      lineEl.dataset.line = String(i);
+      lineEl.dataset.line = String(lineNum);
+      lineEl.style.height = `${LINE_HEIGHT}px`;
+
+      // Apply highlight classes
+      if (this.highlightedBlock >= 0) {
+        const range = this.blockLineMap.get(this.highlightedBlock);
+        if (range && lineNum >= range.start && lineNum <= range.end) {
+          if (lineNum === this.highlightedLine) {
+            lineEl.classList.add('highlighted');
+          } else {
+            lineEl.classList.add('highlighted-related');
+          }
+        }
+      }
+
+      // Apply search match highlight
+      if (query && this.lines[lineNum].toLowerCase().includes(query)) {
+        lineEl.classList.add('search-match');
+        if (this.searchMatches[this.currentMatchIdx] === lineNum) {
+          lineEl.classList.add('search-current');
+        }
+      }
 
       const numEl = document.createElement('span');
       numEl.className = 'gcode-line-number';
-      numEl.textContent = String(i + 1);
+      numEl.textContent = String(lineNum + 1);
 
       const contentEl = document.createElement('span');
       contentEl.className = 'gcode-line-content';
-      contentEl.innerHTML = highlightGcode(this.lines[i]);
+      contentEl.innerHTML = highlightGcode(this.lines[lineNum]);
 
       lineEl.appendChild(numEl);
       lineEl.appendChild(contentEl);
 
       lineEl.onclick = () => {
-        const lineNum = parseInt(lineEl.dataset.line!, 10);
-        const blockIdx = this.lineToBlock.get(lineNum) ?? -1;
+        const ln = parseInt(lineEl.dataset.line!, 10);
+        const blockIdx = this.lineToBlock.get(ln) ?? -1;
         if (blockIdx >= 0) {
           this.highlightBlock(blockIdx);
           this.emit('blockSelected', blockIdx);
         }
-        this.emit('lineSelected', lineNum);
+        this.emit('lineSelected', ln);
       };
 
       fragment.appendChild(lineEl);
     }
-    this.listEl.innerHTML = '';
-    this.listEl.appendChild(fragment);
+
+    this.viewportEl.innerHTML = '';
+    this.viewportEl.appendChild(fragment);
   }
 
   private updateHighlight(): void {
-    // Remove old highlights
-    const oldHighlighted = this.listEl.querySelectorAll('.gcode-line.highlighted, .gcode-line.highlighted-related');
-    oldHighlighted.forEach(el => {
-      el.classList.remove('highlighted', 'highlighted-related');
-    });
-
-    if (this.highlightedBlock < 0) return;
-
-    const range = this.blockLineMap.get(this.highlightedBlock);
-    if (!range) return;
-
-    // Highlight all lines in the block range
-    for (let ln = range.start; ln <= range.end; ln++) {
-      const lineEl = this.listEl.querySelector(`.gcode-line[data-line="${ln}"]`) as HTMLElement | null;
-      if (lineEl) {
-        if (ln === this.highlightedLine) {
-          lineEl.classList.add('highlighted');
-        } else {
-          lineEl.classList.add('highlighted-related');
-        }
-      }
-    }
+    // Just re-render visible lines — highlight classes are applied there
+    this.renderVisibleLines();
   }
 
   private scrollToLine(line: number): void {
-    const lineEl = this.listEl.querySelector(`.gcode-line[data-line="${line}"]`) as HTMLElement | null;
-    if (lineEl) {
-      lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }
+    const targetTop = line * LINE_HEIGHT;
+    const viewportHeight = this.listEl.clientHeight;
+    // Center the line in the viewport
+    const scrollTo = targetTop - viewportHeight / 2 + LINE_HEIGHT / 2;
+    this.listEl.scrollTop = Math.max(0, scrollTo);
   }
 }
 
 /**
  * Simple G-code syntax highlighter.
- * Highlights G/M words, comments, axis letters, and numbers.
  */
 function highlightGcode(line: string): string {
   if (!line) return '';
 
-  // Handle full-line comments (starting with ; or #)
   const trimmed = line.trimStart();
   if (trimmed.startsWith(';') || trimmed.startsWith('#')) {
     return `<span class="gcode-comment">${escapeHtml(line)}</span>`;
   }
 
-  // Handle inline comment
   const commentIdx = line.indexOf(';');
   let codePart = line;
   let commentPart = '';
@@ -231,7 +383,6 @@ function highlightGcode(line: string): string {
     commentPart = line.substring(commentIdx);
   }
 
-  // Tokenize: words (G0, G1, M104, etc.), axis letters (X, Y, Z, E, F, S), numbers
   let result = '';
   const tokens = codePart.split(/(\s+|[A-Za-z][-+]?\d*\.?\d*)/);
   for (const token of tokens) {
@@ -241,7 +392,6 @@ function highlightGcode(line: string): string {
     } else if (/^[GM]/i.test(token) && /\d/.test(token)) {
       result += `<span class="gcode-word">${escapeHtml(token)}</span>`;
     } else if (/^[XYZABCUVWEFS]/i.test(token)) {
-      // Split letter and number
       const letter = token[0];
       const num = token.substring(1);
       result += `<span class="gcode-axis">${escapeHtml(letter)}</span><span class="gcode-number">${escapeHtml(num)}</span>`;
