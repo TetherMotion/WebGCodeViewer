@@ -165,6 +165,14 @@ if(WGV_BUILD_FRONTEND)
         # The frontend package.json references ../proto which is correct since
         # frontend/ is at the same level as proto/
 
+        # Collect all frontend source files so CMake rebuilds when any change
+        file(GLOB_RECURSE WGV_FRONTEND_SOURCES
+            "${WGV_FRONTEND_DIR}/src/*.ts"
+            "${WGV_FRONTEND_DIR}/src/*.js"
+            "${WGV_FRONTEND_DIR}/css/*.css"
+            "${WGV_FRONTEND_DIR}/index.html"
+        )
+
         add_custom_command(
             OUTPUT ${WGV_FRONTEND_OUTPUT}
             COMMAND ${NPM_EXECUTABLE} install --silent
@@ -174,7 +182,7 @@ if(WGV_BUILD_FRONTEND)
             DEPENDS
                 "${WGV_FRONTEND_DIR}/package.json"
                 "${WGV_FRONTEND_DIR}/tsconfig.json"
-                "${WGV_FRONTEND_DIR}/src/main.ts"
+                ${WGV_FRONTEND_SOURCES}
                 "${CMAKE_CURRENT_SOURCE_DIR}/proto/tether_viewer.proto"
             COMMENT "Building WebGCodeViewer frontend (TypeScript)"
             VERBATIM
