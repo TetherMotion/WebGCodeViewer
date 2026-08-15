@@ -36,7 +36,29 @@ npx playwright test --headed
 
 # Type checking
 cd frontend && npm run typecheck
+
+# C++ server unit tests (Google Test)
+cmake --build build --target wgv_tests -j$(nproc)
+./build/bin/wgv_tests
 ```
+
+## CI (GitHub Actions)
+
+Workflow: `.github/workflows/ci.yml` — runs on push/PR to `main`.
+
+Three jobs:
+1. **C++ build & unit tests** — installs Drogon/jsoncpp/protobuf/gtest via apt,
+   configures CMake (Ninja, frontend OFF), builds `web_viewer` + `wgv_tests`,
+   runs gtest. Uploads the `web_viewer` binary as an artifact.
+2. **Frontend unit tests & typecheck** — Node 20, `npm ci`, `proto:generate`,
+   `tsc --noEmit`, `vitest run`.
+3. **Playwright E2E tests** — depends on the first two; full build (server +
+   frontend), installs Google Chrome (for the `webgpu` Playwright project) and
+   Chromium, runs `npx playwright test`. Uploads report + test-results on
+   failure or cancellation.
+
+Runner: `ubuntu-24.04` (provides `libdrogon-dev` in apt). Submodules are
+checked out recursively. CMake build dirs are cached per-job.
 
 ## Running the Viewer
 
