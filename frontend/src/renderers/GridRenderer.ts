@@ -78,6 +78,7 @@ export class GridRenderer {
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.vertexBuffer, 0, vertices);
+    this.bindGroup = null;
   }
 
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {

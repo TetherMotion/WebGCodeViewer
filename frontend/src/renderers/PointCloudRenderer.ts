@@ -32,9 +32,7 @@ export class PointCloudRenderer {
 
         @vertex
         fn vs_main(@location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> {
-          var pos = uniforms.viewProj * vec4<f32>(position, 1.0);
-          pos.x += uniforms.pointSize / 1000.0;
-          return pos;
+          return uniforms.viewProj * vec4<f32>(position, 1.0);
         }
 
         @fragment
@@ -81,6 +79,7 @@ export class PointCloudRenderer {
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.positionBuffer, 0, positions);
+    this.bindGroup = null;
   }
 
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {

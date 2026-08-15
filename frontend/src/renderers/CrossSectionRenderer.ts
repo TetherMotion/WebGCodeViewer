@@ -76,13 +76,17 @@ export class CrossSectionRenderer {
       }
     }
 
-    // Duplicate vertices for point rendering
     const verts = new Float32Array(vertices);
     this.vertexCount = verts.length / 3;
 
     if (this.vertexBuffer) this.vertexBuffer.destroy();
+    this.vertexBuffer = null;
+    this.bindGroup = null;
+
+    if (verts.byteLength === 0) return;
+
     this.vertexBuffer = this.device.createBuffer({
-      size: verts.byteLength || 12,
+      size: verts.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.vertexBuffer, 0, verts);

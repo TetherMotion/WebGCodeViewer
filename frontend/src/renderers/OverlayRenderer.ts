@@ -103,15 +103,22 @@ export class OverlayRenderer {
     this.vertexCount = this.lines.length * 2;
 
     if (this.vertexBuffer) this.vertexBuffer.destroy();
+    this.vertexBuffer = null;
+    this.bindGroup = null;
+
+    if (vertices.byteLength === 0) return;
+
     this.vertexBuffer = this.device.createBuffer({
-      size: vertices.byteLength || 24,
+      size: vertices.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.vertexBuffer, 0, vertices);
   }
 
+  visible: boolean = true;
+
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
-    if (!this.pipeline || !this.vertexBuffer || this.vertexCount === 0) return;
+    if (!this.visible || !this.pipeline || !this.vertexBuffer || this.vertexCount === 0) return;
     this.device.queue.writeBuffer(this.uniformBuffer!, 0, viewProj.buffer as ArrayBuffer);
     if (!this.bindGroup) {
       this.bindGroup = this.device.createBindGroup({

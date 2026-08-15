@@ -150,6 +150,7 @@ export class ToolpathRenderer {
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.positionBuffer, 0, positions);
+    this.bindGroup = null;
 
     // Color value buffer (normalized 0-1)
     const colorValues = new Float32Array(n);
