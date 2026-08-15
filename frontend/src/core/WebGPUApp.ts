@@ -34,6 +34,7 @@ export class WebGPUApp {
   private depthData: Float32Array | null = null;  // previous frame's depth values
   private depthReadbackPending = false;
   private depthBufferSize: [number, number] = [0, 0];  // [width, height]
+  private depthPaddedRowFloats: number = 0;  // padded bytesPerRow / 4
 
   private camera: Camera;
   private rpcClient: RpcClient;
@@ -476,9 +477,14 @@ export class WebGPUApp {
       });
 
       // Create/recreate depth readback buffer (4 bytes per pixel for f32)
+      // WebGPU requires bytesPerRow to be a multiple of 256 for copyTextureToBuffer.
+      // Pad the row stride and size the buffer accordingly.
       this.depthReadbackBuffer?.destroy();
+      const unpaddedBytesPerRow = w * 4;
+      const paddedBytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
+      this.depthPaddedRowFloats = paddedBytesPerRow / 4;
       this.depthReadbackBuffer = this.device.createBuffer({
-        size: w * h * 4,
+        size: paddedBytesPerRow * h,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
       });
       this.depthData = null;
@@ -564,9 +570,10 @@ export class WebGPUApp {
     // Copy depth texture to readback buffer for label visibility checks
     if (this.depthReadbackBuffer && !this.depthReadbackPending) {
       const [w, h] = this.depthBufferSize;
+      const paddedBytesPerRow = this.depthPaddedRowFloats * 4;
       encoder.copyTextureToBuffer(
         { texture: this.depthTexture, mipLevel: 0, origin: { x: 0, y: 0, z: 0 } },
-        { buffer: this.depthReadbackBuffer, offset: 0, bytesPerRow: w * 4, rowsPerImage: h },
+        { buffer: this.depthReadbackBuffer, offset: 0, bytesPerRow: paddedBytesPerRow, rowsPerImage: h },
         { width: w, height: h, depthOrArrayLayers: 1 },
       );
     }
@@ -577,8 +584,15 @@ export class WebGPUApp {
     if (this.depthReadbackBuffer && !this.depthReadbackPending) {
       this.depthReadbackPending = true;
       this.depthReadbackBuffer.mapAsync(GPUMapMode.READ).then(() => {
-        const arr = new Float32Array(this.depthReadbackBuffer!.getMappedRange());
-        this.depthData = new Float32Array(arr);  // copy
+        const [w, h] = this.depthBufferSize;
+        const stride = this.depthPaddedRowFloats;
+        const mapped = new Float32Array(this.depthReadbackBuffer!.getMappedRange());
+        // Unpack: copy row by row, skipping padding bytes at end of each row
+        const compact = new Float32Array(w * h);
+        for (let row = 0; row < h; row++) {
+          compact.set(mapped.subarray(row * stride, row * stride + w), row * w);
+        }
+        this.depthData = compact;
         this.depthReadbackBuffer!.unmap();
         this.depthReadbackPending = false;
       }).catch(() => {
