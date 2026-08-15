@@ -1,0 +1,30 @@
+{
+  "name": "webgcodeviewer",
+  "version": "1.0.0",
+  "description": "A WebGPU-based G-code viewer with a Drogon C++ backend and TypeScript frontend.",
+  "main": "index.js",
+  "directories": {
+    "example": "examples",
+    "test": "tests"
+  },
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:unit": "cd frontend && npm test",
+    "build": "cmake --build build --target web_viewer -j$(nproc)"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TetherMotion/WebGCodeViewer.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/TetherMotion/WebGCodeViewer/issues"
+  },
+  "homepage": "https://github.com/TetherMotion/WebGCodeViewer#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}

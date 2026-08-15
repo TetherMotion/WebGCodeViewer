@@ -21,3 +21,8 @@ server/src/proto/*.pb.h
 # OS
 .DS_Store
 Thumbs.db
+
+# Playwright
+test-results/
+playwright-report/
+node_modules/

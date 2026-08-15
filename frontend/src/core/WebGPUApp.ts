@@ -72,6 +72,10 @@ export class WebGPUApp {
     this.navCube = new NavigationCube(navCubeContainer);
 
     this.setupEventHandlers();
+
+    // Register global keyboard shortcuts early (before WebGPU init)
+    // so they work even if WebGPU is not available
+    window.addEventListener('keydown', (e) => this.handleKeyDown(e));
   }
 
   private setupEventHandlers(): void {
@@ -248,9 +252,6 @@ export class WebGPUApp {
     this.resize();
     this.navGizmo?.resize();
     this.dirCubeRenderer?.resize();
-
-    // Global keyboard shortcuts
-    window.addEventListener('keydown', (e) => this.handleKeyDown(e));
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
