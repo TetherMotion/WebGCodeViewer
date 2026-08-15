@@ -58,6 +58,30 @@ ProcessResult GCodeProcessor::process(
     // ── Step 2c: Compute per-segment extruder speed (mm/s) from E axis ──
     computeExtruderSpeed(segments);
 
+    // ── Step 2d: Build per-segment speed data for miniplot ──
+    {
+        double currentTime = 0.0;
+        for (const auto& seg : segments) {
+            SegmentSpeed ss;
+            ss.timeStart = currentTime;
+            ss.duration = seg.segmentTime;
+            ss.blockIndex = seg.blockIndex;
+            // Find line number from blocks
+            if (ss.blockIndex >= 0 && ss.blockIndex < static_cast<int32_t>(blocks.size())) {
+                ss.lineNumber = blocks[ss.blockIndex].lineNumber;
+            }
+            // Per-axis speeds: |delta| / time
+            double dt = seg.segmentTime > 1e-9 ? seg.segmentTime : 1e-9;
+            ss.speedX = std::abs(seg.end[0] - seg.start[0]) / dt;
+            ss.speedY = std::abs(seg.end[1] - seg.start[1]) / dt;
+            ss.speedZ = std::abs(seg.end[2] - seg.start[2]) / dt;
+            ss.speedE = seg.exitVelocity; // already computed as mm/s
+            ss.speedLinear = seg.segmentLength / dt;
+            result.segmentSpeeds.push_back(ss);
+            currentTime += seg.segmentTime;
+        }
+    }
+
     if (progress) progress(0.4);
 
     // ── Step 3: Build NURBS path directly from segments (FAST) ──

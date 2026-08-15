@@ -265,6 +265,37 @@ std::string JobManager::getSegmentsJson(const std::string& jobId) const {
     return ss.str();
 }
 
+std::string JobManager::getSpeedsJson(const std::string& jobId) const {
+    auto job = getJob(jobId);
+    if (!job || job->state != JobState::Ready) return "{\"error\":\"job not ready\"}";
+
+    const auto& speeds = job->result.segmentSpeeds;
+    double totalTime = 0.0;
+    if (!speeds.empty()) totalTime = speeds.back().timeStart + speeds.back().duration;
+
+    std::ostringstream ss;
+    ss << "{\"totalTime\":" << totalTime
+       << ",\"totalSegments\":" << speeds.size()
+       << ",\"segments\":[";
+    for (size_t i = 0; i < speeds.size(); ++i) {
+        if (i > 0) ss << ",";
+        const auto& s = speeds[i];
+        ss << "{";
+        ss << "\"timeStart\":" << s.timeStart << ",";
+        ss << "\"duration\":" << s.duration << ",";
+        ss << "\"blockIndex\":" << s.blockIndex << ",";
+        ss << "\"lineNumber\":" << s.lineNumber << ",";
+        ss << "\"speedX\":" << s.speedX << ",";
+        ss << "\"speedY\":" << s.speedY << ",";
+        ss << "\"speedZ\":" << s.speedZ << ",";
+        ss << "\"speedE\":" << s.speedE << ",";
+        ss << "\"speedLinear\":" << s.speedLinear;
+        ss << "}";
+    }
+    ss << "]}";
+    return ss.str();
+}
+
 std::string JobManager::getZLayersJson(const std::string& jobId, double zTolerance) const {
     auto job = getJob(jobId);
     if (!job || job->state != JobState::Ready) return "{\"error\":\"job not ready\"}";

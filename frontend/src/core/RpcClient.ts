@@ -66,7 +66,7 @@ export interface BinaryRequestOptions {
 
 export class RpcClient {
   private readonly transport: WsTransport;
-  private readonly httpBaseUrl: string;
+  readonly httpBaseUrl: string;
 
   constructor(transport: WsTransport) {
     this.transport = transport;

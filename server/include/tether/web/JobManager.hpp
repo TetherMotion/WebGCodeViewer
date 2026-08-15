@@ -107,6 +107,9 @@ public:
     /// @brief Get segment boundaries for a job as JSON.
     std::string getSegmentsJson(const std::string& jobId) const;
 
+    /// @brief Get per-segment speed data for miniplot as JSON.
+    std::string getSpeedsJson(const std::string& jobId) const;
+
     /// @brief Get Z-layers for a job as JSON.
     /// Computes layers from NURBS path pieces or dense samples.
     /// @param jobId Job ID

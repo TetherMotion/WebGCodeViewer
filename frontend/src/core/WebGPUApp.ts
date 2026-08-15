@@ -17,6 +17,7 @@ import { NavigationGizmo } from '../renderers/NavigationGizmo';
 import { PrintHeadMarker } from '../renderers/PrintHeadMarker';
 import { DirectionCubeRenderer } from '../renderers/DirectionCubeRenderer';
 import { NurbsRenderer, NurbsColorAttribute } from '../renderers/NurbsRenderer';
+import { MiniplotRenderer, MiniplotAxis, MiniplotData } from '../renderers/MiniplotRenderer';
 import { GridLabels } from '../ui/GridLabels';
 import { ControlPanel } from '../ui/ControlPanel';
 import { GcodeViewer } from '../ui/GcodeViewer';
@@ -47,6 +48,11 @@ export class WebGPUApp {
   private dirCubeRenderer: DirectionCubeRenderer | null = null;
   private nurbsRenderer: NurbsRenderer | null = null;
   private gridLabels: GridLabels | null = null;
+  private miniplotRenderer: MiniplotRenderer | null = null;
+  private miniplotContainer: HTMLElement | null = null;
+  private miniplotLabel: HTMLElement | null = null;
+  private miniplotVisible: boolean = false;
+  private miniplotData: MiniplotData | null = null;
 
   private resizeObserver: ResizeObserver | null = null;
   private gizmoResizeObserver: ResizeObserver | null = null;
@@ -85,6 +91,10 @@ export class WebGPUApp {
     this.controlPanel = new ControlPanel(bottomPanel);
     this.gcodeViewer = new GcodeViewer(gcodePanel);
     this.navCube = new NavigationCube(navCubeContainer);
+
+    // Get miniplot DOM elements early (before init) so toggle works even if WebGPU fails
+    this.miniplotContainer = document.getElementById('miniplot-container');
+    this.miniplotLabel = document.getElementById('miniplot-label');
 
     this.setupEventHandlers();
 
@@ -163,6 +173,23 @@ export class WebGPUApp {
     this.controlPanel.on('exportImage', () => {
       this.exportImage();
     });
+    this.controlPanel.on('toggleMiniplot', () => {
+      this.toggleMiniplot();
+    });
+    this.controlPanel.on('miniplotAxisChanged', (axisName) => {
+      const axisMap: Record<string, MiniplotAxis> = {
+        'Extruder': 'speedE',
+        'X': 'speedX',
+        'Y': 'speedY',
+        'Z': 'speedZ',
+        'Linear': 'speedLinear',
+      };
+      const axis = axisMap[axisName] || 'speedE';
+      if (this.miniplotRenderer) {
+        this.miniplotRenderer.setAxis(axis);
+        this.updateMiniplotLabel();
+      }
+    });
 
     // G-code viewer → highlight toolpath
     this.gcodeViewer.on('blockSelected', (blockIndex) => {
@@ -170,8 +197,12 @@ export class WebGPUApp {
         this.toolpathRenderer.setHighlight(new Set([blockIndex]), this.currentData);
       }
     });
-    this.gcodeViewer.on('lineSelected', (_line) => {
-      // Line selection is handled via blockSelected above
+    this.gcodeViewer.on('lineSelected', (line) => {
+      // Update miniplot highlight
+      if (this.miniplotRenderer) {
+        this.miniplotRenderer.setSelectedLine(line);
+        this.updateMiniplotLabel();
+      }
     });
     this.gcodeViewer.on('isolateZLayer', (lineNum) => {
       this.isolateZLayerForLine(lineNum);
@@ -264,6 +295,14 @@ export class WebGPUApp {
     const gridLabelsCanvas = document.getElementById('grid-labels-canvas') as HTMLCanvasElement | null;
     if (gridLabelsCanvas) {
       this.gridLabels = new GridLabels(gridLabelsCanvas);
+    }
+
+    // Miniplot renderer (separate WebGPU canvas for speed plot)
+    const miniplotCanvas = document.getElementById('miniplot-canvas') as HTMLCanvasElement | null;
+    if (miniplotCanvas && this.device) {
+      this.miniplotRenderer = new MiniplotRenderer(miniplotCanvas, this.device);
+      await this.miniplotRenderer.init();
+      this.setupMiniplotInteraction(miniplotCanvas);
     }
 
     this.setupInputHandlers();
@@ -468,6 +507,13 @@ export class WebGPUApp {
       }
 
       this.render();
+
+      // Render miniplot (separate WebGPU context)
+      if (this.miniplotVisible && this.miniplotRenderer) {
+        this.miniplotRenderer.resize();
+        this.miniplotRenderer.render();
+      }
+
       this.animationId = requestAnimationFrame(frame);
     };
     this.lastFrameTime = performance.now();
@@ -566,6 +612,96 @@ export class WebGPUApp {
     a.href = url;
     a.download = `tether-viewer-${Date.now()}.png`;
     a.click();
+  }
+
+  // ── Miniplot ─────────────────────────────────────────────────────────────
+
+  private setupMiniplotInteraction(canvas: HTMLCanvasElement): void {
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      if (this.miniplotRenderer) {
+        this.miniplotRenderer.handleWheel(e.deltaY, mouseX);
+        this.updateMiniplotLabel();
+      }
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      if (this.miniplotRenderer) {
+        this.miniplotRenderer.startDrag(mouseX);
+      }
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      if (this.miniplotRenderer) {
+        const wasDragging = this.miniplotRenderer.dragging;
+        this.miniplotRenderer.updateDrag(mouseX);
+        if (wasDragging) this.updateMiniplotLabel();
+      }
+    });
+
+    canvas.addEventListener('mouseup', () => {
+      this.miniplotRenderer?.endDrag();
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      this.miniplotRenderer?.endDrag();
+    });
+
+    canvas.addEventListener('dblclick', () => {
+      this.miniplotRenderer?.resetZoom();
+      this.updateMiniplotLabel();
+    });
+  }
+
+  private toggleMiniplot(): void {
+    this.miniplotVisible = !this.miniplotVisible;
+    if (this.miniplotContainer) {
+      this.miniplotContainer.style.display = this.miniplotVisible ? 'block' : 'none';
+    }
+    if (this.miniplotVisible) {
+      // Resize after becoming visible
+      requestAnimationFrame(() => {
+        this.miniplotRenderer?.resize();
+        if (this.miniplotData) {
+          this.miniplotRenderer?.setData(this.miniplotData!);
+        }
+        this.updateMiniplotLabel();
+      });
+      // Fetch data if not yet loaded
+      if (!this.miniplotData && this.currentJobId) {
+        this.fetchMiniplotData(this.currentJobId);
+      }
+    }
+  }
+
+  private async fetchMiniplotData(jobId: string): Promise<void> {
+    try {
+      const url = `${this.rpcClient.httpBaseUrl}/api/trajectory/${jobId}/speeds`;
+      const resp = await fetch(url);
+      if (!resp.ok) return;
+      const json = await resp.json();
+      this.miniplotData = json as MiniplotData;
+      if (this.miniplotRenderer) {
+        this.miniplotRenderer.setData(this.miniplotData);
+        this.updateMiniplotLabel();
+      }
+    } catch (e) {
+      // Silently fail — miniplot is optional
+    }
+  }
+
+  private updateMiniplotLabel(): void {
+    if (!this.miniplotLabel || !this.miniplotRenderer) return;
+    const label = this.miniplotRenderer.getAxisLabel();
+    const view = this.miniplotRenderer.getViewRange();
+    this.miniplotLabel.textContent = `${label}  |  t: ${view.tMin.toFixed(3)}s – ${view.tMax.toFixed(3)}s  |  scroll=zoom, drag=pan, dblclick=reset`;
   }
 
   /**
@@ -673,6 +809,11 @@ export class WebGPUApp {
       this.zLayers = layersResp.layers;
       this.controlPanel.updateLayersFromHttp(layersResp);
     } catch (e) { console.error('Failed to load Z-layers:', e); }
+
+    // Load miniplot speed data (if miniplot is visible)
+    if (this.miniplotVisible) {
+      this.fetchMiniplotData(jobId);
+    }
 
     // Reset playback
     this.playProgress = 1.0;

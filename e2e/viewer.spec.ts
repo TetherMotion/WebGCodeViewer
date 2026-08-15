@@ -566,4 +566,66 @@ test.describe('G-code upload and render', () => {
     collector.assertNoErrors('ortho mode with loaded toolpath');
     collector.assertNoWebGPUErrors();
   });
+
+  test('miniplot toggle shows and renders without errors', async ({ page, request }) => {
+    const collector = setupErrorCollector(page);
+
+    // Upload via API
+    const gcode = 'G1 X0 Y0 Z0 F600\nG1 X20 Y0 Z0 E1\nG1 X20 Y20 Z0 E1\nG1 X0 Y20 Z0 E1\nG1 X0 Y0 Z0 E1\n';
+    const uploadResp = await request.post('http://localhost:8099/api/trajectory/upload', {
+      headers: { 'Content-Type': 'text/plain' },
+      params: { filename: 'miniplot_test.gcode' },
+      data: gcode,
+    });
+    expect(uploadResp.ok()).toBe(true);
+    const { jobId } = await uploadResp.json();
+
+    // Process
+    await request.post(`http://localhost:8099/api/trajectory/${jobId}/process`);
+
+    // Wait for processing
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      const statusResp = await request.get(`http://localhost:8099/api/trajectory/${jobId}/status`);
+      if (statusResp.ok()) {
+        const sj = await statusResp.json();
+        if (sj.state === 'ready') break;
+      }
+    }
+
+    // Navigate to viewer with job loaded
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+
+    // Click the Miniplot toggle button
+    const miniplotBtn = page.locator('#bottom-panel button', { hasText: 'Miniplot' });
+    await miniplotBtn.click();
+    await page.waitForTimeout(1000);
+
+    // Verify miniplot container is visible
+    const container = page.locator('#miniplot-container');
+    await expect(container).toBeVisible({ timeout: 10000 });
+
+    // Verify the miniplot canvas exists and has non-zero dimensions
+    const canvas = page.locator('#miniplot-canvas');
+    await expect(canvas).toBeVisible();
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThan(0);
+    expect(box!.height).toBeGreaterThan(0);
+
+    // Wait for rendering
+    await page.waitForTimeout(2000);
+
+    // Switch axis to X
+    const axisSelect = page.locator('.miniplot-group select');
+    if (await axisSelect.count() > 0) {
+      await axisSelect.selectOption('X');
+      await page.waitForTimeout(1000);
+    }
+
+    collector.assertNoErrors('miniplot toggle and render');
+    collector.assertNoWebGPUErrors();
+  });
 });

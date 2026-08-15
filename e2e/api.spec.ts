@@ -229,6 +229,39 @@ test.describe('Binary data', () => {
     await ctx.dispose();
   });
 
+  test('fetch speeds JSON for miniplot', async () => {
+    const { jobId, status } = await uploadAndProcess(SIMPLE_GCODE);
+    expect(status).toBe('ready');
+
+    const ctx = await request.newContext();
+    const resp = await ctx.get(`${BASE}/api/trajectory/${jobId}/speeds`);
+    expect(resp.ok()).toBe(true);
+    const json = await resp.json();
+
+    expect(json.totalTime).toBeGreaterThan(0);
+    expect(json.totalSegments).toBeGreaterThan(0);
+    expect(json.segments.length).toBe(json.totalSegments);
+    expect(json.segments.length).toBeGreaterThan(0);
+
+    // Check first segment structure
+    const seg = json.segments[0];
+    expect(seg).toHaveProperty('timeStart');
+    expect(seg).toHaveProperty('duration');
+    expect(seg).toHaveProperty('blockIndex');
+    expect(seg).toHaveProperty('lineNumber');
+    expect(seg).toHaveProperty('speedX');
+    expect(seg).toHaveProperty('speedY');
+    expect(seg).toHaveProperty('speedZ');
+    expect(seg).toHaveProperty('speedE');
+    expect(seg).toHaveProperty('speedLinear');
+
+    // At least one segment should have non-zero speedE (extrusion)
+    const hasExtrusion = json.segments.some((s: any) => s.speedE > 0.01);
+    expect(hasExtrusion).toBe(true);
+
+    await ctx.dispose();
+  });
+
   test('fetch blocks JSON for processed job', async () => {
     const { jobId, status } = await uploadAndProcess(SIMPLE_GCODE);
     expect(status).toBe('ready');

@@ -24,6 +24,19 @@
 
 namespace tether::web {
 
+/// @brief Per-segment speed data for miniplot visualization.
+struct SegmentSpeed {
+    double timeStart = 0.0;      ///< Time at start of segment (seconds)
+    double duration = 0.0;       ///< Segment duration (seconds)
+    int32_t blockIndex = -1;     ///< G-code block index
+    int32_t lineNumber = 0;      ///< G-code line number
+    double speedX = 0.0;        ///< X axis speed (mm/s)
+    double speedY = 0.0;        ///< Y axis speed (mm/s)
+    double speedZ = 0.0;        ///< Z axis speed (mm/s)
+    double speedE = 0.0;        ///< Extruder speed (mm/s)
+    double speedLinear = 0.0;   ///< Linear velocity magnitude (mm/s)
+};
+
 /// @brief Configuration for G-code processing.
 struct ProcessConfig {
     double sampleRate = 0.001;       ///< Sample time step (seconds)
@@ -63,6 +76,10 @@ struct ProcessResult {
     /// Populated by computeExtruderSpeed() during processing.
     /// 0 for non-extruding moves (G0, or G1 without E).
     std::vector<float> extruderSpeeds;
+
+    /// Per-segment speed data for miniplot visualization.
+    /// One entry per segment (before NURBS piece filtering).
+    std::vector<SegmentSpeed> segmentSpeeds;
 };
 
 /// @brief Processes G-code text into trajectory samples.

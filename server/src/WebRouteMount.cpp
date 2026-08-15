@@ -348,6 +348,18 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
             cb(makeJsonResponse(jobManager->getSegmentsJson(jobId), enableCors));
         }, {drogon::Get});
 
+    // ── GET /api/trajectory/{jobId}/speeds ──
+    app.registerHandler("/api/trajectory/{jobId}/speeds",
+        [jobManager, enableCors](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& cb,
+           const std::string& jobId) {
+            if (jobManager->getJobState(jobId) != JobState::Ready) {
+                cb(makeErrorResponse(404, "Job not ready", enableCors));
+                return;
+            }
+            cb(makeJsonResponse(jobManager->getSpeedsJson(jobId), enableCors));
+        }, {drogon::Get});
+
     // ── GET /api/trajectory/{jobId}/zlayers ──
     app.registerHandler("/api/trajectory/{jobId}/zlayers",
         [jobManager, enableCors](const drogon::HttpRequestPtr& req,

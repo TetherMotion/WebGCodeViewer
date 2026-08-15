@@ -19,6 +19,8 @@ export interface ControlPanelEvents {
   layerChanged: number;       // layer index, -1 = all layers
   timeChanged: number;        // 0..1 fraction of path
   playStateChanged: boolean;  // true = playing
+  toggleMiniplot: void;
+  miniplotAxisChanged: string;
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -28,6 +30,7 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
   private crossBtn: HTMLButtonElement;
   private gridActive = false;
   private crossActive = false;
+  private miniplotActive = false;
 
   // Cross-section Z slider
   private crossSectionGroup: HTMLElement;
@@ -173,6 +176,34 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     exportBtn.onclick = () => this.emit('exportImage', undefined);
     viewGroup.appendChild(exportBtn);
     this.element.appendChild(viewGroup);
+
+    // Miniplot group
+    const miniplotGroup = document.createElement('div');
+    miniplotGroup.className = 'control-group miniplot-group';
+
+    const miniplotBtn = document.createElement('button');
+    miniplotBtn.textContent = 'Miniplot';
+    miniplotBtn.onclick = () => {
+      this.miniplotActive = !this.miniplotActive;
+      miniplotBtn.classList.toggle('active', this.miniplotActive);
+      this.emit('toggleMiniplot', undefined);
+    };
+    miniplotGroup.appendChild(miniplotBtn);
+
+    const miniplotAxisLabel = document.createElement('label');
+    miniplotAxisLabel.textContent = 'Axis:';
+    const miniplotAxisSelect = document.createElement('select');
+    for (const ax of ['Extruder', 'X', 'Y', 'Z', 'Linear']) {
+      const opt = document.createElement('option');
+      opt.value = ax;
+      opt.textContent = ax;
+      miniplotAxisSelect.appendChild(opt);
+    }
+    miniplotAxisSelect.value = 'Extruder';
+    miniplotAxisSelect.onchange = () => this.emit('miniplotAxisChanged', miniplotAxisSelect.value);
+    miniplotAxisLabel.appendChild(miniplotAxisSelect);
+    miniplotGroup.appendChild(miniplotAxisLabel);
+    this.element.appendChild(miniplotGroup);
 
     // Layer slider group
     this.layerGroup = document.createElement('div');
