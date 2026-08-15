@@ -1,16 +1,20 @@
 /**
  * @file GridRenderer.ts
- * @brief WebGPU renderer for a reference grid in the XY plane with axis lines and tick marks.
+ * @brief WebGPU renderer for a reference grid in the XY plane with border tick marks.
+ *
+ * Tick marks are placed on the border edges of the grid (not on the axes
+ * through the origin), so they don't overlap the toolpath. Labels are
+ * rendered by GridLabels on a 2D overlay canvas.
  */
 
 import { Mat4 } from '../core/MathUtils';
 
 export interface TickInfo {
-  /** World-space position of the tick. */
+  /** World-space position where the label should be drawn. */
   position: [number, number, number];
   /** Numeric label value (mm). */
   value: number;
-  /** Axis: 0=X, 1=Y. */
+  /** Axis: 0=X (labels along bottom edge), 1=Y (labels along left edge). */
   axis: 0 | 1;
 }
 
@@ -26,7 +30,7 @@ export class GridRenderer {
   gridDivisions: number = 20;
 
   /** Tick mark length as a fraction of grid step. */
-  tickLength: number = 0.15;
+  tickLength: number = 0.3;
 
   /** Cached tick info for label rendering. */
   ticks: TickInfo[] = [];
@@ -103,11 +107,10 @@ export class GridRenderer {
     const step = this.gridSize / this.gridDivisions;
     const tickLen = step * this.tickLength;
 
-    // Colors
+    // Single color for grid lines, axes, and ticks
     const gridColor: [number, number, number] = [0.4, 0.4, 0.4];
-    const xAxisColor: [number, number, number] = [0.9, 0.2, 0.2]; // red
-    const yAxisColor: [number, number, number] = [0.2, 0.8, 0.2]; // green
-    const tickColor: [number, number, number] = [0.7, 0.7, 0.7];
+    const axisColor: [number, number, number] = [0.55, 0.55, 0.55]; // slightly brighter
+    const tickColor: [number, number, number] = [0.5, 0.5, 0.5];
 
     const lines: number[] = []; // x, y, z, r, g, b per vertex, 2 vertices per line
 
@@ -123,38 +126,32 @@ export class GridRenderer {
     // ── Grid lines ──
     for (let i = 0; i <= this.gridDivisions; i++) {
       const p = -half + i * step;
-      // Skip the lines that coincide with the axes (drawn separately)
-      const isXAxis = Math.abs(p) < 1e-9;
-      if (!isXAxis) {
-        addLine(p, -half, 0, p, half, 0, gridColor); // vertical line (constant X)
-      }
-      const isYAxis = Math.abs(p) < 1e-9;
-      if (!isYAxis) {
-        addLine(-half, p, 0, half, p, 0, gridColor); // horizontal line (constant Y)
-      }
+      addLine(p, -half, 0, p, half, 0, gridColor); // vertical (constant X)
+      addLine(-half, p, 0, half, p, 0, gridColor); // horizontal (constant Y)
     }
 
-    // ── Axis lines (thicker appearance via multiple offset lines) ──
-    // X axis (red) — along Y=0
-    addLine(-half, 0, 0, half, 0, 0, xAxisColor);
-    // Y axis (green) — along X=0
-    addLine(0, -half, 0, 0, half, 0, yAxisColor);
+    // ── Axis lines through origin (slightly brighter) ──
+    addLine(-half, 0, 0, half, 0, 0, axisColor); // X axis
+    addLine(0, -half, 0, 0, half, 0, axisColor); // Y axis
 
-    // ── Tick marks along X axis (at Y=0, ticks extend in +Y) ──
+    // ── Tick marks on the BORDER edges ──
+    // X-axis ticks: along the bottom edge (Y = -half), ticks extend inward (+Y)
     this.ticks = [];
     for (let i = 0; i <= this.gridDivisions; i++) {
       const p = -half + i * step;
-      // X-axis ticks: at y=0, extend in +Y direction
-      addLine(p, 0, 0, p, tickLen, 0, tickColor);
-      this.ticks.push({ position: [p, tickLen, 0], value: p, axis: 0 });
+      // Tick mark on bottom edge
+      addLine(p, -half, 0, p, -half + tickLen, 0, tickColor);
+      // Label position: just inside the tick, at the bottom edge
+      this.ticks.push({ position: [p, -half + tickLen, 0], value: p, axis: 0 });
     }
 
-    // ── Tick marks along Y axis (at X=0, ticks extend in +X) ──
+    // Y-axis ticks: along the left edge (X = -half), ticks extend inward (+X)
     for (let i = 0; i <= this.gridDivisions; i++) {
       const p = -half + i * step;
-      // Y-axis ticks: at x=0, extend in +X direction
-      addLine(0, p, 0, tickLen, p, 0, tickColor);
-      this.ticks.push({ position: [tickLen, p, 0], value: p, axis: 1 });
+      // Tick mark on left edge
+      addLine(-half, p, 0, -half + tickLen, p, 0, tickColor);
+      // Label position: just inside the tick, at the left edge
+      this.ticks.push({ position: [-half + tickLen, p, 0], value: p, axis: 1 });
     }
 
     const vertices = new Float32Array(lines);
