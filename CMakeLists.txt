@@ -45,16 +45,21 @@ set(TETHER_BUILD_ETHERCAT_COMMON OFF CACHE BOOL "" FORCE)
 set(TETHER_ENABLE_KLIPPER_HTTP OFF CACHE BOOL "" FORCE)
 set(TETHER_ENABLE_PRESSURE_ADVANCE OFF CACHE BOOL "" FORCE)
 
-# Add Tether's drogon_compat find modules to CMAKE_MODULE_PATH so that
-# Drogon's optional dependencies (jsoncpp, pg, SQLite3, etc.) are stubbed out.
+# Add drogon_compat find modules to CMAKE_MODULE_PATH so that
+# Drogon's optional dependencies (pg, SQLite3, etc.) are stubbed out.
 # This must be done BEFORE add_subdirectory(Tether) since Tether finds Drogon.
 list(APPEND CMAKE_MODULE_PATH
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/drogon_compat"
     "${CMAKE_CURRENT_SOURCE_DIR}/Tether/cmake/drogon_compat"
 )
 
-# ── jsoncpp for Drogon ───────────────────────────────────────────────────────
-# Drogon depends on jsoncpp. If jsoncpp dev headers are missing, FetchContent
-# jsoncpp so Drogon's CMake config can find it. This mirrors Tether's approach.
+# ── jsoncpp (required by Drogon headers) ─────────────────────────────────────
+# Drogon's public headers #include <json/json.h>, so jsoncpp dev headers are
+# required at compile time. glaze (in Tether/dependencies/glaze) cannot
+# replace jsoncpp here because Drogon hardcodes the jsoncpp include path.
+#
+# If jsoncpp is not found, we fail with a clear message instead of silently
+# FetchContent'ing it (which caused in-source build errors).
 find_package(Jsoncpp QUIET)
 if(NOT Jsoncpp_FOUND)
     find_path(JSONCPP_INCLUDE_DIRS NAMES json/json.h PATH_SUFFIXES jsoncpp)
@@ -63,16 +68,16 @@ if(NOT Jsoncpp_FOUND)
         set(Jsoncpp_FOUND TRUE)
     endif()
 endif()
-if(NOT Jsoncpp_FOUND AND NOT JSONCPP_INCLUDE_DIRS)
-    include(FetchContent)
-    FetchContent_Declare(jsoncpp
-        GIT_REPOSITORY https://github.com/open-source-parsers/jsoncpp.git
-        GIT_TAG 1.9.5)
-    FetchContent_MakeAvailable(jsoncpp)
-    set(JSONCPP_INCLUDE_DIRS ${jsoncpp_SOURCE_DIR}/include)
-    set(JSONCPP_LIBRARIES jsoncpp_lib)
-    set(Jsoncpp_FOUND TRUE)
-    file(MAKE_DIRECTORY ${jsoncpp_BINARY_DIR}/include/json)
+if(NOT Jsoncpp_FOUND)
+    message(FATAL_ERROR
+        "jsoncpp development headers not found.\n"
+        "Drogon (already installed on this system) requires jsoncpp headers to compile.\n"
+        "\n"
+        "Install jsoncpp dev package:\n"
+        "  Ubuntu/Debian:  sudo apt install libjsoncpp-dev\n"
+        "  Fedora:         sudo dnf install jsoncpp-devel\n"
+        "  Arch:           sudo pacman -S jsoncpp\n"
+        "  macOS (brew):   brew install jsoncpp\n")
 endif()
 
 add_subdirectory(Tether)

@@ -18,6 +18,7 @@ A WebGPU-based G-code viewer with a Drogon C++ backend and TypeScript frontend.
 - C++23 compiler (GCC 13+, Clang 17+)
 - CMake 3.22+
 - [Drogon](https://github.com/drogonframework/drogon)
+- jsoncpp dev headers (`libjsoncpp-dev` on Ubuntu/Debian — required by Drogon headers)
 - Protobuf
 - Node.js 18+ (for frontend build)
 
