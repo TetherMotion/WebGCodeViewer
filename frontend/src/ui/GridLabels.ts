@@ -98,13 +98,11 @@ export class GridLabels {
           screenY < -30 || screenY > canvasHeight + 30) continue;
 
       // Depth test: check if this tick is occluded by geometry
-      // NDC z maps to depth buffer value as: depth = (ndcZ + 1) * 0.5
-      // But WebGPU uses the reverse: depth = ndcZ * 0.5 + 0.5
-      const tickDepth = ndcZ * 0.5 + 0.5;
+      // WebGPU NDC z is in [0, 1] (0=near, 1=far), same as depth buffer
+      const tickDepth = ndcZ;
 
       if (depthData && depthSize[0] > 0 && depthSize[1] > 0) {
         // Sample the depth buffer at the tick's screen position
-        // depthData is in device pixels (dpr-scaled), screenX/screenY are in CSS pixels
         const bufW = depthSize[0];
         const bufH = depthSize[1];
         const sx = Math.round((screenX / canvasWidth) * bufW);

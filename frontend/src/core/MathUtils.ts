@@ -135,9 +135,10 @@ export function mat4Perspective(fovy: number, aspect: number, near: number, far:
   const m = new Float32Array(16);
   m[0] = f / aspect;
   m[5] = f;
-  m[10] = (far + near) * nf;
+  // WebGPU uses NDC z in [0, 1] (not OpenGL's [-1, 1])
+  m[10] = far * nf;
   m[11] = -1;
-  m[14] = 2 * far * near * nf;
+  m[14] = far * near * nf;
   return m;
 }
 
@@ -148,10 +149,11 @@ export function mat4Ortho(left: number, right: number, bottom: number, top: numb
   const m = new Float32Array(16);
   m[0] = 2 * rl;
   m[5] = 2 * tb;
-  m[10] = 2 * nf;
+  // WebGPU uses NDC z in [0, 1] (not OpenGL's [-1, 1])
+  m[10] = nf;
   m[12] = -(right + left) * rl;
   m[13] = -(top + bottom) * tb;
-  m[14] = (far + near) * nf;
+  m[14] = near * nf;
   m[15] = 1;
   return m;
 }

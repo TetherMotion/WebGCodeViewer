@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   vec3, add, sub, scale, dot, cross, length, normalize, distance,
   lerp, clamp, degToRad, radToDeg, centroid, boundingBox,
-  mat4Identity, mat4Multiply, mat4Perspective, mat4LookAt,
+  mat4Identity, mat4Multiply, mat4Perspective, mat4Ortho, mat4LookAt,
 } from '../src/core/MathUtils';
 
 describe('MathUtils', () => {
@@ -124,6 +124,30 @@ describe('MathUtils', () => {
       const m = mat4Perspective(Math.PI / 2, 1, 0.1, 100);
       expect(m[0]).not.toBe(0);
       expect(m[11]).toBe(-1);
+    });
+
+    it('perspective matrix maps near plane to NDC z=0, far to NDC z=1 (WebGPU)', () => {
+      const near = 0.1, far = 100;
+      const m = mat4Perspective(Math.PI / 2, 1, near, far);
+      // Near plane: z_eye = -near, w = near
+      const nearClipZ = m[10] * (-near) + m[14];
+      const nearW = -(-near);
+      expect(nearClipZ / nearW).toBeCloseTo(0, 5);
+      // Far plane: z_eye = -far, w = far
+      const farClipZ = m[10] * (-far) + m[14];
+      const farW = -(-far);
+      expect(farClipZ / farW).toBeCloseTo(1, 5);
+    });
+
+    it('ortho matrix maps near plane to NDC z=0, far to NDC z=1 (WebGPU)', () => {
+      const near = 0.1, far = 100;
+      const m = mat4Ortho(-10, 10, -10, 10, near, far);
+      // Near plane: z_eye = -near, w = 1
+      const nearNdcZ = m[10] * (-near) + m[14];
+      expect(nearNdcZ).toBeCloseTo(0, 5);
+      // Far plane: z_eye = -far, w = 1
+      const farNdcZ = m[10] * (-far) + m[14];
+      expect(farNdcZ).toBeCloseTo(1, 5);
     });
 
     it('lookAt matrix', () => {

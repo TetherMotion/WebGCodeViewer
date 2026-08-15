@@ -516,4 +516,54 @@ test.describe('G-code upload and render', () => {
     collector.assertNoErrors('API upload + viewer load');
     collector.assertNoWebGPUErrors();
   });
+
+  test('ortho mode renders loaded toolpath without errors', async ({ page, request }) => {
+    const collector = setupErrorCollector(page);
+
+    // Upload via API
+    const gcode = 'G1 X0 Y0 Z0 F600\nG1 X20 Y0 Z0 E1\nG1 X20 Y20 Z0 E1\nG1 X0 Y20 Z0 E1\nG1 X0 Y0 Z0 E1\n';
+    const uploadResp = await request.post('http://localhost:8099/api/trajectory/upload', {
+      headers: { 'Content-Type': 'text/plain' },
+      params: { filename: 'ortho_test.gcode' },
+      data: gcode,
+    });
+    expect(uploadResp.ok()).toBe(true);
+    const { jobId } = await uploadResp.json();
+
+    // Process
+    await request.post(`http://localhost:8099/api/trajectory/${jobId}/process`);
+
+    // Wait for processing
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      const statusResp = await request.get(`http://localhost:8099/api/trajectory/${jobId}/status`);
+      if (statusResp.ok()) {
+        const sj = await statusResp.json();
+        if (sj.state === 'ready') break;
+      }
+    }
+
+    // Navigate to viewer with job loaded
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+
+    // Switch to orthographic mode
+    await page.locator('.nav-proj-btn', { hasText: 'Ortho' }).click();
+    await page.waitForTimeout(2000);
+
+    // Switch to top view
+    const dirCanvas = page.locator('.nav-dir-canvas');
+    const box = await dirCanvas.boundingBox();
+    if (box) {
+      // Click 'top' cell (row 0, col 1 in 4x2 grid)
+      const x = box.x + 1.5 * (box.width / 4);
+      const y = box.y + 0.5 * (box.height / 2);
+      await page.mouse.click(x, y);
+      await page.waitForTimeout(1000);
+    }
+
+    collector.assertNoErrors('ortho mode with loaded toolpath');
+    collector.assertNoWebGPUErrors();
+  });
 });
