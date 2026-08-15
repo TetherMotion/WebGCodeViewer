@@ -16,6 +16,21 @@
     --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* Feature #66: Light theme */
+:root.light-theme {
+    --bg-primary: #f0f0f4;
+    --bg-secondary: #e4e4e8;
+    --bg-tertiary: #e8e8ec;
+    --bg-panel: #ffffff;
+    --text-primary: #1a1a1e;
+    --text-secondary: #4a4a52;
+    --text-muted: #808088;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --border: #d0d0d8;
+    --shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
 * {
     margin: 0;
     padding: 0;

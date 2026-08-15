@@ -24,6 +24,7 @@ export interface ControlPanelEvents {
   toggleTravels: void;        // Feature #1: show/hide travel moves
   lineWidthChanged: number;   // Feature #2: line width adjustment
   toggleRetractions: void;    // Feature #3: highlight retraction moves
+  toggleTheme: void;          // Feature #66: dark/light theme toggle
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -335,6 +336,13 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     // Status group (right-aligned)
     const statusGroup = document.createElement('div');
     statusGroup.className = 'control-group status';
+
+    // Feature #66: Theme toggle button
+    const themeBtn = document.createElement('button');
+    themeBtn.textContent = 'Theme';
+    themeBtn.className = 'theme-btn';
+    themeBtn.onclick = () => this.emit('toggleTheme', undefined);
+    statusGroup.appendChild(themeBtn);
 
     this.statusEl = document.createElement('span');
     this.statusEl.className = 'status-text';

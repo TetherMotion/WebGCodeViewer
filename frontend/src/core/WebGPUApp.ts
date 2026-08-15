@@ -78,6 +78,9 @@ export class WebGPUApp {
   private playProgress = 1.0;  // 0..1
   private playSpeed = 0.1;     // fraction per second
 
+  // Feature #66: Theme state
+  private lightTheme = false;
+
   constructor(
     canvas: HTMLCanvasElement,
     rpcClient: RpcClient,
@@ -172,6 +175,11 @@ export class WebGPUApp {
         this.nurbsRenderer.options.highlightRetractions = !this.nurbsRenderer.options.highlightRetractions;
         if (this.currentNBP) this.nurbsRenderer.updateData(this.currentNBP);
       }
+    });
+    // Feature #66: Toggle dark/light theme
+    this.controlPanel.on('toggleTheme', () => {
+      this.lightTheme = !this.lightTheme;
+      document.documentElement.classList.toggle('light-theme', this.lightTheme);
     });
     this.controlPanel.on('toggleCrossSection', () => {
       if (this.crossSectionRenderer) {
@@ -565,7 +573,9 @@ export class WebGPUApp {
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
         view: this.context.getCurrentTexture().createView(),
-        clearValue: { r: 0.18, g: 0.18, b: 0.2, a: 1 },
+        clearValue: this.lightTheme
+          ? { r: 0.94, g: 0.94, b: 0.95, a: 1 }
+          : { r: 0.18, g: 0.18, b: 0.2, a: 1 },
         loadOp: 'clear',
         storeOp: 'store',
       }],

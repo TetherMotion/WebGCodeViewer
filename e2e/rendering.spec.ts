@@ -1524,3 +1524,90 @@ test.describe('Retraction markers (Feature #3)', () => {
     collector.assertClean('retractions + travels combo toggle');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 16: Dark/Light Theme Toggle (Feature #66)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Dark/Light theme toggle (Feature #66)', () => {
+  test('theme toggle button exists', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+    await expect(themeBtn).toBeVisible();
+  });
+
+  test('default theme is dark (no light-theme class)', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const htmlClass = await page.locator('html').getAttribute('class');
+    expect(htmlClass || '').not.toContain('light-theme');
+  });
+
+  test('clicking theme button toggles light-theme class on html element', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+
+    // Toggle to light
+    await themeBtn.click();
+    await page.waitForTimeout(300);
+    let htmlClass = await page.locator('html').getAttribute('class');
+    expect(htmlClass).toContain('light-theme');
+
+    // Toggle back to dark
+    await themeBtn.click();
+    await page.waitForTimeout(300);
+    htmlClass = await page.locator('html').getAttribute('class');
+    expect(htmlClass || '').not.toContain('light-theme');
+  });
+
+  test('light theme changes CSS variables', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Get dark theme bg color
+    const darkBg = await page.evaluate(() => {
+      return getComputedStyle(document.documentElement).getPropertyValue('--bg-primary');
+    });
+
+    // Toggle to light
+    const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+    await themeBtn.click();
+    await page.waitForTimeout(300);
+
+    const lightBg = await page.evaluate(() => {
+      return getComputedStyle(document.documentElement).getPropertyValue('--bg-primary');
+    });
+
+    // Colors should be different
+    expect(darkBg.trim()).not.toBe(lightBg.trim());
+  });
+
+  test('theme toggle works without errors with loaded G-code', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'theme_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+
+    // Toggle multiple times
+    await themeBtn.click();
+    await page.waitForTimeout(500);
+    await themeBtn.click();
+    await page.waitForTimeout(500);
+
+    collector.assertClean('theme toggle with loaded G-code');
+  });
+});
