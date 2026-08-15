@@ -55,14 +55,18 @@ ProcessResult GCodeProcessor::process(
     // ── Step 2b: Compute per-segment corner deviation (%) from G64 tolerance ──
     computeCornerDeviation(segments);
 
+    // ── Step 2c: Compute per-segment extruder speed (mm/s) from E axis ──
+    computeExtruderSpeed(segments);
+
     if (progress) progress(0.4);
 
     // ── Step 3: Build NURBS path directly from segments (FAST) ──
     // This is O(segments) — typically milliseconds, not minutes.
     try {
-        auto [path, deviations] = buildNurbsFromSegments(segments);
+        auto [path, attrs] = buildNurbsFromSegments(segments);
         result.nurbsPath = std::move(path);
-        result.deviations = std::move(deviations);
+        result.deviations = std::move(attrs.first);
+        result.extruderSpeeds = std::move(attrs.second);
         result.pathLength = result.nurbsPath->totalLength();
     } catch (const std::exception& e) {
         result.success = false;
@@ -203,10 +207,12 @@ void GCodeProcessor::parseGCode(
 
     // Modal state
     bool absoluteMode = true; // G90
+    bool absoluteExtrude = true; // M82 (absolute E), vs M83 (relative E)
     bool unitsMm = true;      // G21
     InterpolationPlane plane = InterpolationPlane::XY;
     double currentFeedRate = 1000.0; // mm/min default
     double currentBlendTolerance = 0.0; // G64 P value (0 = no blending)
+    double currentE = 0.0; // current extruder position (mm)
 
     while (std::getline(stream, line)) {
         ++lineNumber;
@@ -225,10 +231,13 @@ void GCodeProcessor::parseGCode(
         bool hasFeed = false;
         Position target = currentPos;
         bool hasAnyPos = false;
+        double eVal = 0.0;
+        bool hasE = false;
         double iVal = 0, jVal = 0, kVal = 0, rVal = 0, pVal = 0;
         bool hasI = false, hasJ = false, hasK = false, hasR = false, hasP = false;
         int motionCode = -1; // 0, 1, 2, 3
         bool isG64 = false;
+        bool isG92 = false;
 
         for (const auto& w : words) {
             switch (w.letter) {
@@ -258,12 +267,21 @@ void GCodeProcessor::parseGCode(
                         } else if (gval == 61) {
                             // G61/G61.1: exact stop — disable blending
                             currentBlendTolerance = 0.0;
+                        } else if (gval == 92) {
+                            // G92: set position (e.g. G92 E0 resets extruder origin)
+                            isG92 = true;
                         }
                     }
                     break;
                 case 'M':
                     if (w.hasValue) {
-                        mcodeStr = "M" + std::to_string(static_cast<int>(w.value));
+                        int mval = static_cast<int>(w.value);
+                        if (mval == 82) {
+                            absoluteExtrude = true;
+                        } else if (mval == 83) {
+                            absoluteExtrude = false;
+                        }
+                        mcodeStr = "M" + std::to_string(mval);
                     }
                     break;
                 case 'X':
@@ -302,6 +320,10 @@ void GCodeProcessor::parseGCode(
                     target[8] = absoluteMode ? w.value : currentPos[8] + w.value;
                     hasAnyPos = true;
                     break;
+                case 'E':
+                    eVal = w.value;
+                    hasE = true;
+                    break;
                 case 'F':
                     feedRate = w.value;
                     hasFeed = true;
@@ -325,6 +347,24 @@ void GCodeProcessor::parseGCode(
         // Handle G64 path blending mode
         if (isG64) {
             currentBlendTolerance = hasP ? pVal : 0.01; // default 0.01mm if no P
+        }
+
+        // Handle G92: set current position (e.g. G92 E0 resets extruder origin)
+        if (isG92) {
+            if (hasE) currentE = eVal;
+            // G92 can also set XYZ etc. but we only track E for extrusion
+            // Record block metadata and continue (no motion segment)
+            BlockMetadata blk;
+            blk.blockIndex = blockIndex++;
+            blk.lineNumber = lineNumber;
+            blk.motionType = 255;
+            std::string text = code;
+            size_t start = text.find_first_not_of(" \t");
+            if (start != std::string::npos)
+                text = text.substr(start);
+            blk.gcodeText = text;
+            blocks.push_back(std::move(blk));
+            continue;
         }
 
         // Update feed rate if specified (even without motion)
@@ -376,6 +416,20 @@ void GCodeProcessor::parseGCode(
         seg.feedRate = currentFeedRate;
         seg.isRapid = (motionCode == 0);
         seg.blendTolerance = currentBlendTolerance;
+
+        // Compute extruder delta (E axis movement in mm)
+        // Store in exitVelocity (repurposed for visualization — not used by viewer)
+        // computeExtruderSpeed() will convert this to mm/s after segment time is known
+        double eDelta = 0.0;
+        if (hasE) {
+            if (absoluteExtrude) {
+                eDelta = eVal - currentE;
+            } else {
+                eDelta = eVal; // relative mode: E value is the delta
+            }
+            currentE += eDelta;
+        }
+        seg.exitVelocity = eDelta; // temporary storage for E delta
 
         switch (motionCode) {
             case 0:
@@ -576,18 +630,38 @@ void GCodeProcessor::computeCornerDeviation(
     }
 }
 
+// ── Extruder speed computation ───────────────────────────────────────────────
+
+void GCodeProcessor::computeExtruderSpeed(
+    std::vector<PlanningSegment>& segments)
+{
+    // Convert E delta (stored in exitVelocity) to extruder speed in mm/s.
+    // extruderSpeed = |deltaE| / segmentTime
+    // For non-extruding moves (G0, or G1 without E), speed = 0.
+    // The result is stored back in exitVelocity as mm/s.
+    for (auto& seg : segments) {
+        double eDelta = seg.exitVelocity; // temporary E delta storage
+        if (seg.isRapid || std::abs(eDelta) < 1e-12 || seg.segmentTime < 1e-9) {
+            seg.exitVelocity = 0.0;
+            continue;
+        }
+        seg.exitVelocity = std::abs(eDelta) / seg.segmentTime; // mm/s
+    }
+}
+
 // ── NURBS path construction from segments ────────────────────────────────────
 
 using tether::motion::NurbsCurve;
 using tether::motion::PiecewiseNurbsPath;
 using tether::motion::RVec;
 
-std::pair<tether::motion::PiecewiseNurbsPath, std::vector<float>>
+std::pair<tether::motion::PiecewiseNurbsPath, std::pair<std::vector<float>, std::vector<float>>>
 GCodeProcessor::buildNurbsFromSegments(
     const std::vector<PlanningSegment>& segments)
 {
     std::vector<NurbsCurve> curves;
     std::vector<float> deviations;
+    std::vector<float> extruderSpeeds;
     curves.reserve(segments.size());
 
     for (const auto& seg : segments) {
@@ -605,6 +679,8 @@ GCodeProcessor::buildNurbsFromSegments(
 
         // Deviation for this segment (stored in entryVelocity by computeCornerDeviation)
         float segDeviation = static_cast<float>(seg.entryVelocity);
+        // Extruder speed for this segment (stored in exitVelocity by computeExtruderSpeed)
+        float segExtruderSpeed = static_cast<float>(seg.exitVelocity);
 
         if (seg.isArc() && seg.arcRadius > 1e-9) {
             // Build arc NURBS
@@ -643,11 +719,13 @@ GCodeProcessor::buildNurbsFromSegments(
                     startAngle, sweepAngle);
                 curves.push_back(std::move(curve));
                 deviations.push_back(segDeviation);
+                extruderSpeeds.push_back(segExtruderSpeed);
             } catch (...) {
                 // Fall back to line if arc construction fails
                 try {
                     curves.push_back(NurbsCurve::fromLine(start, end));
                     deviations.push_back(segDeviation);
+                    extruderSpeeds.push_back(segExtruderSpeed);
                 } catch (...) {}
             }
         } else {
@@ -655,13 +733,14 @@ GCodeProcessor::buildNurbsFromSegments(
             try {
                 curves.push_back(NurbsCurve::fromLine(start, end));
                 deviations.push_back(segDeviation);
+                extruderSpeeds.push_back(segExtruderSpeed);
             } catch (...) {
                 // Skip degenerate segments
             }
         }
     }
 
-    return {PiecewiseNurbsPath(std::move(curves)), std::move(deviations)};
+    return {PiecewiseNurbsPath(std::move(curves)), {std::move(deviations), std::move(extruderSpeeds)}};
 }
 
 // ── Statistics computation ───────────────────────────────────────────────────

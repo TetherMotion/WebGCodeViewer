@@ -14,7 +14,7 @@ import { Mat4 } from '../core/MathUtils';
 import { NBPData, NBPPiece, tessellatePiece } from '../core/NurbsParser';
 import { ColorMap } from '../core/ColorMap';
 
-export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'motion' | 'solid';
+export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'extruderSpeed' | 'motion' | 'solid';
 
 export interface NurbsRenderOptions {
   colorMap: ColorMap;
@@ -171,6 +171,12 @@ export class NurbsRenderer {
     const allSampleIndices: number[] = [];
     const allIndices: number[] = [];
 
+    // Precompute max extruder speed for normalization
+    let maxExtruderSpeed = 0;
+    for (const p of pieces) {
+      if (p.extruderSpeed > maxExtruderSpeed) maxExtruderSpeed = p.extruderSpeed;
+    }
+
     let vertexOffset = 0;
     let totalSegments = 0;
 
@@ -206,6 +212,11 @@ export class NurbsRenderer {
           const zRange = zMax - zMin > 1e-12 ? zMax - zMin : 1;
           const z = piece.controlPoints.length >= dim ? piece.controlPoints[2] : 0;
           colorValue = (z - zMin) / zRange;
+          break;
+        }
+        case 'extruderSpeed': {
+          // Color by extruder speed (mm/s), normalized to 0-1
+          colorValue = maxExtruderSpeed > 1e-6 ? piece.extruderSpeed / maxExtruderSpeed : 0;
           break;
         }
         case 'motion': {

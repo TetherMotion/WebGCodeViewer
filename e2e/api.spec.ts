@@ -136,9 +136,9 @@ test.describe('Binary data', () => {
     const magic = String.fromCharCode(buf[0], buf[1], buf[2], buf[3]);
     expect(magic).toBe('TNBP');
 
-    // Check version (u16 LE at offset 4) — v2 adds per-piece deviation field
+    // Check version (u16 LE at offset 4) — v3 adds per-piece extruderSpeed field
     const version = buf[4] | (buf[5] << 8);
-    expect(version).toBe(2);
+    expect(version).toBe(3);
 
     // Check dim (u8 at offset 6)
     const dim = buf[6];
@@ -184,6 +184,47 @@ test.describe('Binary data', () => {
     expect(buf[83]).toBe(0);
     expect(buf[84]).toBe(0);
     expect(buf[85]).toBe(0);
+
+    await ctx.dispose();
+  });
+
+  test('NBP contains extruder speed for G-code with E values', async () => {
+    // G-code with extrusion (E axis)
+    const extrudeGcode =
+      'G21\nG90\nG92 E0\nM82\n' +
+      'G0 X0 Y0 Z5 F3000\n' +
+      'G1 X10 Y0 Z5 E1 F1800\n' +
+      'G1 X20 Y0 Z5 E2 F1800\n' +
+      'M30\n';
+
+    const { jobId, status } = await uploadAndProcess(extrudeGcode);
+    expect(status).toBe('ready');
+
+    const ctx = await request.newContext();
+    const resp = await ctx.get(`${BASE}/api/trajectory/${jobId}/nurbs`);
+    expect(resp.ok()).toBe(true);
+    const buf = await resp.body();
+    expect(buf.length).toBeGreaterThan(82);
+
+    // Verify NBP version 3
+    const version = buf[4] | (buf[5] << 8);
+    expect(version).toBe(3);
+
+    const pieceCount = buf[10] | (buf[11] << 8) | (buf[12] << 16) | (buf[13] << 24);
+    expect(pieceCount).toBeGreaterThan(0);
+
+    // Check that at least one piece has non-zero extruderSpeed
+    // Piece entry is 24 bytes starting at offset 82
+    // Layout: degree(1) + res(3) + cpCount(4) + knotCount(4) + motionType(1) + res(3) + deviation(4) + extruderSpeed(4)
+    // extruderSpeed offset within entry = 20
+    let hasNonZeroExtruderSpeed = false;
+    for (let i = 0; i < pieceCount; i++) {
+      const entryOff = 82 + i * 24 + 20; // extruderSpeed at offset 20 within entry
+      const espeedBytes = buf[entryOff] | (buf[entryOff + 1] << 8) | (buf[entryOff + 2] << 16) | (buf[entryOff + 3] << 24);
+      const espeed = new Float32Array(new Uint8Array([buf[entryOff], buf[entryOff + 1], buf[entryOff + 2], buf[entryOff + 3]]).buffer)[0];
+      if (espeed > 0.01) hasNonZeroExtruderSpeed = true;
+    }
+    expect(hasNonZeroExtruderSpeed).toBe(true);
 
     await ctx.dispose();
   });

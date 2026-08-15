@@ -18,7 +18,7 @@ import { parseNBP, NBP_MAGIC, NBP_VERSION, tessellatePiece, evaluateNurbs } from
 //  4 (magic) + 2 (version) + 1 (dim) + 3 (reserved) + 4×4 (counts) +
 //  1 (totalLength f64) ×8 + 3×8 (boundsMin) + 3×8 (boundsMax) = 82
 const NBP_HEADER_SIZE = 82;
-const NBP_PIECE_ENTRY_SIZE = 20; // v2: degree(1)+res(3)+cpCount(4)+knotCount(4)+motionType(1)+res(3)+deviation(4)
+const NBP_PIECE_ENTRY_SIZE = 24; // v3: degree(1)+res(3)+cpCount(4)+knotCount(4)+motionType(1)+res(3)+deviation(4)+extruderSpeed(4)
 
 /**
  * Build a complete NBP binary buffer matching the C++ serializer format.
@@ -90,6 +90,7 @@ function buildNBP(opts: {
     view.setUint8(off++, p.motionType ?? 1);
     view.setUint8(off++, 0); view.setUint8(off++, 0); view.setUint8(off++, 0); // reserved[3]
     view.setFloat32(off, p.deviation ?? 0, true); off += 4; // deviation (v2)
+    view.setFloat32(off, p.extruderSpeed ?? 0, true); off += 4; // extruderSpeed (v3)
   }
 
   // ── Control points (all pieces, contiguous) ──

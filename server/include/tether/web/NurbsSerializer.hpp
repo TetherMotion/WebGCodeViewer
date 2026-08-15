@@ -42,7 +42,7 @@ namespace tether::web {
 
 /// NBP binary format magic number.
 constexpr char NBP_MAGIC[4] = {'T', 'N', 'B', 'P'};
-constexpr uint16_t NBP_VERSION = 2;
+constexpr uint16_t NBP_VERSION = 3;
 
 /// NBP header (82 bytes, little-endian, packed).
 #pragma pack(push, 1)
@@ -62,7 +62,7 @@ struct NBPHeader {
 #pragma pack(pop)
 static_assert(sizeof(NBPHeader) == 82, "NBPHeader must be 82 bytes");
 
-/// Per-piece metadata entry (20 bytes, packed).
+/// Per-piece metadata entry (24 bytes, packed).
 #pragma pack(push, 1)
 struct NBPPieceEntry {
     uint8_t degree = 1;
@@ -71,10 +71,11 @@ struct NBPPieceEntry {
     uint32_t knotCount = 0;
     uint8_t motionType = 0;
     uint8_t reserved2[3] = {0, 0, 0};
-    float deviation = 0.0f;          ///< G64 corner deviation % (0-100, v2+)
+    float deviation = 0.0f;            ///< G64 corner deviation % (0-100, v2+)
+    float extruderSpeed = 0.0f;        ///< Extruder speed mm/s (v3+)
 };
 #pragma pack(pop)
-static_assert(sizeof(NBPPieceEntry) == 20, "NBPPieceEntry must be 20 bytes");
+static_assert(sizeof(NBPPieceEntry) == 24, "NBPPieceEntry must be 24 bytes");
 
 /// Parsed NBP data (for server-side testing).
 struct ParsedNBP {
@@ -86,6 +87,7 @@ struct ParsedNBP {
         std::vector<double> knots;
         uint8_t motionType;
         float deviation = 0.0f;
+        float extruderSpeed = 0.0f;
     };
     std::vector<Piece> pieces;
     std::vector<BlockMetadata> blocks;
@@ -96,12 +98,14 @@ struct ParsedNBP {
 /// @param blocks G-code block metadata (may be empty)
 /// @param motionTypes Per-piece motion type (0=rapid, 1=linear, 2=arcCW, 3=arcCCW)
 /// @param deviations Per-piece G64 corner deviation % (0-100, optional)
+/// @param extruderSpeeds Per-piece extruder speed in mm/s (optional)
 /// @return Binary NBP data
 std::vector<uint8_t> serializeNurbsPath(
     const tether::motion::PiecewiseNurbsPath& path,
     const std::vector<BlockMetadata>& blocks = {},
     const std::vector<uint8_t>& motionTypes = {},
-    const std::vector<float>& deviations = {});
+    const std::vector<float>& deviations = {},
+    const std::vector<float>& extruderSpeeds = {});
 
 /// Parse NBP binary data (for testing).
 ParsedNBP parseNurbsPath(std::span<const uint8_t> data);

@@ -100,6 +100,7 @@ export class WebGPUApp {
       const nurbsAttrMap: Record<string, NurbsColorAttribute> = {
         'deviation': 'deviation',
         'zHeight': 'zHeight',
+        'extruderSpeed': 'extruderSpeed',
         'motion': 'motion',
         'solid': 'solid',
         'velocity': 'pieceIndex',    // NBP has no per-piece velocity

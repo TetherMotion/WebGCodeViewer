@@ -83,7 +83,8 @@ std::vector<uint8_t> serializeNurbsPath(
     const tether::motion::PiecewiseNurbsPath& path,
     const std::vector<BlockMetadata>& blocks,
     const std::vector<uint8_t>& motionTypes,
-    const std::vector<float>& deviations)
+    const std::vector<float>& deviations,
+    const std::vector<float>& extruderSpeeds)
 {
     const auto& pieces = path.pieces();
     const auto dim = path.dim();
@@ -112,7 +113,7 @@ std::vector<uint8_t> serializeNurbsPath(
 
     // Allocate buffer
     std::vector<uint8_t> buf;
-    buf.reserve(80 + pieceCount * 20 + totalCP * dim * 8 + totalCP * 8 + totalKnots * 8);
+    buf.reserve(82 + pieceCount * 24 + totalCP * dim * 8 + totalCP * 8 + totalKnots * 8);
 
     // ── Write header ──
     buf.insert(buf.end(), NBP_MAGIC, NBP_MAGIC + 4);
@@ -139,6 +140,8 @@ std::vector<uint8_t> serializeNurbsPath(
         writeU8(buf, 0); writeU8(buf, 0); writeU8(buf, 0); // reserved
         float dev = i < deviations.size() ? deviations[i] : 0.0f;
         writeF32(buf, dev);
+        float espeed = i < extruderSpeeds.size() ? extruderSpeeds[i] : 0.0f;
+        writeF32(buf, espeed);
     }
 
     // ── Write control points (all pieces, contiguous) ──
@@ -230,6 +233,12 @@ ParsedNBP parseNurbsPath(std::span<const uint8_t> data) {
             result.pieces[i].deviation = readF32(p);
         } else {
             result.pieces[i].deviation = 0.0f;
+        }
+        // v3+ has extruderSpeed field (f32); v1/v2 do not
+        if (result.header.version >= 3) {
+            result.pieces[i].extruderSpeed = readF32(p);
+        } else {
+            result.pieces[i].extruderSpeed = 0.0f;
         }
         result.pieces[i].controlPoints.resize(cpCount, std::vector<double>(dim));
         result.pieces[i].weights.resize(cpCount);

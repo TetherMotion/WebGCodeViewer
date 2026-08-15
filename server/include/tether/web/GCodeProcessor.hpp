@@ -58,6 +58,11 @@ struct ProcessResult {
     /// Per-piece G64 corner deviation % (0-100). One entry per NURBS piece.
     /// Populated by computeCornerDeviation() during processing.
     std::vector<float> deviations;
+
+    /// Per-piece extruder speed in mm/s. One entry per NURBS piece.
+    /// Populated by computeExtruderSpeed() during processing.
+    /// 0 for non-extruding moves (G0, or G1 without E).
+    std::vector<float> extruderSpeeds;
 };
 
 /// @brief Processes G-code text into trajectory samples.
@@ -97,11 +102,15 @@ private:
     /// Stores deviation in seg.entryVelocity (repurposed for visualization).
     void computeCornerDeviation(std::vector<GCode::PlanningSegment>& segments);
 
+    /// @brief Compute per-segment extruder speed (mm/s) from E axis movement.
+    /// Converts E delta (stored in seg.exitVelocity) to mm/s using segment time.
+    void computeExtruderSpeed(std::vector<GCode::PlanningSegment>& segments);
+
     /// @brief Build a PiecewiseNurbsPath directly from PlanningSegments.
     /// Uses NurbsCurve::fromLine for linear/rapid segments and
     /// NurbsCurve::fromArc for arc segments. O(segments) — fast.
-    /// @return {path, per-piece deviation values}
-    std::pair<tether::motion::PiecewiseNurbsPath, std::vector<float>>
+    /// @return {path, {per-piece deviations, per-piece extruder speeds}}
+    std::pair<tether::motion::PiecewiseNurbsPath, std::pair<std::vector<float>, std::vector<float>>>
     buildNurbsFromSegments(
         const std::vector<GCode::PlanningSegment>& segments);
 

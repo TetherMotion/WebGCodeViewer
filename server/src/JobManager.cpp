@@ -186,8 +186,10 @@ std::vector<uint8_t> JobManager::getNurbsBinary(const std::string& jobId) const
 
             // Per-piece deviations from G64 corner deviation computation
             const auto& deviations = job->result.deviations;
+            // Per-piece extruder speeds from E axis computation
+            const auto& extruderSpeeds = job->result.extruderSpeeds;
 
-            return serializeNurbsPath(path, job->result.blocks, motionTypes, deviations);
+            return serializeNurbsPath(path, job->result.blocks, motionTypes, deviations, extruderSpeeds);
         }
 
         // Fallback: convert from samples (slow, only if nurbsPath wasn't built)

@@ -16,12 +16,13 @@
  *     totalLength (f64)
  *     boundsMin[3] (f64)
  *     boundsMax[3] (f64)
- *   Piece table (pieceCount × 20 bytes, v2):
+ *   Piece table (pieceCount × 24 bytes, v3):
  *     degree (u8) + reserved[3]
  *     cpCount (u32)
  *     knotCount (u32)
  *     motionType (u8) + reserved[3]
  *     deviation (f32)   [v2+]
+ *     extruderSpeed (f32) [v3+]
  *   Control points (totalControlPoints × dim × f64)
  *   Weights (totalControlPoints × f64)
  *   Knots (totalKnots × f64)
@@ -29,7 +30,7 @@
  */
 
 export const NBP_MAGIC = 'TNBP';
-export const NBP_VERSION = 2;
+export const NBP_VERSION = 3;
 
 export interface NBPHeader {
   magic: string;
@@ -51,6 +52,7 @@ export interface NBPPiece {
   knots: number[];
   motionType: number;
   deviation: number;         // G64 corner deviation % (0-100), v2+
+  extruderSpeed: number;     // Extruder speed mm/s, v3+
 }
 
 export interface NBPBlock {
@@ -133,6 +135,8 @@ export function parseNBP(data: Uint8Array | ArrayBuffer): NBPData {
     reader.readU8(); reader.readU8(); reader.readU8(); // reserved
     // v2+ has deviation field (f32); v1 does not
     const deviation = version >= 2 ? reader.readF32() : 0;
+    // v3+ has extruderSpeed field (f32); v1/v2 do not
+    const extruderSpeed = version >= 3 ? reader.readF32() : 0;
     pieces.push({
       degree,
       controlPoints: [],
@@ -140,6 +144,7 @@ export function parseNBP(data: Uint8Array | ArrayBuffer): NBPData {
       knots: [],
       motionType,
       deviation,
+      extruderSpeed,
     });
     // Pre-allocate
     pieces[i].controlPoints = new Array(cpCount * dim);

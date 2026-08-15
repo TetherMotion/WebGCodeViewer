@@ -279,3 +279,38 @@ TEST(GCodeProcessor, InchUnitsConversion) {
     double finalX = result.samples.back().position[0];
     EXPECT_NEAR(finalX, 25.4, 0.5);
 }
+
+// ── Extruder speed tests ─────────────────────────────────────────────────────
+
+TEST(GCodeProcessor, ExtruderSpeedComputed) {
+    // G-code with extrusion: G1 moves with E axis
+    const char* gcode =
+        "G21\n"
+        "G90\n"
+        "G92 E0\n"        // reset E to 0
+        "M82\n"           // absolute extrusion mode
+        "G0 X0 Y0 Z5 F3000\n"    // rapid (no extrusion)
+        "G1 X10 Y0 Z5 E1 F1800\n"  // extrude 1mm over 10mm move
+        "G1 X20 Y0 Z5 E2 F1800\n"  // extrude 1mm more
+        "M30\n";
+
+    GCodeProcessor processor;
+    auto result = processor.process(gcode);
+
+    EXPECT_TRUE(result.success) << result.errorMessage;
+    EXPECT_FALSE(result.extruderSpeeds.empty());
+
+    // The rapid move (G0) should have 0 extruder speed
+    // The G1 moves should have positive extruder speed
+    // E delta = 1mm per segment, feed rate = 1800 mm/min = 30 mm/s
+    // segment length = 10mm, segment time = 10/30 = 0.333s
+    // extruder speed = 1mm / 0.333s = 3.0 mm/s
+    bool hasPositiveSpeed = false;
+    bool hasZeroSpeed = false;
+    for (float speed : result.extruderSpeeds) {
+        if (speed > 0.01f) hasPositiveSpeed = true;
+        if (speed < 0.001f) hasZeroSpeed = true;
+    }
+    EXPECT_TRUE(hasPositiveSpeed) << "Should have at least one extruding segment";
+    EXPECT_TRUE(hasZeroSpeed) << "Should have at least one non-extruding segment (G0)";
+}
