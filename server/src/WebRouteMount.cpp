@@ -224,7 +224,7 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
         }, {drogon::Get});
 
     // ── GET /api/trajectory/{jobId}/binary ──
-    // Get binary TTHR data
+    // Get binary TTHR data (raw HTTP, bypasses protobuf 2GB limit)
     app.registerHandler("/api/trajectory/{jobId}/binary",
         [jobManager, enableCors](const drogon::HttpRequestPtr& req,
            std::function<void(const drogon::HttpResponsePtr&)>&& cb,
@@ -261,6 +261,8 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
             resp->setContentTypeString("application/octet-stream");
             resp->addHeader("Content-Disposition",
                             "attachment; filename=\"trajectory.tthr\"");
+            // No-cache so clients always get fresh data
+            resp->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
             resp->setBody(std::string(reinterpret_cast<const char*>(binary.data()),
                                        binary.size()));
             if (enableCors) addCorsHeaders(resp);

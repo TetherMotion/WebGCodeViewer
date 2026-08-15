@@ -457,12 +457,12 @@ export class WebGPUApp {
     this.currentFilename = file.name;
     this.controlPanel.setStatus('Uploading...');
 
-    // Load raw G-code text into the viewer immediately
+    // Load raw G-code text into the viewer immediately (for the G-code panel)
     const text = await file.text();
     this.gcodeViewer.loadGcodeText(text, file.name);
 
-    // Upload to server and process
-    const uploadResp = await this.rpcClient.uploadGcode(text, file.name);
+    // Upload via HTTP (bypasses protobuf 2GB limit for large G-code files)
+    const uploadResp = await this.rpcClient.uploadGcodeHttp(file);
     this.currentJobId = uploadResp.jobId;
     await this.rpcClient.processJob(uploadResp.jobId);
     await this.pollJobStatus(uploadResp.jobId);
@@ -485,8 +485,24 @@ export class WebGPUApp {
   }
 
   private async loadJobData(jobId: string): Promise<void> {
-    const binaryResp = await this.rpcClient.getBinary(jobId);
-    this.currentData = parseTTHR(binaryResp.data);
+    // Check job status to get sample count for auto-downsampling
+    const status = await this.rpcClient.getJobStatus(jobId);
+    const sampleCount = status.sampleCount;
+
+    // Auto-downsample if the trajectory is very large.
+    // Each sample uses ~40-80 bytes in TTHR format (pos + vel + acc + jerk + metrics).
+    // At 500M samples, that's 20-40GB — way too much. Cap at ~5M samples for smooth rendering.
+    const MAX_SAMPLES = 5_000_000;
+    let downsample = 1;
+    if (sampleCount > MAX_SAMPLES) {
+      downsample = Math.ceil(sampleCount / MAX_SAMPLES);
+      console.info(`Auto-downsampling: ${sampleCount} samples → ~${Math.floor(sampleCount / downsample)} (downsample=${downsample})`);
+    }
+
+    // Use HTTP fetch for binary data — bypasses protobuf's 2GB limit
+    // and supports very large G-code files
+    const binaryData = await this.rpcClient.getBinaryHttp(jobId, { downsample });
+    this.currentData = parseTTHR(binaryData);
     this.fullData = this.currentData;
     this.toolpathRenderer?.updateData(this.currentData!);
     this.crossSectionRenderer?.updateData(this.currentData!);

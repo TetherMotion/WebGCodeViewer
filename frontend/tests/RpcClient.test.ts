@@ -10,6 +10,7 @@ import { RpcClient } from '../src/core/RpcClient';
 function createMockTransport() {
   const calls: { case: string; value: any }[] = [];
   const transport = {
+    baseUrl: '/api/ws',
     unary: vi.fn(async (requestCase: string, requestValue: any) => {
       calls.push({ case: requestCase, value: requestValue });
       // Return mock responses based on request case

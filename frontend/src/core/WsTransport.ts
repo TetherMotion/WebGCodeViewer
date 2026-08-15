@@ -64,6 +64,9 @@ export class WsTransport {
     private readonly slowRequestThresholdMs: number = 150,
   ) {}
 
+  /** Public read-only access to the URL for deriving HTTP endpoints. */
+  get baseUrl(): string { return this.url; }
+
   private resolveWsUrl(): string {
     if (this.url.startsWith('ws://') || this.url.startsWith('wss://')) return this.url;
     if (this.url.startsWith('http://')) return 'ws://' + this.url.slice(7);

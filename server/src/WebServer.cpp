@@ -103,6 +103,11 @@ void WebServer::registerStaticAssets() {
                std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
             auto resp = drogon::HttpResponse::newFileResponse(
                 config_.webRoot + "/index.html");
+            // Prevent caching of the HTML entry point so new JS versions
+            // are picked up immediately
+            resp->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            resp->addHeader("Pragma", "no-cache");
+            resp->addHeader("Expires", "0");
             if (config_.enableCors) {
                 resp->addHeader("Access-Control-Allow-Origin", "*");
             }
