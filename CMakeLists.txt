@@ -114,6 +114,8 @@ foreach(_tgt ${WGV_SERVER_TARGETS})
         PRIVATE
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/server/src/proto>
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Tether/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Tether/dependencies/magic_enum/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Tether/dependencies/eigen>
     )
 
     target_compile_features(${_tgt} PRIVATE cxx_std_23)

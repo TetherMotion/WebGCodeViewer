@@ -293,8 +293,9 @@ TEST(TrajectorySerializer, DataSizeComputation) {
     // linear: 1000*3*8 = 24000
     // curve: 1000*2*8 = 16000
     // seg: 1000*(4+4+1) = 9000
-    // Total = 16000 + 24000*4 + 24000 + 16000 + 9000 = 161000
-    EXPECT_EQ(allSize, 161000u);
+    // deviation: 1000*1*8 = 8000
+    // Total = 16000 + 24000*4 + 24000 + 16000 + 9000 + 8000 = 169000
+    EXPECT_EQ(allSize, 169000u);
 
     // Only positions
     size_t posOnly = computeDataSize(n, TTHRFlags::Positions, axes);

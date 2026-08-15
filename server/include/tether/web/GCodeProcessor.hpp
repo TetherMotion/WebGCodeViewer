@@ -3,16 +3,26 @@
 /// @file GCodeProcessor.hpp
 /// @brief Processes G-code text into trajectory data for visualization.
 ///
-/// Primary pipeline: G-code text → PlanningSegment[] → NurbsCurve[] → PiecewiseNurbsPath
+/// Primary pipeline: G-code text → PlanningSegmentBuilder → PlanningSegment[]
+/// → piecewiseNurbsFromSegments() → PiecewiseNurbsPath
 /// (fast, O(segments) — used for NBP/NURBS rendering)
 ///
-/// Fallback pipeline: G-code text → PlanningSegment[] → TrajectoryAnalyzer → TrajectorySample[]
+/// Fallback pipeline: G-code text → PlanningSegmentBuilder → PlanningSegment[]
+/// → TrajectoryAnalyzer → TrajectorySample[]
 /// (slow, O(samples) — only used when TTHR sampled data is explicitly requested)
+///
+/// G-code parsing, segment-time computation, corner-deviation analysis, and
+/// NURBS path construction are delegated to Tether libraries (tether_gcode
+/// and tether_motion_planner). This class retains only viewer-specific
+/// orchestration: extruder-speed computation, per-segment miniplot data,
+/// and optional dense sampling via TrajectoryAnalyzer.
 
 #include "tether/export/TrajectoryAnalyzer.hpp"
 #include "tether/gcode/motion/InterpolationStrategy.hpp"
+#include "tether/gcode/PlanningSegmentBuilder.hpp"
 #include "tether/web/TrajectorySerializer.hpp"
 #include "tether/motion_planner/geometry/PiecewiseNurbsPath.hpp"
+#include "tether/motion_planner/geometry/PlanningSegmentConverter.hpp"
 
 #include <memory>
 #include <optional>
@@ -106,34 +116,13 @@ public:
     static std::vector<std::string> availableStrategies();
 
 private:
-    /// @brief Parse G-code text into PlanningSegments and block metadata.
-    void parseGCode(
-        const std::string& gcodeText,
-        std::vector<GCode::PlanningSegment>& segments,
-        std::vector<BlockMetadata>& blocks);
-
-    /// @brief Compute segment time from feed rate and distance.
-    void computeSegmentTimes(std::vector<GCode::PlanningSegment>& segments);
-
-    /// @brief Compute per-segment corner deviation (%) from G64 tolerance.
-    /// Stores deviation in seg.entryVelocity (repurposed for visualization).
-    void computeCornerDeviation(std::vector<GCode::PlanningSegment>& segments);
-
     /// @brief Compute per-segment extruder speed (mm/s) from E axis movement.
     /// Converts E delta (stored in seg.exitVelocity) to mm/s using segment time.
     void computeExtruderSpeed(std::vector<GCode::PlanningSegment>& segments);
 
-    /// @brief Build a PiecewiseNurbsPath directly from PlanningSegments.
-    /// Uses NurbsCurve::fromLine for linear/rapid segments and
-    /// NurbsCurve::fromArc for arc segments. O(segments) — fast.
-    /// @return {path, {per-piece deviations, per-piece extruder speeds}}
-    std::pair<tether::motion::PiecewiseNurbsPath, std::pair<std::vector<float>, std::vector<float>>>
-    buildNurbsFromSegments(
-        const std::vector<GCode::PlanningSegment>& segments);
-
-    /// @brief Compute statistics from samples.
-    GCodeExport::TrajectoryStatistics computeStats(
-        const std::vector<GCodeExport::TrajectorySample>& samples);
+    /// @brief Compute per-segment corner deviation (%) using Tether's
+    /// CornerAnalyzer. Stores deviation in seg.entryVelocity.
+    void computeCornerDeviation(std::vector<GCode::PlanningSegment>& segments);
 };
 
 } // namespace tether::web

@@ -17,6 +17,13 @@ using namespace tether::web;
 
 namespace {
 
+/// Config that generates dense samples (for tests that need TTHR sample data).
+ProcessConfig sampleConfig() {
+    ProcessConfig cfg;
+    cfg.nurbsOnly = false;
+    return cfg;
+}
+
 const char* SQUARE_GCODE =
     "G21\nG90\nG0 X0 Y0 Z5\n"
     "G1 X100 Y0 Z5 F3000\n"
@@ -79,7 +86,7 @@ TEST(JobManagerTest, GetBinary) {
 TEST(JobManagerTest, GetBinaryWithFilters) {
     JobManager jm;
     std::string id = jm.createJob(SQUARE_GCODE);
-    jm.startProcessing(id);
+    jm.startProcessing(id, sampleConfig());
 
     for (int i = 0; i < 100; ++i) {
         if (jm.getJobState(id) != JobState::Processing) break;
@@ -181,7 +188,7 @@ TEST(WebServerConfigTest, DefaultValues) {
 TEST(WebServerPipelineTest, FullPipelineEndToEnd) {
     JobManager jm;
     std::string id = jm.createJob(SQUARE_GCODE, "square.gcode");
-    ASSERT_TRUE(jm.startProcessing(id));
+    ASSERT_TRUE(jm.startProcessing(id, sampleConfig()));
 
     // Wait for completion
     for (int i = 0; i < 100; ++i) {

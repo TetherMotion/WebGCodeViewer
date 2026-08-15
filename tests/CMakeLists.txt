@@ -32,6 +32,8 @@ if(GTEST_AVAILABLE)
     target_include_directories(wgv_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../server/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../Tether/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Tether/dependencies/magic_enum/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Tether/dependencies/eigen
     )
 
     target_compile_features(wgv_tests PRIVATE cxx_std_23)

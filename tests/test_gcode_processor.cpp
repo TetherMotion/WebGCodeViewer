@@ -10,6 +10,13 @@ using namespace tether::web;
 
 namespace {
 
+/// Config that generates dense samples (for tests that check result.samples).
+ProcessConfig sampleConfig() {
+    ProcessConfig cfg;
+    cfg.nurbsOnly = false;
+    return cfg;
+}
+
 // A simple square toolpath: rapid to start, then 4 linear moves
 const char* SQUARE_GCODE =
     "G21\n"           // mm units
@@ -94,7 +101,7 @@ TEST(GCodeProcessor, BlockMetadataContainsGcodeText) {
 
 TEST(GCodeProcessor, SquareToolpathBounds) {
     GCodeProcessor processor;
-    auto result = processor.process(SQUARE_GCODE);
+    auto result = processor.process(SQUARE_GCODE, sampleConfig());
 
     EXPECT_TRUE(result.success);
     ASSERT_FALSE(result.samples.empty());
@@ -117,7 +124,7 @@ TEST(GCodeProcessor, SquareToolpathBounds) {
 
 TEST(GCodeProcessor, SamplesHaveCorrectTimeOrdering) {
     GCodeProcessor processor;
-    auto result = processor.process(SQUARE_GCODE);
+    auto result = processor.process(SQUARE_GCODE, sampleConfig());
 
     EXPECT_TRUE(result.success);
     ASSERT_FALSE(result.samples.empty());
@@ -129,7 +136,7 @@ TEST(GCodeProcessor, SamplesHaveCorrectTimeOrdering) {
 
 TEST(GCodeProcessor, SamplesHaveSegmentIndices) {
     GCodeProcessor processor;
-    auto result = processor.process(SQUARE_GCODE);
+    auto result = processor.process(SQUARE_GCODE, sampleConfig());
 
     EXPECT_TRUE(result.success);
     ASSERT_FALSE(result.samples.empty());
@@ -161,7 +168,7 @@ TEST(GCodeProcessor, ParsesArcToolpath) {
 
 TEST(GCodeProcessor, ArcSamplesFollowCircularPath) {
     GCodeProcessor processor;
-    auto result = processor.process(ARC_GCODE);
+    auto result = processor.process(ARC_GCODE, sampleConfig());
 
     EXPECT_TRUE(result.success);
     ASSERT_FALSE(result.samples.empty());
@@ -181,11 +188,11 @@ TEST(GCodeProcessor, ArcSamplesFollowCircularPath) {
 TEST(GCodeProcessor, DifferentSampleRates) {
     GCodeProcessor processor;
 
-    ProcessConfig cfg1;
+    ProcessConfig cfg1 = sampleConfig();
     cfg1.sampleRate = 0.01;  // 10ms
     auto result1 = processor.process(SQUARE_GCODE, cfg1);
 
-    ProcessConfig cfg2;
+    ProcessConfig cfg2 = sampleConfig();
     cfg2.sampleRate = 0.001; // 1ms
     auto result2 = processor.process(SQUARE_GCODE, cfg2);
 
@@ -218,7 +225,7 @@ TEST(GCodeProcessor, ProgressCallback) {
 
 TEST(GCodeProcessor, ComputesStatistics) {
     GCodeProcessor processor;
-    auto result = processor.process(SQUARE_GCODE);
+    auto result = processor.process(SQUARE_GCODE, sampleConfig());
 
     EXPECT_TRUE(result.success);
     EXPECT_GT(result.statistics.duration, 0.0);
@@ -249,7 +256,7 @@ TEST(GCodeProcessor, IncrementalPositioning) {
         "M30\n";
 
     GCodeProcessor processor;
-    auto result = processor.process(gcode);
+    auto result = processor.process(gcode, sampleConfig());
 
     EXPECT_TRUE(result.success);
     ASSERT_FALSE(result.samples.empty());
@@ -270,7 +277,7 @@ TEST(GCodeProcessor, InchUnitsConversion) {
         "M30\n";
 
     GCodeProcessor processor;
-    auto result = processor.process(gcode);
+    auto result = processor.process(gcode, sampleConfig());
 
     EXPECT_TRUE(result.success);
     ASSERT_FALSE(result.samples.empty());
