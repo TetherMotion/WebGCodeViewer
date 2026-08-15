@@ -30,6 +30,11 @@ export interface ControlPanelEvents {
   toggleBoundingBox: void;    // Feature #48: bounding box dimensions
   copyViewUrl: void;          // Feature #92: copy current view URL
   toggleLayerCount: void;     // Feature #128: layer count display
+  // Printer simulation controls
+  printerModeChanged: 'realtime' | 'simulation';
+  printerSpeedChanged: number;   // speed multiplier (0.5, 1, 2, 5, 10)
+  printerDirectionChanged: 'forward' | 'backward';
+  returnToRealtime: void;     // button to return to realtime view
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -57,6 +62,17 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
   private timeLabel: HTMLElement;
   private playBtn: HTMLButtonElement;
   private playing = false;
+
+  // Printer simulation controls
+  private printerGroup: HTMLElement;
+  private modeBtn: HTMLButtonElement;
+  private speedBtn: HTMLButtonElement;
+  private directionBtn: HTMLButtonElement;
+  private realtimeBtn: HTMLButtonElement;
+  private printerMode: 'realtime' | 'simulation' = 'realtime';
+  private printerSpeed: number = 1;
+  private printerDirection: 'forward' | 'backward' = 'forward';
+  private readonly speedSteps: number[] = [0.5, 1, 2, 5, 10];
 
   constructor(container: HTMLElement) {
     super();
@@ -367,6 +383,69 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
 
     this.element.appendChild(this.timeGroup);
 
+    // Printer simulation group
+    this.printerGroup = document.createElement('div');
+    this.printerGroup.className = 'control-group printer-group';
+    this.printerGroup.style.display = 'none'; // hidden until data is loaded
+
+    // Mode toggle: Realtime / Simulation
+    this.modeBtn = document.createElement('button');
+    this.modeBtn.textContent = 'Realtime';
+    this.modeBtn.className = 'printer-btn printer-mode-btn active';
+    this.modeBtn.title = 'Toggle between realtime printer tracking and simulation mode';
+    this.modeBtn.onclick = () => {
+      this.printerMode = this.printerMode === 'realtime' ? 'simulation' : 'realtime';
+      this.modeBtn.textContent = this.printerMode === 'realtime' ? 'Realtime' : 'Simulation';
+      this.modeBtn.classList.toggle('active', this.printerMode === 'realtime');
+      // Show/hide simulation-only controls
+      this.speedBtn.style.display = this.printerMode === 'simulation' ? '' : 'none';
+      this.directionBtn.style.display = this.printerMode === 'simulation' ? '' : 'none';
+      this.realtimeBtn.style.display = this.printerMode === 'simulation' ? '' : 'none';
+      this.emit('printerModeChanged', this.printerMode);
+    };
+    this.printerGroup.appendChild(this.modeBtn);
+
+    // Speed step button (simulation only)
+    this.speedBtn = document.createElement('button');
+    this.speedBtn.textContent = '1x';
+    this.speedBtn.className = 'printer-btn printer-speed-btn';
+    this.speedBtn.title = 'Cycle through speed steps: 0.5x, 1x, 2x, 5x, 10x';
+    this.speedBtn.style.display = 'none';
+    this.speedBtn.onclick = () => {
+      const idx = this.speedSteps.indexOf(this.printerSpeed);
+      const nextIdx = (idx + 1) % this.speedSteps.length;
+      this.printerSpeed = this.speedSteps[nextIdx];
+      this.speedBtn.textContent = `${this.printerSpeed}x`;
+      this.emit('printerSpeedChanged', this.printerSpeed);
+    };
+    this.printerGroup.appendChild(this.speedBtn);
+
+    // Direction button (simulation only)
+    this.directionBtn = document.createElement('button');
+    this.directionBtn.textContent = '▶';
+    this.directionBtn.className = 'printer-btn printer-direction-btn';
+    this.directionBtn.title = 'Toggle playback direction: forward / backward';
+    this.directionBtn.style.display = 'none';
+    this.directionBtn.onclick = () => {
+      this.printerDirection = this.printerDirection === 'forward' ? 'backward' : 'forward';
+      this.directionBtn.textContent = this.printerDirection === 'forward' ? '▶' : '◀';
+      this.emit('printerDirectionChanged', this.printerDirection);
+    };
+    this.printerGroup.appendChild(this.directionBtn);
+
+    // Return to realtime button (simulation only)
+    this.realtimeBtn = document.createElement('button');
+    this.realtimeBtn.textContent = '↻ Realtime';
+    this.realtimeBtn.className = 'printer-btn printer-realtime-btn';
+    this.realtimeBtn.title = 'Return to realtime printer view';
+    this.realtimeBtn.style.display = 'none';
+    this.realtimeBtn.onclick = () => {
+      this.emit('returnToRealtime', undefined);
+    };
+    this.printerGroup.appendChild(this.realtimeBtn);
+
+    this.element.appendChild(this.printerGroup);
+
     // Status group (right-aligned)
     const statusGroup = document.createElement('div');
     statusGroup.className = 'control-group status';
@@ -415,8 +494,9 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
           ? `${Math.floor(status.duration / 60)}m ${Math.round(status.duration % 60)}s`
           : `${status.duration.toFixed(2)}s`;
         this.statusEl.textContent = `Ready: ${status.sampleCount} samples | ${timeStr} | ${status.pathLength.toFixed(1)}mm`;
-        // Show time slider when data is ready
+        // Show time slider and printer controls when data is ready
         this.timeGroup.style.display = 'flex';
+        this.showPrinterControls();
         break;
       }
       case 'failed':
@@ -506,5 +586,36 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
   setPlaying(playing: boolean): void {
     this.playing = playing;
     this.playBtn.textContent = playing ? '⏸' : '▶';
+  }
+
+  /**
+   * Show the printer simulation controls (called when data is loaded).
+   */
+  showPrinterControls(): void {
+    this.printerGroup.style.display = 'flex';
+  }
+
+  getPrinterMode(): 'realtime' | 'simulation' {
+    return this.printerMode;
+  }
+
+  getPrinterSpeed(): number {
+    return this.printerSpeed;
+  }
+
+  getPrinterDirection(): 'forward' | 'backward' {
+    return this.printerDirection;
+  }
+
+  /**
+   * Switch the UI back to realtime mode (called when "return to realtime" is clicked).
+   */
+  setRealtimeMode(): void {
+    this.printerMode = 'realtime';
+    this.modeBtn.textContent = 'Realtime';
+    this.modeBtn.classList.add('active');
+    this.speedBtn.style.display = 'none';
+    this.directionBtn.style.display = 'none';
+    this.realtimeBtn.style.display = 'none';
   }
 }

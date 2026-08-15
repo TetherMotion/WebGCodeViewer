@@ -15,6 +15,7 @@ import { PointCloudRenderer } from '../renderers/PointCloudRenderer';
 import { OverlayRenderer } from '../renderers/OverlayRenderer';
 import { NavigationGizmo } from '../renderers/NavigationGizmo';
 import { PrintHeadMarker } from '../renderers/PrintHeadMarker';
+import { PrinterFrameRenderer } from '../renderers/PrinterFrameRenderer';
 import { DirectionCubeRenderer } from '../renderers/DirectionCubeRenderer';
 import { NurbsRenderer, NurbsColorAttribute } from '../renderers/NurbsRenderer';
 import { MiniplotRenderer, MiniplotAxis, MiniplotData } from '../renderers/MiniplotRenderer';
@@ -47,6 +48,7 @@ export class WebGPUApp {
   private overlayRenderer: OverlayRenderer | null = null;
   private navGizmo: NavigationGizmo | null = null;
   private printHeadMarker: PrintHeadMarker | null = null;
+  private printerFrameRenderer: PrinterFrameRenderer | null = null;
   private dirCubeRenderer: DirectionCubeRenderer | null = null;
   private nurbsRenderer: NurbsRenderer | null = null;
   private gridLabels: GridLabels | null = null;
@@ -77,6 +79,15 @@ export class WebGPUApp {
   private playing = false;
   private playProgress = 1.0;  // 0..1
   private playSpeed = 0.1;     // fraction per second
+
+  // Printer mode state
+  // 'realtime': simulated printer feed advances automatically, auto Z-layer tracking
+  // 'simulation': user controls playback (play/pause/speed/direction/scrub)
+  private printerMode: 'realtime' | 'simulation' = 'realtime';
+  private printerSpeed: number = 1;     // speed multiplier
+  private printerDirection: 'forward' | 'backward' = 'forward';
+  private autoLayerTracking: boolean = true;  // auto-shift Z layer in realtime mode
+  private lastAutoLayerIdx: number = -1;     // last auto-selected layer (to avoid redundant updates)
 
   // Feature #66: Theme state
   private lightTheme = false;
@@ -421,6 +432,33 @@ export class WebGPUApp {
         this.playProgress = 0;
       }
     });
+
+    // Printer mode toggle (realtime ↔ simulation)
+    this.controlPanel.on('printerModeChanged', (mode) => {
+      this.printerMode = mode;
+      if (mode === 'simulation') {
+        // In simulation mode, stop auto-advance; user controls playback
+        this.lastAutoLayerIdx = -1; // reset so auto-tracking resumes when returning to realtime
+      }
+    });
+
+    // Printer speed changed
+    this.controlPanel.on('printerSpeedChanged', (speed) => {
+      this.printerSpeed = speed;
+    });
+
+    // Printer direction changed
+    this.controlPanel.on('printerDirectionChanged', (dir) => {
+      this.printerDirection = dir;
+    });
+
+    // Return to realtime view
+    this.controlPanel.on('returnToRealtime', () => {
+      this.printerMode = 'realtime';
+      this.printerDirection = 'forward';
+      this.lastAutoLayerIdx = -1;
+      this.controlPanel.setRealtimeMode();
+    });
   }
 
   async init(): Promise<void> {
@@ -457,6 +495,10 @@ export class WebGPUApp {
     // Print head marker
     this.printHeadMarker = new PrintHeadMarker(this.device);
     await this.printHeadMarker.init(this.format);
+
+    // Printer frame renderer (full printer stand-in model)
+    this.printerFrameRenderer = new PrinterFrameRenderer(this.device);
+    await this.printerFrameRenderer.init(this.format);
 
     // Direction cube renderer (WebGPU-rendered 3D cube buttons)
     this.dirCubeRenderer = new DirectionCubeRenderer(this.device, this.navCube.dirCanvas);
@@ -870,13 +912,31 @@ export class WebGPUApp {
       this.lastFrameTime = now;
       this.camera.update(dt);
 
-      // Playback animation
+      // Playback animation — driven by printer mode
       if (this.playing) {
-        this.playProgress += dt * this.playSpeed;
-        if (this.playProgress >= 1.0) {
+        const baseSpeed = this.playSpeed * this.printerSpeed;
+        const delta = dt * baseSpeed * (this.printerDirection === 'forward' ? 1 : -1);
+        this.playProgress += delta;
+
+        if (this.printerDirection === 'forward' && this.playProgress >= 1.0) {
           this.playProgress = 1.0;
           this.playing = false;
           this.controlPanel.setPlaying(false);
+        } else if (this.printerDirection === 'backward' && this.playProgress <= 0.0) {
+          this.playProgress = 0.0;
+          this.playing = false;
+          this.controlPanel.setPlaying(false);
+        }
+
+        this.controlPanel.setTimePosition(this.playProgress);
+        this.updatePlayPosition();
+      }
+
+      // Realtime mode: auto-advance the print simulation
+      if (this.printerMode === 'realtime' && !this.playing && this.playProgress < 1.0) {
+        this.playProgress += dt * this.playSpeed * this.printerSpeed;
+        if (this.playProgress >= 1.0) {
+          this.playProgress = 1.0;
         }
         this.controlPanel.setTimePosition(this.playProgress);
         this.updatePlayPosition();
@@ -927,13 +987,63 @@ export class WebGPUApp {
   }
 
   private updatePlayPosition(): void {
-    if (this.toolpathRenderer && this.currentData) {
+    let pos: [number, number, number] | null = null;
+
+    // Try NURBS renderer first (preferred path for most files)
+    if (this.nurbsRenderer) {
+      this.nurbsRenderer.setProgress(this.playProgress);
+      pos = this.nurbsRenderer.getPositionAt(this.playProgress);
+    }
+
+    // Fall back to ToolpathRenderer (TTHR data)
+    if (!pos && this.toolpathRenderer && this.currentData) {
       this.toolpathRenderer.setProgress(this.playProgress);
-      // Update print head marker position
-      const pos = this.toolpathRenderer.getPositionAt(this.playProgress, this.currentData);
-      if (pos && this.printHeadMarker) {
+      pos = this.toolpathRenderer.getPositionAt(this.playProgress, this.currentData);
+    }
+
+    if (pos) {
+      // Update print head marker
+      if (this.printHeadMarker) {
         this.printHeadMarker.setPosition(pos[0], pos[1], pos[2]);
         this.printHeadMarker.visible = this.playProgress < 1.0;
+      }
+      // Update printer frame extruder position
+      if (this.printerFrameRenderer) {
+        this.printerFrameRenderer.setExtruderPosition(pos[0], pos[1], pos[2]);
+      }
+      // Auto Z-layer tracking in realtime mode
+      if (this.autoLayerTracking && this.printerMode === 'realtime') {
+        this.autoUpdateLayer(pos[2]);
+      }
+    }
+  }
+
+  /**
+   * Automatically update the Z-layer filter based on the current Z position.
+   * Finds the Z-layer whose height is closest to (but not above) the current
+   * print Z, and applies it if it differs from the last auto-selected layer.
+   */
+  private autoUpdateLayer(currentZ: number): void {
+    if (this.zLayers.length === 0) return;
+
+    // Find the layer with the largest zHeight that is <= currentZ
+    let bestIdx = -1;
+    let bestZ = -Infinity;
+    for (const layer of this.zLayers) {
+      if (layer.zHeight <= currentZ && layer.zHeight > bestZ) {
+        bestZ = layer.zHeight;
+        bestIdx = layer.layerIndex;
+      }
+    }
+
+    // If no layer found (e.g. currentZ is below the first layer), show all
+    if (bestIdx < 0) bestIdx = -1;
+
+    if (bestIdx !== this.lastAutoLayerIdx) {
+      this.lastAutoLayerIdx = bestIdx;
+      if (bestIdx >= 0) {
+        this.applyLayerFilter(bestIdx);
+        this.controlPanel.setLayerValue(bestIdx);
       }
     }
   }
@@ -964,6 +1074,7 @@ export class WebGPUApp {
     this.toolpathRenderer?.render(pass, viewProj);
     this.crossSectionRenderer?.render(pass, viewProj);
     this.pointCloudRenderer?.render(pass, viewProj);
+    this.printerFrameRenderer?.render(pass, viewProj);
     this.printHeadMarker?.render(pass, viewProj);
     this.overlayRenderer?.render(pass, viewProj);
 
@@ -1293,6 +1404,21 @@ export class WebGPUApp {
     this.controlPanel.setPlaying(false);
     this.updatePlayPosition();
 
+    // Set printer frame bounds from the loaded object's bounding box
+    const bounds = this.getCurrentFullBounds();
+    if (bounds && this.printerFrameRenderer) {
+      this.printerFrameRenderer.setBounds(
+        [bounds.min[0], bounds.min[1], bounds.min[2]],
+        [bounds.max[0], bounds.max[1], bounds.max[2]],
+      );
+    }
+
+    // Reset to realtime mode on new file load
+    this.printerMode = 'realtime';
+    this.printerDirection = 'forward';
+    this.lastAutoLayerIdx = -1;
+    this.controlPanel.setRealtimeMode();
+
     // BUG 3 FIX: Apply deferred camera params from URL after data has loaded
     // and fitToBounds has been called. This ensures ?cam= is not overridden.
     if (this.pendingCamParams) {
@@ -1426,6 +1552,7 @@ export class WebGPUApp {
     this.overlayRenderer?.destroy();
     this.navGizmo?.destroy();
     this.printHeadMarker?.destroy();
+    this.printerFrameRenderer?.destroy();
     this.dirCubeRenderer?.destroy();
     this.depthTexture?.destroy();
     this.depthTexture = null;

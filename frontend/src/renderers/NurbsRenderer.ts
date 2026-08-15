@@ -39,6 +39,10 @@ export class NurbsRenderer {
   private sampleCount: number = 0;
   private progress: number = 1.0;
 
+  // CPU-side cache of tessellated positions for getPositionAt() lookups.
+  // Stored as a flat Float32Array of XYZ triples, matching the GPU vertex buffer.
+  private cachedPositions: Float32Array | null = null;
+
   options: NurbsRenderOptions = {
     colorMap: new ColorMap('viridis'),
     colorAttribute: 'pieceIndex',
@@ -276,6 +280,9 @@ export class NurbsRenderer {
     this.sampleCount = vertexOffset;
     this.indexCount = allIndices.length;
 
+    // Cache positions for CPU-side getPositionAt() lookups
+    this.cachedPositions = new Float32Array(allPositions);
+
     // BUG 4 FIX: If all pieces were filtered out (e.g. showTravels=false and
     // all pieces are travel moves), the arrays are empty. Creating a WebGPU
     // buffer with size 0 throws a validation error. Return early instead.
@@ -358,6 +365,26 @@ export class NurbsRenderer {
     this.progress = Math.max(0, Math.min(1, frac));
   }
 
+  /**
+   * Get the 3D position at a given progress fraction (0..1) along the
+   * tessellated path. Interpolates linearly between the two nearest
+   * tessellated vertices.
+   */
+  getPositionAt(frac: number): [number, number, number] | null {
+    if (!this.cachedPositions || this.sampleCount === 0) return null;
+    const f = Math.max(0, Math.min(1, frac));
+    const idx = f * (this.sampleCount - 1);
+    const i0 = Math.floor(idx);
+    const i1 = Math.min(i0 + 1, this.sampleCount - 1);
+    const t = idx - i0;
+    const p = this.cachedPositions;
+    return [
+      p[i0 * 3] * (1 - t) + p[i1 * 3] * t,
+      p[i0 * 3 + 1] * (1 - t) + p[i1 * 3 + 1] * t,
+      p[i0 * 3 + 2] * (1 - t) + p[i1 * 3 + 2] * t,
+    ];
+  }
+
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.options.visible || !this.pipeline || !this.positionBuffer || this.indexCount < 2) return;
     if (!this.uniformBuffer || !this.bindGroup || !this.colorBuffer || !this.sampleIdxBuffer || !this.indexBuffer) return;
@@ -384,5 +411,6 @@ export class NurbsRenderer {
     this.uniformBuffer?.destroy();
     this.colorLUTTexture?.destroy();
     this.sampleIdxBuffer?.destroy();
+    this.cachedPositions = null;
   }
 }
