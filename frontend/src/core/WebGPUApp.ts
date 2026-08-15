@@ -88,6 +88,10 @@ export class WebGPUApp {
   private lastFpsTime = 0;
   private currentFps = 0;
 
+  // Feature #48: Bounding box display
+  private showBBox = false;
+  private bboxEl: HTMLElement | null = null;
+
   constructor(
     canvas: HTMLCanvasElement,
     rpcClient: RpcClient,
@@ -250,6 +254,22 @@ export class WebGPUApp {
         this.statsEl.style.display = 'block';
       } else {
         if (this.statsEl) this.statsEl.style.display = 'none';
+      }
+    });
+    // Feature #48: Toggle bounding box dimensions display
+    this.controlPanel.on('toggleBoundingBox', () => {
+      this.showBBox = !this.showBBox;
+      if (this.showBBox) {
+        if (!this.bboxEl) {
+          this.bboxEl = document.createElement('div');
+          this.bboxEl.className = 'bbox-overlay';
+          this.bboxEl.style.display = 'none';
+          document.body.appendChild(this.bboxEl);
+        }
+        this.updateBBoxDisplay();
+        this.bboxEl.style.display = 'block';
+      } else {
+        if (this.bboxEl) this.bboxEl.style.display = 'none';
       }
     });
     this.controlPanel.on('toggleCrossSection', () => {
@@ -1224,6 +1244,36 @@ export class WebGPUApp {
   }
 
   /**
+   * Feature #93: Load a job from URL parameter.
+   * This allows sharing views via URL with ?job=xxx parameter.
+   */
+  async loadJobFromUrl(jobId: string): Promise<void> {
+    this.currentJobId = jobId;
+    try {
+      // Poll for job status and load data when ready
+      this.controlPanel.setStatus('Loading job...');
+      const poll = async (): Promise<void> => {
+        const status = await this.rpcClient.getJobStatus(jobId);
+        this.controlPanel.updateJobStatus(status);
+        if (status.state === 'ready') {
+          await this.loadJobData(jobId);
+          // Update bbox display if visible
+          if (this.showBBox) this.updateBBoxDisplay();
+        } else if (status.state === 'processing') {
+          setTimeout(poll, 500);
+        } else if (status.state === 'failed') {
+          console.error('Job failed:', status.errorMessage);
+          this.controlPanel.setStatus(`Failed: ${status.errorMessage}`);
+        }
+      };
+      await poll();
+    } catch (e) {
+      console.error('Failed to load job from URL:', e);
+      this.controlPanel.setStatus(`Failed to load job: ${(e as Error).message}`);
+    }
+  }
+
+  /**
    * Get the current Z bounds from NBP or TTHR data.
    */
   private getCurrentBounds(): { zMin: number; zMax: number } | null {
@@ -1236,6 +1286,34 @@ export class WebGPUApp {
       return { zMin: h.boundsMin[2], zMax: h.boundsMax[2] };
     }
     return null;
+  }
+
+  /**
+   * Feature #48: Update bounding box dimensions display.
+   */
+  private updateBBoxDisplay(): void {
+    if (!this.bboxEl) return;
+    let bounds: { min: number[]; max: number[] } | null = null;
+    if (this.currentNBP) {
+      const h = this.currentNBP.header;
+      bounds = { min: h.boundsMin, max: h.boundsMax };
+    } else if (this.fullData) {
+      const h = this.fullData.header;
+      bounds = { min: h.boundsMin, max: h.boundsMax };
+    }
+    if (!bounds) {
+      this.bboxEl.innerHTML = '<div class="bbox-title">No data loaded</div>';
+      return;
+    }
+    const dx = (bounds.max[0] - bounds.min[0]).toFixed(2);
+    const dy = (bounds.max[1] - bounds.min[1]).toFixed(2);
+    const dz = (bounds.max[2] - bounds.min[2]).toFixed(2);
+    this.bboxEl.innerHTML = `
+      <div class="bbox-title">Bounding Box (mm)</div>
+      <div>X: <span class="bbox-val">${bounds.min[0].toFixed(1)} → ${bounds.max[0].toFixed(1)}</span> <span class="bbox-dim">(${dx})</span></div>
+      <div>Y: <span class="bbox-val">${bounds.min[1].toFixed(1)} → ${bounds.max[1].toFixed(1)}</span> <span class="bbox-dim">(${dy})</span></div>
+      <div>Z: <span class="bbox-val">${bounds.min[2].toFixed(1)} → ${bounds.max[2].toFixed(1)}</span> <span class="bbox-dim">(${dz})</span></div>
+    `;
   }
 
   /**

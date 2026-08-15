@@ -27,6 +27,7 @@ export interface ControlPanelEvents {
   toggleTheme: void;          // Feature #66: dark/light theme toggle
   toggleFullscreen: void;     // Feature #73: fullscreen mode
   toggleStats: void;          // Feature #120: render statistics
+  toggleBoundingBox: void;    // Feature #48: bounding box dimensions
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -229,6 +230,15 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     fullscreenBtn.textContent = 'Fullscreen';
     fullscreenBtn.onclick = () => this.emit('toggleFullscreen', undefined);
     viewGroup.appendChild(fullscreenBtn);
+
+    // Feature #48: Bounding box dimensions display
+    const bboxBtn = document.createElement('button');
+    bboxBtn.textContent = 'BBox';
+    bboxBtn.onclick = () => {
+      bboxBtn.classList.toggle('active');
+      this.emit('toggleBoundingBox', undefined);
+    };
+    viewGroup.appendChild(bboxBtn);
 
     this.element.appendChild(viewGroup);
 

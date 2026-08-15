@@ -2029,3 +2029,108 @@ test.describe('Render statistics (Feature #120)', () => {
     collector.assertClean('stats display during rendering');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 22: Bounding Box Dimensions (Feature #48)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Bounding box dimensions (Feature #48)', () => {
+  test('BBox button exists and is not active by default', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+    await expect(btn).toBeVisible();
+    expect(await btn.getAttribute('class') || '').not.toContain('active');
+  });
+
+  test('clicking BBox shows overlay with no data message', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+    await btn.click();
+    await page.waitForTimeout(300);
+
+    const overlay = page.locator('.bbox-overlay');
+    await expect(overlay).toBeVisible();
+    const text = await overlay.textContent();
+    expect(text).toContain('No data loaded');
+  });
+
+  test('BBox shows dimensions when G-code is loaded', async ({ page, request }) => {
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'bbox_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+    await btn.click();
+    await page.waitForTimeout(500);
+
+    const overlay = page.locator('.bbox-overlay');
+    await expect(overlay).toBeVisible();
+
+    const text = await overlay.textContent();
+    expect(text).toContain('Bounding Box');
+    expect(text).toContain('X:');
+    expect(text).toContain('Y:');
+    expect(text).toContain('Z:');
+  });
+
+  test('BBox dimensions match the 10x10 square G-code', async ({ page, request }) => {
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'bbox_dims.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+    await btn.click();
+    await page.waitForTimeout(500);
+
+    const overlay = page.locator('.bbox-overlay');
+    const text = await overlay.textContent();
+    // The square G-code goes from 0 to 10 in X and Y
+    expect(text).toMatch(/X:.*0\.0.*10\.0/);
+    expect(text).toMatch(/Y:.*0\.0.*10\.0/);
+  });
+
+  test('clicking BBox again hides overlay', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+    await btn.click();
+    await page.waitForTimeout(300);
+    await expect(page.locator('.bbox-overlay')).toBeVisible();
+
+    await btn.click();
+    await page.waitForTimeout(300);
+    await expect(page.locator('.bbox-overlay')).not.toBeVisible();
+  });
+
+  test('BBox display works without errors', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, COMPLEX_GCODE, 'bbox_errors.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+    await btn.click();
+    await page.waitForTimeout(500);
+    await btn.click();
+    await page.waitForTimeout(300);
+
+    collector.assertClean('bbox display');
+  });
+});

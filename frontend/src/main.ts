@@ -40,6 +40,13 @@ async function main(): Promise<void> {
     // Feature #120: Start stats loop even without WebGPU
     app.startStatsOnlyLoop();
   }
+
+  // Feature #93: Auto-load job from URL parameter (?job=xxx)
+  const urlParams = new URLSearchParams(window.location.search);
+  const jobId = urlParams.get('job');
+  if (jobId) {
+    app.loadJobFromUrl(jobId);
+  }
 }
 
 main().catch(console.error);
