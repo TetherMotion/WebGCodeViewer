@@ -20,6 +20,7 @@ import { DirectionCubeRenderer } from '../renderers/DirectionCubeRenderer';
 import { NurbsRenderer, NurbsColorAttribute } from '../renderers/NurbsRenderer';
 import { MiniplotRenderer, MiniplotAxis, MiniplotData } from '../renderers/MiniplotRenderer';
 import { GridLabels } from '../ui/GridLabels';
+import { GridLabelRenderer } from '../renderers/GridLabelRenderer';
 import { ControlPanel } from '../ui/ControlPanel';
 import { GcodeViewer } from '../ui/GcodeViewer';
 import { NavigationCube, ViewDirection } from '../ui/NavigationCube';
@@ -52,6 +53,7 @@ export class WebGPUApp {
   private dirCubeRenderer: DirectionCubeRenderer | null = null;
   private nurbsRenderer: NurbsRenderer | null = null;
   private gridLabels: GridLabels | null = null;
+  private gridLabelRenderer: GridLabelRenderer | null = null;
   private miniplotRenderer: MiniplotRenderer | null = null;
   private miniplotContainer: HTMLElement | null = null;
   private miniplotLabel: HTMLElement | null = null;
@@ -231,6 +233,7 @@ export class WebGPUApp {
     });
     this.controlPanel.on('toggleGrid', () => {
       if (this.gridRenderer) this.gridRenderer.visible = !this.gridRenderer.visible;
+      if (this.gridLabelRenderer) this.gridLabelRenderer.visible = this.gridRenderer?.visible ?? true;
     });
     // Feature #1: Toggle travel move visibility
     this.controlPanel.on('toggleTravels', () => {
@@ -508,10 +511,12 @@ export class WebGPUApp {
     this.nurbsRenderer = new NurbsRenderer(this.device);
     await this.nurbsRenderer.init(this.format);
 
-    // Grid labels overlay (2D canvas for numeric tick labels)
-    const gridLabelsCanvas = document.getElementById('grid-labels-canvas') as HTMLCanvasElement | null;
-    if (gridLabelsCanvas) {
-      this.gridLabels = new GridLabels(gridLabelsCanvas);
+    // Grid labels: WebGPU 3D text renderer (coplanar with grid)
+    this.gridLabelRenderer = new GridLabelRenderer(this.device);
+    await this.gridLabelRenderer.init(this.format);
+    // Generate initial label geometry from grid ticks
+    if (this.gridRenderer) {
+      this.gridLabelRenderer.updateLabels(this.gridRenderer.ticks);
     }
 
     // Miniplot renderer (separate WebGPU canvas for speed plot)
@@ -1070,6 +1075,7 @@ export class WebGPUApp {
 
     const viewProj = this.camera.viewProjectionMatrix;
     this.gridRenderer?.render(pass, viewProj);
+    this.gridLabelRenderer?.render(pass, viewProj);
     this.nurbsRenderer?.render(pass, viewProj);
     this.toolpathRenderer?.render(pass, viewProj);
     this.crossSectionRenderer?.render(pass, viewProj);
@@ -1135,19 +1141,6 @@ export class WebGPUApp {
 
     // Render direction cubes (separate canvas)
     this.dirCubeRenderer?.render();
-
-    // Render grid labels overlay (2D canvas, projects 3D ticks to screen)
-    // Uses previous frame's depth buffer to cull occluded labels
-    if (this.gridLabels && this.gridRenderer) {
-      this.gridLabels.render(
-        this.gridRenderer.ticks,
-        viewProj,
-        this.canvas.clientWidth,
-        this.canvas.clientHeight,
-        this.depthData,
-        this.depthBufferSize,
-      );
-    }
   }
 
   private exportImage(): void {
@@ -1547,6 +1540,8 @@ export class WebGPUApp {
     this.toolpathRenderer?.destroy();
     this.nurbsRenderer?.destroy();
     this.gridRenderer?.destroy();
+    this.gridLabelRenderer?.destroy();
+    this.gridLabels?.destroy();
     this.crossSectionRenderer?.destroy();
     this.pointCloudRenderer?.destroy();
     this.overlayRenderer?.destroy();

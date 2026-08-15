@@ -263,7 +263,7 @@ test.describe('Console message monitoring during rendering', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 test.describe('Canvas pixel verification', () => {
-  test('grid labels canvas renders text when grid is visible', async ({ page, request }) => {
+  test('grid labels render in WebGPU canvas when grid is visible', async ({ page, request }) => {
     const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'grid_labels.gcode');
     expect(status).toBe('ready');
 
@@ -271,15 +271,11 @@ test.describe('Canvas pixel verification', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
-    // The grid labels canvas is a 2D canvas that should render even without WebGPU
-    // (GridLabels uses Canvas2D context, not WebGPU)
-    const pixels = await getCanvasPixels(page, '#grid-labels-canvas');
+    // Grid labels are now rendered as 3D text quads in the WebGPU canvas
+    // (coplanar with the grid), not on a separate 2D overlay canvas.
+    // Verify the WebGPU canvas exists and has content.
+    const pixels = await getCanvasPixels(page, '#webgpu-canvas');
     if (pixels) {
-      // The grid labels canvas should have some non-transparent pixels
-      // (text labels with background rectangles)
-      const nonTransparent = countNonTransparentPixels(pixels);
-      // Note: grid labels may not render if the grid renderer hasn't produced ticks
-      // (which requires WebGPU init), but the canvas should at least exist
       expect(pixels.width).toBeGreaterThan(0);
       expect(pixels.height).toBeGreaterThan(0);
     }

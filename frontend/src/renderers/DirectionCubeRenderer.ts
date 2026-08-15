@@ -9,12 +9,12 @@
  * Opacity levels:
  *   - Edges (corners):  50%
  *   - Normal faces:     10%
- *   - Marked face:      30%
+ *   - Marked face:      65%
  *
  * Uses WebGPU viewports to render each cube in its own grid cell.
  */
 
-import { Mat4, mat4LookAt, mat4Ortho, mat4Multiply } from '../core/MathUtils';
+import { Mat4, mat4LookAt, mat4Perspective, mat4Multiply, degToRad } from '../core/MathUtils';
 import { ViewDirection } from '../ui/NavigationCube';
 
 // Face indices
@@ -47,7 +47,7 @@ const GRAY = [0.6, 0.6, 0.6] as const;
 // Opacity levels
 const ALPHA_EDGE = 0.5;     // edges (corners)
 const ALPHA_FACE = 0.1;     // normal faces (sides)
-const ALPHA_MARKED = 0.3;   // marked/highlighted face
+const ALPHA_MARKED = 0.65;  // marked/highlighted face
 
 export class DirectionCubeRenderer {
   private device: GPUDevice;
@@ -394,8 +394,11 @@ export class DirectionCubeRenderer {
 
     // ── Write all per-cube uniform data BEFORE recording the render pass ──
     // All cubes share the same isometric view; only the highlighted face differs.
+    // Perspective projection gives the cubes depth and makes the highlighted
+    // faces clearly distinguishable from the non-highlighted ones.
     const view = mat4LookAt(ISO_VIEW.eye, { x: 0, y: 0, z: 0 }, ISO_VIEW.up);
-    const proj = mat4Ortho(-0.8, 0.8, -0.8, 0.8, 0.1, 10);
+    const aspect = cellW / cellH;
+    const proj = mat4Perspective(degToRad(35), aspect, 0.1, 10);
     const viewProj = mat4Multiply(proj, view);
 
     for (let i = 0; i < DIRECTIONS.length; i++) {
