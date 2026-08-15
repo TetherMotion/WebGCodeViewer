@@ -241,10 +241,20 @@ export class DirectionCubeRenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    // Create bind group once — dynamic offset is set per-draw
+    // Create bind group once — dynamic offset is set per-draw.
+    // Must specify size: without it, the binding defaults to the full
+    // buffer, and offset + fullSize overflows when hasDynamicOffset=true.
+    const slotSize = DirectionCubeRenderer.UNIFORM_SLOT_SIZE;
     this.bindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
-      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
+      entries: [{
+        binding: 0,
+        resource: {
+          buffer: this.uniformBuffer,
+          offset: 0,
+          size: slotSize,
+        },
+      }],
     });
 
     this.resize();
