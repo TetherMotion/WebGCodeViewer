@@ -544,7 +544,7 @@ export class WebGPUApp {
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
         view: this.context.getCurrentTexture().createView(),
-        clearValue: { r: 0.1, g: 0.1, b: 0.12, a: 1 },
+        clearValue: { r: 0.18, g: 0.18, b: 0.2, a: 1 },
         loadOp: 'clear',
         storeOp: 'store',
       }],

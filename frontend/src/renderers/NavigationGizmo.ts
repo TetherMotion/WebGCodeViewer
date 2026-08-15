@@ -73,9 +73,11 @@ export class NavigationGizmo {
         fn vs_main(input: VertexInput) -> VertexOutput {
           var output: VertexOutput;
           // Apply only the camera's rotation (no translation), then
-          // place in a small ortho projection centered at origin.
+          // place in NDC directly. Set z=0.5 (middle of WebGPU's [0,1]
+          // depth range) so axes are never clipped by the near/far planes
+          // regardless of rotation direction.
           let rotated = uniforms.viewRot * vec4<f32>(input.position, 1.0);
-          output.clipPosition = vec4<f32>(rotated.xyz, 1.0);
+          output.clipPosition = vec4<f32>(rotated.x, rotated.y, 0.5, 1.0);
           output.color = input.color;
           return output;
         }
