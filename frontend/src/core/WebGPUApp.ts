@@ -12,16 +12,8 @@ import { GridRenderer } from '../renderers/GridRenderer';
 import { CrossSectionRenderer } from '../renderers/CrossSectionRenderer';
 import { PointCloudRenderer } from '../renderers/PointCloudRenderer';
 import { OverlayRenderer } from '../renderers/OverlayRenderer';
-import { Toolbar } from '../ui/Toolbar';
-import { TimeSlider } from '../ui/TimeSlider';
-import { AttributePanel } from '../ui/AttributePanel';
-import { SegmentList } from '../ui/SegmentList';
-import { StatsPanel } from '../ui/StatsPanel';
-import { FilterPanel } from '../ui/FilterPanel';
-import { CutPlanePanel } from '../ui/CutPlanePanel';
-import { MeasureTool } from '../ui/MeasureTool';
-import { ComparisonPanel } from '../ui/ComparisonPanel';
-import { ZLayerPanel } from '../ui/ZLayerPanel';
+import { ControlPanel } from '../ui/ControlPanel';
+import { GcodeViewer } from '../ui/GcodeViewer';
 
 export class WebGPUApp {
   private canvas: HTMLCanvasElement;
@@ -39,57 +31,42 @@ export class WebGPUApp {
   private pointCloudRenderer: PointCloudRenderer | null = null;
   private overlayRenderer: OverlayRenderer | null = null;
 
-  private toolbar: Toolbar;
-  private timeSlider: TimeSlider;
-  private attributePanel: AttributePanel;
-  private segmentList: SegmentList;
-  private statsPanel: StatsPanel;
-  private filterPanel: FilterPanel;
-  private cutPlanePanel: CutPlanePanel;
-  private measureTool: MeasureTool;
-  private comparisonPanel: ComparisonPanel;
-  private zLayerPanel: ZLayerPanel;
+  private controlPanel: ControlPanel;
+  private gcodeViewer: GcodeViewer;
 
   private currentJobId: string | null = null;
   private currentData: TTHRData | null = null;
+  private currentFilename: string = '';
   private animationId: number | null = null;
   private lastFrameTime = 0;
 
-  constructor(canvas: HTMLCanvasElement, rpcClient: RpcClient, uiContainer: HTMLElement) {
+  constructor(canvas: HTMLCanvasElement, rpcClient: RpcClient, bottomPanel: HTMLElement, gcodePanel: HTMLElement) {
     this.canvas = canvas;
     this.rpcClient = rpcClient;
     this.camera = new Camera();
 
-    // Build UI
-    this.toolbar = new Toolbar(uiContainer);
-    this.timeSlider = new TimeSlider(uiContainer);
-    this.statsPanel = new StatsPanel(uiContainer);
-    this.attributePanel = new AttributePanel(uiContainer);
-    this.segmentList = new SegmentList(uiContainer);
-    this.filterPanel = new FilterPanel(uiContainer);
-    this.cutPlanePanel = new CutPlanePanel(uiContainer);
-    this.measureTool = new MeasureTool(uiContainer);
-    this.comparisonPanel = new ComparisonPanel(uiContainer);
-    this.zLayerPanel = new ZLayerPanel(uiContainer);
+    // Build UI — control panel at bottom, gcode viewer on right
+    this.controlPanel = new ControlPanel(bottomPanel);
+    this.gcodeViewer = new GcodeViewer(gcodePanel);
 
     this.setupEventHandlers();
   }
 
   private setupEventHandlers(): void {
-    this.toolbar.on('uploadFile', (file) => this.handleUpload(file));
-    this.toolbar.on('colorAttributeChanged', (attr) => {
+    this.controlPanel.on('uploadFile', (file) => this.handleUpload(file));
+    this.controlPanel.on('colorAttributeChanged', (attr) => {
       if (this.toolpathRenderer) {
         this.toolpathRenderer.options.colorAttribute = attr as ColorAttribute;
         if (this.currentData) this.toolpathRenderer.updateData(this.currentData);
       }
     });
-    this.toolbar.on('colorMapChanged', (map) => {
+    this.controlPanel.on('colorMapChanged', (map) => {
       if (this.toolpathRenderer) {
         this.toolpathRenderer.options.colorMap = new ColorMap(map as any);
         if (this.currentData) this.toolpathRenderer.updateData(this.currentData);
       }
     });
-    this.toolbar.on('resetView', () => {
+    this.controlPanel.on('resetView', () => {
       if (this.currentData) {
         const h = this.currentData.header;
         this.camera.fitToBounds(
@@ -98,31 +75,24 @@ export class WebGPUApp {
         );
       }
     });
-    this.toolbar.on('toggleGrid', () => {
+    this.controlPanel.on('toggleGrid', () => {
       if (this.gridRenderer) this.gridRenderer.visible = !this.gridRenderer.visible;
     });
-    this.toolbar.on('toggleCrossSection', () => {
+    this.controlPanel.on('toggleCrossSection', () => {
       if (this.crossSectionRenderer) this.crossSectionRenderer.visible = !this.crossSectionRenderer.visible;
     });
+    this.controlPanel.on('exportImage', () => {
+      this.exportImage();
+    });
 
-    this.cutPlanePanel.on('planeZChanged', (z) => {
-      if (this.crossSectionRenderer) {
-        this.crossSectionRenderer.planeZ = z;
-        if (this.currentData) this.crossSectionRenderer.updateData(this.currentData);
+    // G-code viewer → highlight toolpath
+    this.gcodeViewer.on('blockSelected', (blockIndex) => {
+      if (this.toolpathRenderer && this.currentData) {
+        this.toolpathRenderer.setHighlight(new Set([blockIndex]), this.currentData);
       }
     });
-    this.cutPlanePanel.on('visibleChanged', (v) => {
-      if (this.crossSectionRenderer) this.crossSectionRenderer.visible = v;
-    });
-
-    this.zLayerPanel.on('layerSelected', (idx) => {
-      this.loadZLayer(idx);
-    });
-    this.zLayerPanel.on('zToleranceChanged', () => {
-      if (this.currentJobId) this.refreshZLayers();
-    });
-    this.zLayerPanel.on('showAllLayers', () => {
-      if (this.currentJobId) this.loadFullData();
+    this.gcodeViewer.on('lineSelected', (_line) => {
+      // Line selection is handled via blockSelected above
     });
   }
 
@@ -189,12 +159,78 @@ export class WebGPUApp {
       this.camera.zoom(factor);
     });
 
+    // Click on canvas → pick nearest toolpath sample → highlight gcode line
+    this.canvas.addEventListener('click', (e) => {
+      if (isDragging) return;
+      this.handleCanvasClick(e);
+    });
+
     // Resize handling
     const resizeObserver = new ResizeObserver(() => {
       this.resize();
     });
     resizeObserver.observe(this.canvas);
     this.resize();
+  }
+
+  /**
+   * Handle canvas click — raycast to find nearest toolpath sample,
+   * then highlight the corresponding G-code block.
+   */
+  private handleCanvasClick(e: MouseEvent): void {
+    if (!this.currentData || !this.currentData.blockIndex) return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    // Simple approach: find the nearest sample by projecting all positions
+    // to screen space and finding the closest one to the click point.
+    // This is not a true raycast but works well enough for line strips.
+    const n = this.currentData.header.sampleCount;
+    const axes = this.currentData.header.axisCount;
+    const positions = this.currentData.positions;
+    if (!positions) return;
+
+    const viewProj = this.camera.viewProjectionMatrix;
+    let bestIdx = -1;
+    let bestDist = Infinity;
+    const maxDist = 0.05; // 5% of screen space
+
+    for (let i = 0; i < n; i++) {
+      const px = positions[i * axes];
+      const py = positions[i * axes + 1];
+      const pz = positions[i * axes + 2];
+
+      // Transform to clip space
+      const clipX = viewProj[0] * px + viewProj[4] * py + viewProj[8] * pz + viewProj[12];
+      const clipY = viewProj[1] * px + viewProj[5] * py + viewProj[9] * pz + viewProj[13];
+      const clipZ = viewProj[2] * px + viewProj[6] * py + viewProj[10] * pz + viewProj[14];
+      const clipW = viewProj[3] * px + viewProj[7] * py + viewProj[11] * pz + viewProj[15];
+
+      if (clipW <= 0) continue;
+
+      const ndcX = clipX / clipW;
+      const ndcY = clipY / clipW;
+      const dist = Math.sqrt((ndcX - x) ** 2 + (ndcY - y) ** 2);
+
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = i;
+      }
+    }
+
+    if (bestIdx >= 0 && bestDist < maxDist) {
+      const blockIdx = this.currentData.blockIndex[bestIdx];
+      this.gcodeViewer.highlightBlock(blockIdx);
+      if (this.toolpathRenderer) {
+        this.toolpathRenderer.setHighlight(new Set([blockIdx]), this.currentData);
+      }
+    } else {
+      // Click away from toolpath — clear highlight
+      this.gcodeViewer.clearHighlight();
+      if (this.toolpathRenderer) this.toolpathRenderer.clearHighlight();
+    }
   }
 
   private resize(): void {
@@ -256,8 +292,23 @@ export class WebGPUApp {
     this.device.queue.submit([encoder.finish()]);
   }
 
+  private exportImage(): void {
+    const url = this.canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tether-viewer-${Date.now()}.png`;
+    a.click();
+  }
+
   private async handleUpload(file: File): Promise<void> {
+    this.currentFilename = file.name;
+    this.controlPanel.setStatus('Uploading...');
+
+    // Load raw G-code text into the viewer immediately
     const text = await file.text();
+    this.gcodeViewer.loadGcodeText(text, file.name);
+
+    // Upload to server and process
     const uploadResp = await this.rpcClient.uploadGcode(text, file.name);
     this.currentJobId = uploadResp.jobId;
     await this.rpcClient.processJob(uploadResp.jobId);
@@ -267,13 +318,14 @@ export class WebGPUApp {
   private async pollJobStatus(jobId: string): Promise<void> {
     const poll = async (): Promise<void> => {
       const status = await this.rpcClient.getJobStatus(jobId);
-      this.statsPanel.updateJobStatus(status);
+      this.controlPanel.updateJobStatus(status);
       if (status.state === 'ready') {
         await this.loadJobData(jobId);
       } else if (status.state === 'processing') {
         setTimeout(poll, 500);
       } else if (status.state === 'failed') {
         console.error('Job failed:', status.errorMessage);
+        this.controlPanel.setStatus(`Failed: ${status.errorMessage}`);
       }
     };
     await poll();
@@ -291,41 +343,12 @@ export class WebGPUApp {
       { x: h.boundsMin[0], y: h.boundsMin[1], z: h.boundsMin[2] },
       { x: h.boundsMax[0], y: h.boundsMax[1], z: h.boundsMax[2] },
     );
-    this.timeSlider.duration = h.timeEnd;
 
-    // Load stats, blocks, segments, Z-layers
-    try {
-      const stats = await this.rpcClient.getStatistics(jobId);
-      this.attributePanel.update(stats);
-    } catch (e) { console.error('Failed to load stats:', e); }
-
+    // Load blocks (G-code metadata with line numbers)
     try {
       const blocks = await this.rpcClient.getBlocks(jobId);
-      this.segmentList.updateBlocks(blocks);
+      this.gcodeViewer.updateBlocks(blocks);
     } catch (e) { console.error('Failed to load blocks:', e); }
-
-    try {
-      const zLayers = await this.rpcClient.getZLayers(jobId);
-      this.zLayerPanel.update(zLayers);
-    } catch (e) { console.error('Failed to load Z-layers:', e); }
-  }
-
-  private async refreshZLayers(): Promise<void> {
-    if (!this.currentJobId) return;
-    const zLayers = await this.rpcClient.getZLayers(this.currentJobId);
-    this.zLayerPanel.update(zLayers);
-  }
-
-  private async loadZLayer(layerIndex: number): Promise<void> {
-    if (!this.currentJobId) return;
-    const resp = await this.rpcClient.getZLayerBinary(this.currentJobId, layerIndex);
-    const layerData = parseTTHR(resp.data);
-    this.toolpathRenderer?.updateData(layerData);
-  }
-
-  private async loadFullData(): Promise<void> {
-    if (!this.currentJobId || !this.currentData) return;
-    this.toolpathRenderer?.updateData(this.currentData);
   }
 
   destroy(): void {

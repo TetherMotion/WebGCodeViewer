@@ -14,14 +14,19 @@ async function main(): Promise<void> {
     return;
   }
 
-  const uiContainer = document.getElementById('ui-container') || document.body;
+  const bottomPanel = document.getElementById('bottom-panel') as HTMLElement | null;
+  const gcodePanel = document.getElementById('gcode-panel') as HTMLElement | null;
+  if (!bottomPanel || !gcodePanel) {
+    console.error('UI containers not found');
+    return;
+  }
 
   // Create WebSocket transport and RPC client
   const transport = new WsTransport('/api/ws');
   const rpcClient = new RpcClient(transport);
 
   // Create and init the WebGPU app
-  const app = new WebGPUApp(canvas, rpcClient, uiContainer as HTMLElement);
+  const app = new WebGPUApp(canvas, rpcClient, bottomPanel, gcodePanel);
   try {
     await app.init();
     console.log('Tether viewer initialized');

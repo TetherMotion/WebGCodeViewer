@@ -20,11 +20,13 @@ export class ToolpathRenderer {
   private pipeline: GPURenderPipeline | null = null;
   private positionBuffer: GPUBuffer | null = null;
   private colorBuffer: GPUBuffer | null = null;
+  private highlightBuffer: GPUBuffer | null = null;
   private indexBuffer: GPUBuffer | null = null;
   private indexCount: number = 0;
   private uniformBuffer: GPUBuffer | null = null;
   private bindGroup: GPUBindGroup | null = null;
   private sampleCount: number = 0;
+  private hasHighlight = false;
 
   options: ToolpathRenderOptions = {
     colorAttribute: 'velocity',
@@ -51,11 +53,13 @@ export class ToolpathRenderer {
         struct VertexInput {
           @location(0) position: vec3<f32>,
           @location(1) colorValue: f32,
+          @location(2) highlight: f32,
         };
 
         struct VertexOutput {
           @builtin(position) clipPosition: vec4<f32>,
           @location(0) colorValue: f32,
+          @location(1) highlight: f32,
         };
 
         @vertex
@@ -63,13 +67,17 @@ export class ToolpathRenderer {
           var output: VertexOutput;
           output.clipPosition = uniforms.viewProj * vec4<f32>(input.position, 1.0);
           output.colorValue = input.colorValue;
+          output.highlight = input.highlight;
           return output;
         }
 
         @fragment
         fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
           let color = textureSample(colorLUT, colorSampler, input.colorValue);
-          return vec4<f32>(color.rgb, 1.0);
+          // Blend toward bright white-yellow when highlighted
+          let highlightColor = vec3<f32>(1.0, 0.95, 0.3);
+          let blended = mix(color.rgb, highlightColor, input.highlight * 0.8);
+          return vec4<f32>(blended, 1.0);
         }
       `,
     });
@@ -100,6 +108,10 @@ export class ToolpathRenderer {
           {
             arrayStride: 4,
             attributes: [{ shaderLocation: 1, offset: 0, format: 'float32' }],
+          },
+          {
+            arrayStride: 4,
+            attributes: [{ shaderLocation: 2, offset: 0, format: 'float32' }],
           },
         ],
       },
@@ -192,8 +204,46 @@ export class ToolpathRenderer {
     });
     this.device.queue.writeBuffer(this.indexBuffer, 0, indices);
 
+    // Highlight buffer (all zeros initially — no highlight)
+    if (this.highlightBuffer) this.highlightBuffer.destroy();
+    this.highlightBuffer = this.device.createBuffer({
+      size: n * 4,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.highlightBuffer, 0, new Float32Array(n));
+    this.hasHighlight = false;
+
     // Update color LUT
     this.updateColorLUT();
+  }
+
+  /**
+   * Highlight samples belonging to specific block indices.
+   * Pass null or empty set to clear highlight.
+   */
+  setHighlight(blockIndices: Set<number> | null, data?: TTHRData): void {
+    if (!this.highlightBuffer || !this.sampleCount) return;
+    const n = this.sampleCount;
+    const highlightValues = new Float32Array(n);
+
+    if (blockIndices && blockIndices.size > 0 && data?.blockIndex) {
+      for (let i = 0; i < n; i++) {
+        if (blockIndices.has(data.blockIndex[i])) {
+          highlightValues[i] = 1.0;
+        }
+      }
+      this.hasHighlight = true;
+    } else {
+      this.hasHighlight = false;
+    }
+
+    this.device.queue.writeBuffer(this.highlightBuffer, 0, highlightValues);
+  }
+
+  clearHighlight(): void {
+    if (!this.highlightBuffer || !this.sampleCount) return;
+    this.device.queue.writeBuffer(this.highlightBuffer, 0, new Float32Array(this.sampleCount));
+    this.hasHighlight = false;
   }
 
   private updateColorLUT(): void {
@@ -239,6 +289,7 @@ export class ToolpathRenderer {
     pass.setBindGroup(0, this.bindGroup);
     pass.setVertexBuffer(0, this.positionBuffer);
     pass.setVertexBuffer(1, this.colorBuffer!);
+    pass.setVertexBuffer(2, this.highlightBuffer!);
     pass.setIndexBuffer(this.indexBuffer!, 'uint32');
     pass.drawIndexed(this.indexCount);
   }
@@ -246,6 +297,7 @@ export class ToolpathRenderer {
   destroy(): void {
     this.positionBuffer?.destroy();
     this.colorBuffer?.destroy();
+    this.highlightBuffer?.destroy();
     this.indexBuffer?.destroy();
     this.uniformBuffer?.destroy();
     this.colorLUTTexture?.destroy();

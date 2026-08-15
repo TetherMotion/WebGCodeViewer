@@ -134,39 +134,122 @@ body {
     background: var(--accent-hover);
 }
 
-/* Main content layout */
+/* Main content layout — viewer (left) + gcode (right) */
 #main-content {
     display: flex;
     flex: 1;
     overflow: hidden;
 }
 
-#left-panel {
-    width: 280px;
-    flex-shrink: 0;
-    overflow-y: auto;
-    background: var(--bg-secondary);
-    border-right: 1px solid var(--border);
-}
-
-#right-panel {
-    width: 320px;
-    flex-shrink: 0;
-    overflow-y: auto;
-    background: var(--bg-secondary);
-    border-left: 1px solid var(--border);
-}
-
 #canvas-container {
     flex: 1;
     position: relative;
     background: var(--bg-primary);
+    min-width: 0;
 }
 
 #webgpu-canvas {
     width: 100%;
     height: 100%;
     display: block;
+}
+
+#gcode-panel {
+    width: 420px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border);
+    overflow: hidden;
+}
+
+#gcode-panel-header {
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+#gcode-panel-header .gcode-filename {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#gcode-panel-header .gcode-line-count {
+    color: var(--text-muted);
+    font-weight: 400;
+    font-size: 11px;
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+#gcode-list {
+    flex: 1;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.gcode-line {
+    display: flex;
+    padding: 0 8px;
+    cursor: pointer;
+    white-space: pre;
+}
+
+.gcode-line:hover {
+    background: var(--bg-tertiary);
+}
+
+.gcode-line.highlighted {
+    background: rgba(74, 158, 255, 0.15);
+    border-left: 3px solid var(--accent);
+    padding-left: 5px;
+}
+
+.gcode-line.highlighted-related {
+    background: rgba(74, 158, 255, 0.06);
+}
+
+.gcode-line-number {
+    color: var(--text-muted);
+    width: 48px;
+    flex-shrink: 0;
+    text-align: right;
+    padding-right: 12px;
+    user-select: none;
+}
+
+.gcode-line-content {
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gcode-line-content .gcode-word {
+    color: var(--accent);
+}
+
+.gcode-line-content .gcode-comment {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.gcode-line-content .gcode-axis {
+    color: #e8a872;
+}
+
+.gcode-line-content .gcode-number {
+    color: #b8d4a8;
 }
 
 #error-message {
@@ -207,11 +290,77 @@ body {
     to { transform: rotate(360deg); }
 }
 
-/* Bottom panel */
+/* Bottom panel — control panel */
 #bottom-panel {
     flex-shrink: 0;
     background: var(--bg-secondary);
     border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    flex-wrap: wrap;
+}
+
+#bottom-panel .control-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    border-right: 1px solid var(--border);
+}
+
+#bottom-panel .control-group:last-child {
+    border-right: none;
+}
+
+#bottom-panel .control-group.status {
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+#bottom-panel label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+#bottom-panel select,
+#bottom-panel input[type="number"] {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 12px;
+}
+
+#bottom-panel button {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+#bottom-panel button:hover {
+    background: var(--accent);
+    color: white;
+}
+
+#bottom-panel button.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+#bottom-panel .status-text {
+    font-family: var(--font-mono);
+    font-size: 11px;
 }
 
 /* Panels */
