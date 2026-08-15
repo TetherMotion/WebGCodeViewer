@@ -152,7 +152,10 @@ double JobManager::getJobProgress(const std::string& jobId) const {
 
 const ProcessResult* JobManager::getResult(const std::string& jobId) const {
     auto job = getJob(jobId);
-    if (!job || job->state != JobState::Ready) return nullptr;
+    if (!job) return nullptr;
+    // Return result for both Ready and Failed states so the client can
+    // access the error message when a job fails.
+    if (job->state != JobState::Ready && job->state != JobState::Failed) return nullptr;
     return &job->result;
 }
 
