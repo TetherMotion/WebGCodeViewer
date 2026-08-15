@@ -32,14 +32,22 @@ export class OverlayRenderer {
           @location(1) color: vec3<f32>,
         };
 
+        struct VertexOutput {
+          @builtin(position) clipPosition: vec4<f32>,
+          @location(0) color: vec3<f32>,
+        };
+
         @vertex
-        fn vs_main(input: VertexInput) -> @builtin(position) vec4<f32> {
-          return uniforms.viewProj * vec4<f32>(input.position, 1.0);
+        fn vs_main(input: VertexInput) -> VertexOutput {
+          var output: VertexOutput;
+          output.clipPosition = uniforms.viewProj * vec4<f32>(input.position, 1.0);
+          output.color = input.color;
+          return output;
         }
 
         @fragment
-        fn fs_main(@location(0) color: vec3<f32>) -> @location(0) vec4<f32> {
-          return vec4<f32>(color, 1.0);
+        fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+          return vec4<f32>(input.color, 1.0);
         }
       `,
     });
@@ -58,6 +66,11 @@ export class OverlayRenderer {
       },
       fragment: { module: shader, entryPoint: 'fs_main', targets: [{ format }] },
       primitive: { topology: 'line-list' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthCompare: 'less',
+        depthWriteEnabled: true,
+      },
     });
 
     this.uniformBuffer = this.device.createBuffer({

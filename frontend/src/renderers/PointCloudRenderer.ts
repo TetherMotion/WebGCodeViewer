@@ -50,6 +50,11 @@ export class PointCloudRenderer {
       }] },
       fragment: { module: shader, entryPoint: 'fs_main', targets: [{ format }] },
       primitive: { topology: 'point-list' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthCompare: 'less',
+        depthWriteEnabled: true,
+      },
     });
 
     this.uniformBuffer = this.device.createBuffer({

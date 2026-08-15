@@ -46,6 +46,11 @@ export class GridRenderer {
         color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
       } }] },
       primitive: { topology: 'line-list' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthCompare: 'less',
+        depthWriteEnabled: false,
+      },
     });
 
     this.uniformBuffer = this.device.createBuffer({

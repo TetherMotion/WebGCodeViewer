@@ -45,6 +45,11 @@ export class CrossSectionRenderer {
       }] },
       fragment: { module: shader, entryPoint: 'fs_main', targets: [{ format }] },
       primitive: { topology: 'line-list' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthCompare: 'less',
+        depthWriteEnabled: true,
+      },
     });
 
     this.uniformBuffer = this.device.createBuffer({

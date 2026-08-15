@@ -35,6 +35,9 @@ export class ToolpathRenderer {
 
   constructor(private device: GPUDevice) {}
 
+  private colorLUTTexture: GPUTexture | null = null;
+  private sampler: GPUSampler | null = null;
+
   async init(format: GPUTextureFormat): Promise<void> {
     const shader = this.device.createShaderModule({
       code: `
@@ -45,6 +48,7 @@ export class ToolpathRenderer {
         };
         @group(0) @binding(0) var<uniform> uniforms: Uniforms;
         @group(0) @binding(1) var colorLUT: texture_1d<f32>;
+        @group(0) @binding(2) var colorSampler: sampler;
 
         struct VertexInput {
           @location(0) position: vec3<f32>,
@@ -66,7 +70,7 @@ export class ToolpathRenderer {
 
         @fragment
         fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-          let color = textureSample(colorLUT, colorLUT, input.colorValue);
+          let color = textureSample(colorLUT, colorSampler, input.colorValue);
           return vec4<f32>(color.rgb, 1.0);
         }
       `,
@@ -79,6 +83,11 @@ export class ToolpathRenderer {
       dimension: '1d',
     });
     this.colorLUTTexture = lutTexture;
+
+    this.sampler = this.device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
+    });
 
     this.pipeline = this.device.createRenderPipeline({
       layout: 'auto',
@@ -102,6 +111,11 @@ export class ToolpathRenderer {
         targets: [{ format }],
       },
       primitive: { topology: 'line-list' },
+      depthStencil: {
+        format: 'depth24plus',
+        depthCompare: 'less',
+        depthWriteEnabled: true,
+      },
     });
 
     this.uniformBuffer = this.device.createBuffer({
@@ -109,8 +123,6 @@ export class ToolpathRenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
   }
-
-  private colorLUTTexture: GPUTexture | null = null;
 
   updateData(data: TTHRData): void {
     if (!data.positions) return;
@@ -219,6 +231,7 @@ export class ToolpathRenderer {
         entries: [
           { binding: 0, resource: { buffer: this.uniformBuffer! } },
           { binding: 1, resource: this.colorLUTTexture!.createView() },
+          { binding: 2, resource: this.sampler! },
         ],
       });
     }
