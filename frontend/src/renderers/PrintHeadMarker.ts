@@ -81,7 +81,7 @@ export class PrintHeadMarker {
     });
 
     this.uniformBuffer = this.device.createBuffer({
-      size: 64,
+      size: 80, // 64 (viewProj) + 4 (pointSize) + 12 (padding)
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
   }
@@ -97,7 +97,7 @@ export class PrintHeadMarker {
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.visibleFlag || !this.pipeline) return;
 
-    const uniformData = new ArrayBuffer(64);
+    const uniformData = new ArrayBuffer(80);
     const view = new Float32Array(uniformData);
     for (let i = 0; i < 16; i++) view[i] = viewProj[i];
     this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
