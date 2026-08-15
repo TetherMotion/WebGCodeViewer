@@ -22,6 +22,7 @@ export interface NurbsRenderOptions {
   lineWidth: number;
   visible: boolean;
   showTravels: boolean;       // Feature #1: show/hide travel moves (motionType 0)
+  highlightRetractions: boolean; // Feature #3: highlight retraction moves in red
 }
 
 export class NurbsRenderer {
@@ -44,6 +45,7 @@ export class NurbsRenderer {
     lineWidth: 2.0,
     visible: true,
     showTravels: true,
+    highlightRetractions: false,
   };
 
   constructor(private device: GPUDevice) {}
@@ -90,6 +92,11 @@ export class NurbsRenderer {
 
         @fragment
         fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+          // Feature #3: Retraction highlight — colorValue < 0 means red
+          if (input.colorValue < 0.0) {
+            let finalColor = vec3<f32>(1.0, 0.2, 0.1) * (1.0 - input.dimmed * 0.8);
+            return vec4<f32>(finalColor, 1.0);
+          }
           let color = textureSample(colorLUT, colorSampler, input.colorValue);
           let finalColor = color.rgb * (1.0 - input.dimmed * 0.8);
           return vec4<f32>(finalColor, 1.0);
@@ -240,6 +247,11 @@ export class NurbsRenderer {
           colorValue = pieces.length > 1 ? i / (pieces.length - 1) : 0.5;
           break;
         }
+      }
+
+      // Feature #3: Highlight retraction moves (negative extruder speed) in red
+      if (this.options.highlightRetractions && piece.extruderSpeed < -0.001) {
+        colorValue = -1.0;  // sentinel value → shader renders red
       }
 
       for (let j = 0; j <= segments; j++) {

@@ -1449,3 +1449,78 @@ test.describe('Extrusion width visualization (Feature #2)', () => {
     await expect(slider).toHaveAttribute('step', '0.5');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 15: Retraction Markers (Feature #3)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Retraction markers (Feature #3)', () => {
+  test('retractions toggle button exists and is not active by default', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Retractions' });
+    await expect(btn).toBeVisible();
+    // Should not be active by default
+    await expect(btn).not.toHaveClass(/active/);
+  });
+
+  test('toggling retractions adds active class', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Retractions' });
+    await btn.click();
+    await expect(btn).toHaveClass(/active/);
+
+    await btn.click();
+    await expect(btn).not.toHaveClass(/active/);
+  });
+
+  test('retractions toggle works without errors with loaded G-code', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, COMPLEX_GCODE, 'retraction_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Retractions' });
+
+    // Toggle on (highlight retractions)
+    await btn.click();
+    await page.waitForTimeout(500);
+
+    // Toggle off
+    await btn.click();
+    await page.waitForTimeout(500);
+
+    collector.assertClean('retraction toggle with loaded G-code');
+  });
+
+  test('retractions toggle combines with travels toggle', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, COMPLEX_GCODE, 'retraction_combo.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+    const retractionBtn = page.locator('#bottom-panel button', { hasText: 'Retractions' });
+
+    // Toggle both
+    await retractionBtn.click();
+    await travelsBtn.click();
+    await page.waitForTimeout(300);
+    await retractionBtn.click();
+    await travelsBtn.click();
+    await page.waitForTimeout(300);
+
+    collector.assertClean('retractions + travels combo toggle');
+  });
+});

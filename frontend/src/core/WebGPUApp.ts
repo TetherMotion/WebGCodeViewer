@@ -166,6 +166,13 @@ export class WebGPUApp {
       if (this.nurbsRenderer) this.nurbsRenderer.options.lineWidth = width;
       if (this.toolpathRenderer) this.toolpathRenderer.options.lineWidth = width;
     });
+    // Feature #3: Toggle retraction highlighting
+    this.controlPanel.on('toggleRetractions', () => {
+      if (this.nurbsRenderer) {
+        this.nurbsRenderer.options.highlightRetractions = !this.nurbsRenderer.options.highlightRetractions;
+        if (this.currentNBP) this.nurbsRenderer.updateData(this.currentNBP);
+      }
+    });
     this.controlPanel.on('toggleCrossSection', () => {
       if (this.crossSectionRenderer) {
         this.crossSectionRenderer.visible = !this.crossSectionRenderer.visible;

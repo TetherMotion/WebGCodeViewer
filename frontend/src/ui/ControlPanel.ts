@@ -23,6 +23,7 @@ export interface ControlPanelEvents {
   miniplotAxisChanged: string;
   toggleTravels: void;        // Feature #1: show/hide travel moves
   lineWidthChanged: number;   // Feature #2: line width adjustment
+  toggleRetractions: void;    // Feature #3: highlight retraction moves
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -210,6 +211,15 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
       this.emit('toggleTravels', undefined);
     };
     viewGroup.appendChild(travelsBtn);
+
+    // Feature #3: Retraction highlight toggle
+    const retractionBtn = document.createElement('button');
+    retractionBtn.textContent = 'Retractions';
+    retractionBtn.onclick = () => {
+      retractionBtn.classList.toggle('active');
+      this.emit('toggleRetractions', undefined);
+    };
+    viewGroup.appendChild(retractionBtn);
 
     this.element.appendChild(viewGroup);
 
