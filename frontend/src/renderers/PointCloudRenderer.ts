@@ -25,7 +25,8 @@ export class PointCloudRenderer {
         struct Uniforms {
           viewProj: mat4x4<f32>,
           pointSize: f32,
-          color: vec3<f32>,
+          _pad: f32,
+          color: vec4<f32>,
         };
         @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
@@ -38,7 +39,7 @@ export class PointCloudRenderer {
 
         @fragment
         fn fs_main() -> @location(0) vec4<f32> {
-          return vec4<f32>(uniforms.color, 0.8);
+          return vec4<f32>(uniforms.color.rgb, 0.8);
         }
       `,
     });
@@ -58,7 +59,7 @@ export class PointCloudRenderer {
     });
 
     this.uniformBuffer = this.device.createBuffer({
-      size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
   }
 
@@ -84,13 +85,15 @@ export class PointCloudRenderer {
 
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.visible || !this.pipeline || !this.positionBuffer || this.pointCount === 0) return;
-    const uniformData = new ArrayBuffer(80);
+    const uniformData = new ArrayBuffer(96);
     const view = new Float32Array(uniformData);
     for (let i = 0; i < 16; i++) view[i] = viewProj[i];
     view[16] = this.pointSize;
-    view[17] = this.pointColor[0];
-    view[18] = this.pointColor[1];
-    view[19] = this.pointColor[2];
+    // view[17] = padding
+    view[18] = this.pointColor[0];
+    view[19] = this.pointColor[1];
+    view[20] = this.pointColor[2];
+    view[21] = 1.0; // alpha padding for vec4
     this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
 
     if (!this.bindGroup) {

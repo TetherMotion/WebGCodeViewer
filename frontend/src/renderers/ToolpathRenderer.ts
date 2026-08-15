@@ -43,8 +43,6 @@ export class ToolpathRenderer {
       code: `
         struct Uniforms {
           viewProj: mat4x4<f32>,
-          colorMapIndex: f32,
-          _pad: vec3<f32>,
         };
         @group(0) @binding(0) var<uniform> uniforms: Uniforms;
         @group(0) @binding(1) var colorLUT: texture_1d<f32>;
@@ -119,7 +117,7 @@ export class ToolpathRenderer {
     });
 
     this.uniformBuffer = this.device.createBuffer({
-      size: 80,
+      size: 64,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
   }
@@ -220,7 +218,7 @@ export class ToolpathRenderer {
     if (!this.options.visible || !this.pipeline || !this.positionBuffer || this.sampleCount < 2) return;
 
     // Update uniforms
-    const uniformData = new ArrayBuffer(80);
+    const uniformData = new ArrayBuffer(64);
     const view = new Float32Array(uniformData);
     for (let i = 0; i < 16; i++) view[i] = viewProj[i];
     this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
