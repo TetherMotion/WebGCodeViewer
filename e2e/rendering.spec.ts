@@ -1611,3 +1611,135 @@ test.describe('Dark/Light theme toggle (Feature #66)', () => {
     collector.assertClean('theme toggle with loaded G-code');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 17: Keyboard Shortcuts Overlay (Feature #68)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Keyboard shortcuts overlay (Feature #68)', () => {
+  test('pressing ? shows help overlay', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Help overlay should not exist initially
+    let overlay = page.locator('.help-overlay');
+    await expect(overlay).toHaveCount(0);
+
+    // Press ? to show help
+    await page.keyboard.press('Shift+Slash'); // ? key
+    await page.waitForTimeout(300);
+
+    overlay = page.locator('.help-overlay');
+    await expect(overlay).toBeVisible();
+  });
+
+  test('help overlay contains keyboard shortcuts table', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    await page.keyboard.press('Shift+Slash');
+    await page.waitForTimeout(300);
+
+    // Check for shortcuts in the table
+    const table = page.locator('.help-content table');
+    await expect(table).toBeVisible();
+
+    // Should contain known shortcuts
+    const text = await table.textContent();
+    expect(text).toContain('Ctrl+F');
+    expect(text).toContain('Toggle grid');
+    expect(text).toContain('Reset view');
+    expect(text).toContain('Play/Pause');
+  });
+
+  test('Escape closes help overlay', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Show help
+    await page.keyboard.press('Shift+Slash');
+    await page.waitForTimeout(300);
+    await expect(page.locator('.help-overlay')).toBeVisible();
+
+    // Close with Escape
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    await expect(page.locator('.help-overlay')).not.toBeVisible();
+  });
+
+  test('pressing ? again toggles overlay off', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    await page.keyboard.press('Shift+Slash');
+    await page.waitForTimeout(300);
+    await expect(page.locator('.help-overlay')).toBeVisible();
+
+    await page.keyboard.press('Shift+Slash');
+    await page.waitForTimeout(300);
+    await expect(page.locator('.help-overlay')).not.toBeVisible();
+  });
+
+  test('keyboard shortcut G toggles grid', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const gridBtn = page.locator('#bottom-panel button', { hasText: 'Grid' });
+    const initialClass = await gridBtn.getAttribute('class');
+
+    // Press G
+    await page.keyboard.press('g');
+    await page.waitForTimeout(300);
+
+    const newClass = await gridBtn.getAttribute('class');
+    expect(initialClass).not.toBe(newClass);
+  });
+
+  test('keyboard shortcut T toggles travels', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+    const initialActive = await travelsBtn.getAttribute('class');
+
+    await page.keyboard.press('t');
+    await page.waitForTimeout(300);
+
+    const newActive = await travelsBtn.getAttribute('class');
+    expect(initialActive).not.toBe(newActive);
+  });
+
+  test('keyboard shortcuts work without errors with loaded G-code', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'keyboard_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // Try various shortcuts
+    await page.keyboard.press('g');
+    await page.waitForTimeout(200);
+    await page.keyboard.press('t');
+    await page.waitForTimeout(200);
+    await page.keyboard.press('r');
+    await page.waitForTimeout(200);
+    await page.keyboard.press('Shift+Slash');
+    await page.waitForTimeout(200);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    await page.keyboard.press('g');
+    await page.waitForTimeout(200);
+    await page.keyboard.press('t');
+    await page.waitForTimeout(200);
+
+    collector.assertClean('keyboard shortcuts with loaded G-code');
+  });
+});

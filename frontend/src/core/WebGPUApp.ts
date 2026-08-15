@@ -422,10 +422,96 @@ export class WebGPUApp {
       return;
     }
 
-    // Escape → close search if open
-    if (e.key === 'Escape' && this.gcodeViewer.isSearchVisible()) {
-      this.gcodeViewer.hideSearch();
+    // Escape → close search if open, or close help overlay
+    if (e.key === 'Escape') {
+      if (this.gcodeViewer.isSearchVisible()) {
+        this.gcodeViewer.hideSearch();
+      }
+      this.hideHelpOverlay();
       return;
+    }
+
+    // Feature #68: ? → show keyboard shortcuts overlay
+    if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+      e.preventDefault();
+      this.toggleHelpOverlay();
+      return;
+    }
+
+    // Don't process shortcuts when typing in inputs
+    const target = e.target as HTMLElement;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) {
+      return;
+    }
+
+    // Feature #68: Keyboard shortcuts
+    switch (e.key.toLowerCase()) {
+      case 'g': {
+        const btn = document.querySelector('#bottom-panel button') as HTMLButtonElement;
+        // Find the Grid button specifically
+        const buttons = document.querySelectorAll('#bottom-panel button');
+        buttons.forEach(b => { if (b.textContent === 'Grid') (b as HTMLButtonElement).click(); });
+        break;
+      }
+      case 't': {
+        const buttons = document.querySelectorAll('#bottom-panel button');
+        buttons.forEach(b => { if (b.textContent === 'Travels') (b as HTMLButtonElement).click(); });
+        break;
+      }
+      case 'r':
+        this.controlPanel.emit('resetView', undefined);
+        break;
+      case 'e':
+        this.controlPanel.emit('exportImage', undefined);
+        break;
+      case ' ':
+        e.preventDefault();
+        this.playing = !this.playing;
+        this.controlPanel.setPlaying(this.playing);
+        break;
+    }
+  }
+
+  // Feature #68: Help overlay
+  private helpOverlay: HTMLElement | null = null;
+
+  private toggleHelpOverlay(): void {
+    if (this.helpOverlay && this.helpOverlay.style.display !== 'none') {
+      this.hideHelpOverlay();
+    } else {
+      this.showHelpOverlay();
+    }
+  }
+
+  private showHelpOverlay(): void {
+    if (!this.helpOverlay) {
+      this.helpOverlay = document.createElement('div');
+      this.helpOverlay.className = 'help-overlay';
+      this.helpOverlay.innerHTML = `
+        <div class="help-content">
+          <h2>Keyboard Shortcuts</h2>
+          <table>
+            <tr><td><kbd>Ctrl+F</kbd></td><td>Search G-code</td></tr>
+            <tr><td><kbd>G</kbd></td><td>Toggle grid</td></tr>
+            <tr><td><kbd>T</kbd></td><td>Toggle travel moves</td></tr>
+            <tr><td><kbd>R</kbd></td><td>Reset view</td></tr>
+            <tr><td><kbd>E</kbd></td><td>Export screenshot</td></tr>
+            <tr><td><kbd>Space</kbd></td><td>Play/Pause animation</td></tr>
+            <tr><td><kbd>?</kbd></td><td>Show this help</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Close help/search</td></tr>
+          </table>
+          <p class="help-hint">Press <kbd>?</kbd> or <kbd>Esc</kbd> to close</p>
+        </div>
+      `;
+      this.helpOverlay.style.display = 'none';
+      document.body.appendChild(this.helpOverlay);
+    }
+    this.helpOverlay.style.display = 'flex';
+  }
+
+  private hideHelpOverlay(): void {
+    if (this.helpOverlay) {
+      this.helpOverlay.style.display = 'none';
     }
   }
 
