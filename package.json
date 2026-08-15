@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/TetherMotion/WebGCodeViewer#readme",
   "devDependencies": {
-    "@playwright/test": "^1.62.1"
+    "@playwright/test": "^1.62.1",
+    "pngjs": "^7.0.0"
   }
 }

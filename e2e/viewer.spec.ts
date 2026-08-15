@@ -16,14 +16,25 @@ import { test, expect, Page, ConsoleMessage } from '@playwright/test';
  * Collect console messages and page errors during a test.
  * Filters out known non-critical messages (favicon 404, browser
  * extension noise, and WebGPU-not-supported in headless mode).
+ *
+ * Also collects console warnings, which can indicate rendering issues
+ * (e.g. WebGPU adapter warnings, deprecated API usage, shader
+ * compilation warnings).
  */
 function setupErrorCollector(page: Page) {
   const errors: string[] = [];
   const consoleErrors: string[] = [];
+  const consoleWarnings: string[] = [];
+  const allMessages: { type: string; text: string }[] = [];
 
   page.on('console', (msg: ConsoleMessage) => {
-    if (msg.type() === 'error') {
-      consoleErrors.push(`console.error: ${msg.text()}`);
+    const type = msg.type();
+    const text = msg.text();
+    allMessages.push({ type, text });
+    if (type === 'error') {
+      consoleErrors.push(`console.error: ${text}`);
+    } else if (type === 'warning') {
+      consoleWarnings.push(`console.warning: ${text}`);
     }
   });
 
@@ -31,21 +42,44 @@ function setupErrorCollector(page: Page) {
     errors.push(`pageerror: ${err.message}`);
   });
 
+  // Known non-critical console messages that are expected in headless mode
+  const KNOWN_HARMLESS = [
+    'favicon',
+    'runtime.lastError',
+    'message channel closed',
+    'WebGPU not supported',
+    'Failed to initialize WebGPU',
+  ];
+
+  function isKnownHarmless(msg: string): boolean {
+    return KNOWN_HARMLESS.some(h => msg.includes(h));
+  }
+
   return {
     errors,
     consoleErrors,
+    consoleWarnings,
+    allMessages,
+
     assertNoErrors: (context: string) => {
       expect(errors, `Page errors during ${context}`).toEqual([]);
-      // Filter out known non-critical warnings
-      const realErrors = consoleErrors.filter(
-        e => !e.includes('favicon') &&
-             !e.includes('runtime.lastError') &&
-             !e.includes('message channel closed') &&
-             !e.includes('WebGPU not supported') &&  // expected in headless
-             !e.includes('Failed to initialize WebGPU'),
-      );
+      const realErrors = consoleErrors.filter(e => !isKnownHarmless(e));
       expect(realErrors, `Console errors during ${context}`).toEqual([]);
     },
+
+    /**
+     * Assert no unexpected console warnings.
+     * WebGPU "No available adapters" is expected in headless mode.
+     */
+    assertNoWarnings: (context: string) => {
+      const realWarnings = consoleWarnings.filter(
+        w => !isKnownHarmless(w) &&
+             !w.includes('No available adapters') &&
+             !w.includes('too many warnings'),  // Chrome's own meta-warning
+      );
+      expect(realWarnings, `Console warnings during ${context}`).toEqual([]);
+    },
+
     /**
      * Assert no WebGPU validation errors specifically.
      * This catches binding size mismatches, invalid bind groups, buffer
@@ -76,6 +110,24 @@ function setupErrorCollector(page: Page) {
              e.includes('Submit'),
       );
       expect(webgpuErrors, 'WebGPU validation errors detected').toEqual([]);
+    },
+
+    /**
+     * Assert no console warnings related to WebGPU.
+     * Catches shader compilation warnings, deprecation notices, etc.
+     */
+    assertNoWebGPUWarnings: () => {
+      const webgpuWarnings = consoleWarnings.filter(
+        w => w.includes('WebGPU') ||
+             w.includes('GPUDevice') ||
+             w.includes('shader') ||
+             w.includes('pipeline') ||
+             w.includes('buffer') ||
+             w.includes('texture') ||
+             w.includes('adapter') ||
+             w.includes('too many warnings'),
+      );
+      expect(webgpuWarnings, 'WebGPU warnings detected').toEqual([]);
     },
   };
 }
@@ -269,6 +321,7 @@ test.describe('Rendering stability', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(5000);
     collector.assertNoErrors('5 second render loop');
+    collector.assertNoWarnings('5 second render loop');
     collector.assertNoWebGPUErrors();
   });
 
@@ -290,6 +343,7 @@ test.describe('Rendering stability', () => {
     // Wait for resize to settle
     await page.waitForTimeout(1000);
     collector.assertNoErrors('rapid resize');
+    collector.assertNoWarnings('rapid resize');
     collector.assertNoWebGPUErrors();
   });
 
@@ -340,6 +394,7 @@ test.describe('Rendering stability', () => {
     await page.waitForTimeout(2000);
 
     collector.assertNoErrors('aggressive resize with rendering');
+    collector.assertNoWarnings('aggressive resize with rendering');
     collector.assertNoWebGPUErrors();
   });
 
@@ -399,6 +454,7 @@ test.describe('WebGPU renderer initialization', () => {
 
     await page.waitForTimeout(500);
     collector.assertNoErrors('all direction cube cells clicked');
+    collector.assertNoWarnings('all direction cube cells clicked');
     collector.assertNoWebGPUErrors();
   });
 
@@ -417,6 +473,7 @@ test.describe('WebGPU renderer initialization', () => {
     }
 
     collector.assertNoErrors('projection toggle');
+    collector.assertNoWarnings('projection toggle');
     collector.assertNoWebGPUErrors();
   });
 
@@ -434,6 +491,7 @@ test.describe('WebGPU renderer initialization', () => {
     }
 
     collector.assertNoErrors('grid toggle');
+    collector.assertNoWarnings('grid toggle');
     collector.assertNoWebGPUErrors();
   });
 
@@ -450,6 +508,7 @@ test.describe('WebGPU renderer initialization', () => {
     }
 
     collector.assertNoErrors('camera reset');
+    collector.assertNoWarnings('camera reset');
     collector.assertNoWebGPUErrors();
   });
 
@@ -476,6 +535,7 @@ test.describe('WebGPU renderer initialization', () => {
     await page.waitForTimeout(500);
 
     collector.assertNoErrors('mouse drag');
+    collector.assertNoWarnings('mouse drag');
     collector.assertNoWebGPUErrors();
   });
 
@@ -504,6 +564,7 @@ test.describe('WebGPU renderer initialization', () => {
     await page.waitForTimeout(500);
 
     collector.assertNoErrors('mouse wheel zoom');
+    collector.assertNoWarnings('mouse wheel zoom');
     collector.assertNoWebGPUErrors();
   });
 });
@@ -535,6 +596,7 @@ test.describe('G-code upload and render', () => {
     }
 
     collector.assertNoErrors('G-code upload and render');
+    collector.assertNoWarnings('G-code upload and render');
     collector.assertNoWebGPUErrors();
   });
 
@@ -570,6 +632,7 @@ test.describe('G-code upload and render', () => {
     await page.waitForTimeout(5000);
 
     collector.assertNoErrors('API upload + viewer load');
+    collector.assertNoWarnings('API upload + viewer load');
     collector.assertNoWebGPUErrors();
   });
 
@@ -620,6 +683,7 @@ test.describe('G-code upload and render', () => {
     }
 
     collector.assertNoErrors('ortho mode with loaded toolpath');
+    collector.assertNoWarnings('ortho mode with loaded toolpath');
     collector.assertNoWebGPUErrors();
   });
 
@@ -682,6 +746,7 @@ test.describe('G-code upload and render', () => {
     }
 
     collector.assertNoErrors('miniplot toggle and render');
+    collector.assertNoWarnings('miniplot toggle and render');
     collector.assertNoWebGPUErrors();
   });
 });
