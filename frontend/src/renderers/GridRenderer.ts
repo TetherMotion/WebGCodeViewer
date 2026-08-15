@@ -20,9 +20,12 @@ export interface TickInfo {
 
 export class GridRenderer {
   private pipeline: GPURenderPipeline | null = null;
+  private checkerPipeline: GPURenderPipeline | null = null;
   private vertexBuffer: GPUBuffer | null = null;
+  private checkerVertexBuffer: GPUBuffer | null = null;
   private uniformBuffer: GPUBuffer | null = null;
   private bindGroup: GPUBindGroup | null = null;
+  private checkerBindGroup: GPUBindGroup | null = null;
   private vertexCount: number = 0;
 
   visible: boolean = true;
@@ -65,6 +68,36 @@ export class GridRenderer {
         fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
           return vec4<f32>(input.color, 0.7);
         }
+
+        // ── Checkerboard pipeline ──
+        struct CheckerVertexOutput {
+          @builtin(position) clipPosition: vec4<f32>,
+          @location(0) worldPos: vec2<f32>,
+        };
+
+        @vertex
+        fn vs_checker(@location(0) position: vec3<f32>) -> CheckerVertexOutput {
+          var output: CheckerVertexOutput;
+          output.clipPosition = uniforms.viewProj * vec4<f32>(position, 1.0);
+          output.worldPos = position.xy;
+          return output;
+        }
+
+        @fragment
+        fn fs_checker(input: CheckerVertexOutput) -> @location(0) vec4<f32> {
+          // Checkerboard: alternate squares based on cell coordinates
+          let cellSize = ${this.gridSize.toFixed(1)} / ${this.gridDivisions}.0;
+          let cx = floor(input.worldPos.x / cellSize);
+          let cy = floor(input.worldPos.y / cellSize);
+          let checker = (cx + cy) % 2.0;
+
+          // Two shades of semi-transparent gray for the checkerboard
+          let lightSquare = vec3<f32>(0.62, 0.63, 0.67);
+          let darkSquare = vec3<f32>(0.52, 0.53, 0.57);
+          let color = select(darkSquare, lightSquare, checker > 0.5);
+
+          return vec4<f32>(color, 0.35);
+        }
       `,
     });
 
@@ -95,14 +128,48 @@ export class GridRenderer {
       },
     });
 
+    // Checkerboard pipeline: renders a single quad, pattern computed in fragment shader
+    this.checkerPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: shader, entryPoint: 'vs_checker',
+        buffers: [{
+          arrayStride: 12,
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x3' },
+          ],
+        }],
+      },
+      fragment: {
+        module: shader, entryPoint: 'fs_checker',
+        targets: [{ format, blend: {
+          alpha: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+        } }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: {
+        format: 'depth32float',
+        depthCompare: 'less',
+        depthWriteEnabled: false,
+      },
+    });
+
     this.uniformBuffer = this.device.createBuffer({
       size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     this.buildGrid();
+    this.buildChecker();
 
     this.bindGroup = this.device.createBindGroup({
       layout: this.pipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
+    });
+    // Create a separate bind group for the checkerboard pipeline
+    // (each 'auto' layout pipeline gets its own bind group layout)
+    this.checkerBindGroup = this.device.createBindGroup({
+      layout: this.checkerPipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
     });
   }
@@ -170,9 +237,40 @@ export class GridRenderer {
     this.device.queue.writeBuffer(this.vertexBuffer, 0, vertices);
   }
 
+  /** Build a single quad covering the grid area for the checkerboard pattern. */
+  private buildChecker(): void {
+    const s = this.gridSize;
+    // Two triangles forming a quad: (0,0) → (s,0) → (s,s) → (0,s)
+    const quad = new Float32Array([
+      0, 0, 0,
+      s, 0, 0,
+      s, s, 0,
+      0, 0, 0,
+      s, s, 0,
+      0, s, 0,
+    ]);
+
+    if (this.checkerVertexBuffer) this.checkerVertexBuffer.destroy();
+    this.checkerVertexBuffer = this.device.createBuffer({
+      size: quad.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.checkerVertexBuffer, 0, quad);
+  }
+
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.visible || !this.pipeline || !this.vertexBuffer) return;
     this.device.queue.writeBuffer(this.uniformBuffer!, 0, viewProj.buffer as ArrayBuffer);
+
+    // Draw checkerboard first (so grid lines render on top)
+    if (this.checkerPipeline && this.checkerVertexBuffer && this.checkerBindGroup) {
+      pass.setPipeline(this.checkerPipeline);
+      pass.setBindGroup(0, this.checkerBindGroup);
+      pass.setVertexBuffer(0, this.checkerVertexBuffer);
+      pass.draw(6);
+    }
+
+    // Draw grid lines on top of checkerboard
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.setVertexBuffer(0, this.vertexBuffer);
@@ -181,6 +279,7 @@ export class GridRenderer {
 
   destroy(): void {
     this.vertexBuffer?.destroy();
+    this.checkerVertexBuffer?.destroy();
     this.uniformBuffer?.destroy();
   }
 }
