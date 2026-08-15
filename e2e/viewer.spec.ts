@@ -48,7 +48,8 @@ function setupErrorCollector(page: Page) {
     },
     /**
      * Assert no WebGPU validation errors specifically.
-     * This catches binding size mismatches, invalid bind groups, etc.
+     * This catches binding size mismatches, invalid bind groups, buffer
+     * mapping errors, and other GPU validation issues.
      */
     assertNoWebGPUErrors: () => {
       const webgpuErrors = consoleErrors.filter(
@@ -67,7 +68,12 @@ function setupErrorCollector(page: Page) {
              e.includes('RenderPass') ||
              e.includes('GPUBuffer') ||
              e.includes('GPUTexture') ||
-             e.includes('destroyed'),
+             e.includes('destroyed') ||
+             e.includes('mapped') ||
+             e.includes('MapAsync') ||
+             e.includes('while mapped') ||
+             e.includes('already mapped') ||
+             e.includes('Submit'),
       );
       expect(webgpuErrors, 'WebGPU validation errors detected').toEqual([]);
     },
@@ -284,6 +290,56 @@ test.describe('Rendering stability', () => {
     // Wait for resize to settle
     await page.waitForTimeout(1000);
     collector.assertNoErrors('rapid resize');
+    collector.assertNoWebGPUErrors();
+  });
+
+  test('no buffer mapping errors during aggressive resize with rendering', async ({ page, request }) => {
+    const collector = setupErrorCollector(page);
+
+    // Upload G-code so the render loop has actual geometry to draw
+    // (this exercises the depth readback path with grid label culling)
+    const gcode = 'G1 X0 Y0 Z0 F600\nG1 X20 Y0 Z0 E1\nG1 X20 Y20 Z0 E1\nG1 X0 Y20 Z0 E1\nG1 X0 Y0 Z0 E1\n';
+    const uploadResp = await request.post('http://localhost:8099/api/trajectory/upload', {
+      headers: { 'Content-Type': 'text/plain' },
+      params: { filename: 'resize_stress.gcode' },
+      data: gcode,
+    });
+    expect(uploadResp.ok()).toBe(true);
+    const { jobId } = await uploadResp.json();
+    await request.post(`http://localhost:8099/api/trajectory/${jobId}/process`);
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      const s = await request.get(`http://localhost:8099/api/trajectory/${jobId}/status`);
+      if (s.ok() && (await s.json()).state === 'ready') break;
+    }
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // Aggressively resize the viewport in tight succession to trigger
+    // depth buffer reallocation while mapAsync callbacks are in flight.
+    // Use odd widths that produce non-256-aligned bytesPerRow to also
+    // stress the padding path.
+    const sizes = [
+      { width: 901, height: 601 },
+      { width: 1280, height: 720 },
+      { width: 333, height: 277 },
+      { width: 1500, height: 900 },
+      { width: 777, height: 555 },
+      { width: 1280, height: 720 },
+    ];
+    for (const size of sizes) {
+      await page.setViewportSize(size);
+      // Very short wait — just enough for a frame or two to render
+      // between resizes, maximizing the chance of a map/submit race
+      await page.waitForTimeout(50);
+    }
+
+    // Wait for things to settle
+    await page.waitForTimeout(2000);
+
+    collector.assertNoErrors('aggressive resize with rendering');
     collector.assertNoWebGPUErrors();
   });
 

@@ -35,6 +35,7 @@ export class WebGPUApp {
   private depthReadbackPending = false;
   private depthBufferSize: [number, number] = [0, 0];  // [width, height]
   private depthPaddedRowFloats: number = 0;  // padded bytesPerRow / 4
+  private depthReadbackGen = 0;  // incremented on resize to invalidate stale mapAsync callbacks
 
   private camera: Camera;
   private rpcClient: RpcClient;
@@ -480,6 +481,7 @@ export class WebGPUApp {
       // WebGPU requires bytesPerRow to be a multiple of 256 for copyTextureToBuffer.
       // Pad the row stride and size the buffer accordingly.
       this.depthReadbackBuffer?.destroy();
+      this.depthReadbackGen++;  // invalidate any in-flight mapAsync callbacks
       const unpaddedBytesPerRow = w * 4;
       const paddedBytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
       this.depthPaddedRowFloats = paddedBytesPerRow / 4;
@@ -583,19 +585,25 @@ export class WebGPUApp {
     // Start async readback of previous frame's depth buffer
     if (this.depthReadbackBuffer && !this.depthReadbackPending) {
       this.depthReadbackPending = true;
-      this.depthReadbackBuffer.mapAsync(GPUMapMode.READ).then(() => {
+      const gen = this.depthReadbackGen;
+      const buf = this.depthReadbackBuffer;
+      buf.mapAsync(GPUMapMode.READ).then(() => {
+        // Stale callback: buffer was replaced by resize, ignore
+        if (gen !== this.depthReadbackGen) return;
         const [w, h] = this.depthBufferSize;
         const stride = this.depthPaddedRowFloats;
-        const mapped = new Float32Array(this.depthReadbackBuffer!.getMappedRange());
+        const mapped = new Float32Array(buf.getMappedRange());
         // Unpack: copy row by row, skipping padding bytes at end of each row
         const compact = new Float32Array(w * h);
         for (let row = 0; row < h; row++) {
           compact.set(mapped.subarray(row * stride, row * stride + w), row * w);
         }
         this.depthData = compact;
-        this.depthReadbackBuffer!.unmap();
+        buf.unmap();
         this.depthReadbackPending = false;
       }).catch(() => {
+        // Stale callback: buffer was replaced by resize, don't touch pending
+        if (gen !== this.depthReadbackGen) return;
         this.depthReadbackPending = false;
       });
     }
@@ -915,6 +923,7 @@ export class WebGPUApp {
     this.dirCubeRenderer?.destroy();
     this.depthTexture?.destroy();
     this.depthTexture = null;
+    this.depthReadbackGen++;  // invalidate any in-flight mapAsync callbacks
     this.depthReadbackBuffer?.destroy();
     this.depthReadbackBuffer = null;
     this.depthData = null;
