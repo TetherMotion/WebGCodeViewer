@@ -132,8 +132,10 @@ export class DirectionCubeRenderer {
           // Gray base color with simple directional lighting
           let lightDir = normalize(vec3<f32>(0.4, -0.4, 0.8));
           let ndotl = max(dot(normalize(input.normal), lightDir), 0.0);
-          let lit = ${GRAY[0].toFixed(1)}, ${GRAY[1].toFixed(1)}, ${GRAY[2].toFixed(1)};
-          let color = vec3<f32>(lit) * (0.5 + 0.5 * ndotl);
+          // BUG 14 FIX: WGSL does not support comma-separated let declarations.
+          // Use vec3<f32>() constructor instead.
+          let lit = vec3<f32>(${GRAY[0].toFixed(1)}, ${GRAY[1].toFixed(1)}, ${GRAY[2].toFixed(1)});
+          let color = lit * (0.5 + 0.5 * ndotl);
 
           // Alpha: marked face is more opaque than other faces
           var alpha = ${ALPHA_FACE.toFixed(2)};

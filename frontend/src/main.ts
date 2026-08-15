@@ -28,6 +28,8 @@ async function main(): Promise<void> {
 
   // Create and init the WebGPU app
   const app = new WebGPUApp(canvas, rpcClient, bottomPanel, gcodePanel, navCubeContainer);
+  // Expose for E2E testing (BUG 6 regression tests use this to call destroy())
+  (window as any).__wgvApp = app;
   try {
     await app.init();
     console.log('Tether viewer initialized');

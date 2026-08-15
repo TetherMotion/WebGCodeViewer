@@ -299,7 +299,9 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     this.layerSlider.className = 'layer-slider';
     this.layerSlider.oninput = () => {
       const val = parseInt(this.layerSlider.value, 10);
-      this.layerLabel.textContent = val < 0 ? 'All' : `${val}`;
+      // BUG 11 FIX: Restore slider opacity when user selects a specific layer
+      this.layerSlider.style.opacity = '1';
+      this.layerLabel.textContent = `${val}`;
       this.emit('layerChanged', val);
     };
     this.layerGroup.appendChild(this.layerSlider);
@@ -314,7 +316,10 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     allLayersBtn.textContent = 'All';
     allLayersBtn.className = 'small-btn';
     allLayersBtn.onclick = () => {
-      this.layerSlider.value = '-1';
+      // BUG 11 FIX: Don't set slider value to -1 (below min=0).
+      // Instead, visually deselect the slider and set label to "All".
+      this.layerSlider.removeAttribute('data-selected');
+      this.layerSlider.style.opacity = '0.5';
       this.layerLabel.textContent = 'All';
       this.emit('layerChanged', -1);
     };
@@ -403,7 +408,8 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
       case 'processing':
         this.statusEl.textContent = `Processing: ${pct}% (${status.sampleCount} samples)`;
         break;
-      case 'ready':
+      case 'ready': {
+        // BUG 10 FIX: Wrap case body in braces to properly scope const declarations
         // Feature #84: Enhanced status bar with print info
         const timeStr = status.duration >= 60
           ? `${Math.floor(status.duration / 60)}m ${Math.round(status.duration % 60)}s`
@@ -412,6 +418,7 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
         // Show time slider when data is ready
         this.timeGroup.style.display = 'flex';
         break;
+      }
       case 'failed':
         this.statusEl.textContent = `Failed: ${status.errorMessage || 'unknown error'}`;
         break;
@@ -436,11 +443,15 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
 
   /**
    * Set the layer slider value programmatically.
+   * BUG 5 FIX: Does NOT emit 'layerChanged' — callers (like
+   * isolateZLayerForLine) already call applyLayerFilter directly.
+   * Emitting here would cause applyLayerFilter to run twice.
    */
   setLayerValue(layerIdx: number): void {
     this.layerSlider.value = String(layerIdx);
     this.layerLabel.textContent = layerIdx < 0 ? 'All' : `${layerIdx}`;
-    this.emit('layerChanged', layerIdx);
+    // BUG 11 FIX: Restore slider opacity when a specific layer is set
+    this.layerSlider.style.opacity = layerIdx < 0 ? '0.5' : '1';
   }
 
   /**
@@ -455,6 +466,8 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     this.layerSlider.min = '0';
     this.layerSlider.max = String(layers.totalLayers - 1);
     this.layerSlider.value = String(layers.totalLayers - 1);
+    // BUG 11 FIX: Set initial opacity for "All" state
+    this.layerSlider.style.opacity = '0.5';
     this.layerLabel.textContent = 'All';
   }
 
@@ -473,6 +486,8 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     this.layerSlider.min = '0';
     this.layerSlider.max = String(layers.totalLayers - 1);
     this.layerSlider.value = String(layers.totalLayers - 1);
+    // BUG 11 FIX: Set initial opacity for "All" state
+    this.layerSlider.style.opacity = '0.5';
     this.layerLabel.textContent = 'All';
   }
 

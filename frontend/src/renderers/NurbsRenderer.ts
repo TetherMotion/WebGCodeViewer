@@ -92,13 +92,17 @@ export class NurbsRenderer {
 
         @fragment
         fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+          // BUG 15 FIX: textureSample must be called from uniform control flow.
+          // The previous code had an if-branch before the textureSample call,
+          // which made the control flow non-uniform because input.colorValue
+          // is a per-vertex (non-uniform) value.
+          // Instead, always sample the texture and use mix() to select the color.
+          let sampled = textureSample(colorLUT, colorSampler, input.colorValue);
           // Feature #3: Retraction highlight — colorValue < 0 means red
-          if (input.colorValue < 0.0) {
-            let finalColor = vec3<f32>(1.0, 0.2, 0.1) * (1.0 - input.dimmed * 0.8);
-            return vec4<f32>(finalColor, 1.0);
-          }
-          let color = textureSample(colorLUT, colorSampler, input.colorValue);
-          let finalColor = color.rgb * (1.0 - input.dimmed * 0.8);
+          let retractionColor = vec3<f32>(1.0, 0.2, 0.1);
+          let baseColor = mix(sampled.rgb, retractionColor,
+                              select(0.0, 1.0, input.colorValue < 0.0));
+          let finalColor = baseColor * (1.0 - input.dimmed * 0.8);
           return vec4<f32>(finalColor, 1.0);
         }
       `,
@@ -271,6 +275,18 @@ export class NurbsRenderer {
 
     this.sampleCount = vertexOffset;
     this.indexCount = allIndices.length;
+
+    // BUG 4 FIX: If all pieces were filtered out (e.g. showTravels=false and
+    // all pieces are travel moves), the arrays are empty. Creating a WebGPU
+    // buffer with size 0 throws a validation error. Return early instead.
+    if (allPositions.length === 0) {
+      // Clear existing buffers so render() doesn't try to draw stale data
+      if (this.positionBuffer) { this.positionBuffer.destroy(); this.positionBuffer = null; }
+      if (this.colorBuffer) { this.colorBuffer.destroy(); this.colorBuffer = null; }
+      if (this.indexBuffer) { this.indexBuffer.destroy(); this.indexBuffer = null; }
+      if (this.sampleIdxBuffer) { this.sampleIdxBuffer.destroy(); this.sampleIdxBuffer = null; }
+      return;
+    }
 
     // Upload to GPU
     const posData = new Float32Array(allPositions);

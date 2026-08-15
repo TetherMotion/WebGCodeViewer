@@ -2695,3 +2695,557 @@ test.describe('Layer count display (Feature #128)', () => {
     collector.assertClean('layer count display');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 30: Bug Fix Regression Tests
+// ═══════════════════════════════════════════════════════════════════════
+
+// G-code with only travel moves (G0) — used for BUG 4 test
+const TRAVEL_ONLY_GCODE = `
+G0 X0 Y0 Z0
+G0 X10 Y0 Z0
+G0 X10 Y10 Z0
+G0 X0 Y10 Z0
+G0 X0 Y0 Z0
+`.trim();
+
+test.describe('Bug fix regression tests', () => {
+
+  // ── BUG 1: resetView ignores NURBS data ──────────────────────────────
+  test.describe('BUG 1: resetView works with NURBS data', () => {
+    test('Reset View button does not cause errors with G-code loaded', async ({ page, request }) => {
+      const collector = setupMessageCollector(page);
+      const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'bug1_reset.gcode');
+      expect(status).toBe('ready');
+
+      await page.goto(`http://localhost:8099/?job=${jobId}`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      const resetBtn = page.locator('#bottom-panel button', { hasText: 'Reset View' });
+      await resetBtn.click();
+      await page.waitForTimeout(500);
+
+      collector.assertClean('resetView with NURBS data');
+    });
+
+    test('Reset View button is visible and clickable', async ({ page }) => {
+      await page.goto('http://localhost:8099/');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      const resetBtn = page.locator('#bottom-panel button', { hasText: 'Reset View' });
+      await expect(resetBtn).toBeVisible();
+      await resetBtn.click();
+      // No error means success — the button is wired up
+    });
+
+    test('R keyboard shortcut triggers reset without errors', async ({ page, request }) => {
+      const collector = setupMessageCollector(page);
+      const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'bug1_reset_key.gcode');
+      expect(status).toBe('ready');
+
+      await page.goto(`http://localhost:8099/?job=${jobId}`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      await page.keyboard.press('r');
+      await page.waitForTimeout(500);
+
+      collector.assertClean('R keyboard shortcut reset');
+    });
+  });
+
+  // ── BUG 2: Stale data when reloading files ───────────────────────────
+  test.describe('BUG 2: no stale data when loading new file', () => {
+    test('loading a new job does not show old bbox data', async ({ page, request }) => {
+      // Upload two different G-code files with different dimensions
+      const { jobId: job1, status: status1 } = await uploadAndProcess(request, SQUARE_GCODE, 'bug2_a.gcode');
+      expect(status1).toBe('ready');
+      const { jobId: job2, status: status2 } = await uploadAndProcess(request, COMPLEX_GCODE, 'bug2_b.gcode');
+      expect(status2).toBe('ready');
+
+      // Load first job
+      await page.goto(`http://localhost:8099/?job=${job1}`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      // Enable BBox
+      const bboxBtn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+      await bboxBtn.click();
+      await page.waitForTimeout(500);
+
+      const bboxOverlay = page.locator('.bbox-overlay');
+      const text1 = await bboxOverlay.textContent();
+
+      // Now load second job (different dimensions)
+      await page.goto(`http://localhost:8099/?job=${job2}`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      // BBox should still be visible (toggle state persists in new page load? No,
+      // page reloads, so we need to re-enable). But the key test is that the
+      // overlay shows new data, not stale data from job1.
+      await bboxBtn.click();
+      await page.waitForTimeout(500);
+
+      const text2 = await bboxOverlay.textContent();
+      // The two G-codes have different dimensions, so the bbox text should differ
+      expect(text1).not.toEqual(text2);
+    });
+
+    test('loading a new job does not cause errors from stale state', async ({ page, request }) => {
+      const collector = setupMessageCollector(page);
+      const { jobId: job1 } = await uploadAndProcess(request, SQUARE_GCODE, 'bug2_stale_a.gcode');
+      const { jobId: job2 } = await uploadAndProcess(request, LAYERED_GCODE, 'bug2_stale_b.gcode');
+
+      await page.goto(`http://localhost:8099/?job=${job1}`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      // Load second job
+      await page.goto(`http://localhost:8099/?job=${job2}`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      collector.assertClean('loading second job after first');
+    });
+  });
+
+  // ── BUG 3: ?cam= URL param overridden by fitToBounds ─────────────────
+  test.describe('BUG 3: ?cam= preserved when ?job= also present', () => {
+    test('camera params from URL are not overridden by job data load', async ({ page, request }) => {
+      const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'bug3_cam.gcode');
+      expect(status).toBe('ready');
+
+      // Load with both job and cam params
+      await page.goto(`http://localhost:8099/?job=${jobId}&cam=1.5,0.3,500`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(3000);
+
+      // Check that the deferred camera params were applied by reading the
+      // camera state from the page. We verify via the "Copy URL" button
+      // which reads current camera state.
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+      const copyBtn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+      await copyBtn.click();
+      await page.waitForTimeout(500);
+
+      const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+      // The cam param should be close to what we set (1.5,0.3,500)
+      expect(clipboardText).toContain('cam=');
+      const camMatch = clipboardText.match(/cam=([^&]+)/);
+      expect(camMatch).not.toBeNull();
+      // URL-decode the cam parameter value (commas are encoded as %2C)
+      const camDecoded = decodeURIComponent(camMatch![1]);
+      const camVals = camDecoded.split(',').map(parseFloat);
+      expect(camVals.length).toBe(3);
+      // Angle should be close to 1.5 (modulo 2π, since camera may normalize)
+      expect(Math.abs(camVals[0] - 1.5) < 0.01 || Math.abs(camVals[0] - 1.5 + 2 * Math.PI) < 0.01).toBe(true);
+      // Elevation should be close to 0.3
+      expect(Math.abs(camVals[1] - 0.3) < 0.01).toBe(true);
+      // Distance should be close to 500
+      expect(Math.abs(camVals[2] - 500) < 1).toBe(true);
+    });
+
+    test('cam param alone (without job) still works', async ({ page }) => {
+      await page.goto('http://localhost:8099/?cam=0.5,0.5,300');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+      const copyBtn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+      await copyBtn.click();
+      await page.waitForTimeout(500);
+
+      const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+      const camMatch = clipboardText.match(/cam=([^&]+)/);
+      expect(camMatch).not.toBeNull();
+      // URL-decode the cam parameter value (commas are encoded as %2C)
+      const camDecoded = decodeURIComponent(camMatch![1]);
+      const camVals = camDecoded.split(',').map(parseFloat);
+      expect(camVals.length).toBe(3);
+      expect(Math.abs(camVals[0] - 0.5) < 0.01).toBe(true);
+      expect(Math.abs(camVals[1] - 0.5) < 0.01).toBe(true);
+      expect(Math.abs(camVals[2] - 300) < 1).toBe(true);
+    });
+  });
+
+  // ── BUG 4: NurbsRenderer crashes when all pieces filtered ─────────────
+  test.describe('BUG 4: no crash when all pieces are travel moves', () => {
+    test('toggling Travels off with travel-only G-code does not crash', async ({ page, request }) => {
+      const collector = setupMessageCollector(page);
+      const { jobId, status } = await uploadAndProcess(request, TRAVEL_ONLY_GCODE, 'bug4_travel_only.gcode');
+      expect(status).toBe('ready');
+
+      await page.goto(`http://localhost:8099/?job=${jobId}`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      // Toggle Travels off — all pieces are travel moves, so this filters everything
+      const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+      await travelsBtn.click();
+      await page.waitForTimeout(500);
+
+      // Toggle back on
+      await travelsBtn.click();
+      await page.waitForTimeout(500);
+
+      collector.assertClean('toggle travels with travel-only G-code');
+    });
+  });
+
+  // ── BUG 5: setLayerValue double-fires applyLayerFilter ───────────────
+  test.describe('BUG 5: setLayerValue does not double-fire', () => {
+    test('layer slider value updates without errors after isolateZLayer', async ({ page, request }) => {
+      const collector = setupMessageCollector(page);
+      const { jobId, status } = await uploadAndProcess(request, LAYERED_GCODE, 'bug5_layers.gcode');
+      expect(status).toBe('ready');
+
+      await page.goto(`http://localhost:8099/?job=${jobId}`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      // Click on the layer slider to change layer
+      const layerSlider = page.locator('.layer-slider');
+      await layerSlider.fill('0');
+      await page.waitForTimeout(500);
+
+      // Click "All" button to reset
+      const allBtn = page.locator('#bottom-panel button', { hasText: 'All' });
+      await allBtn.click();
+      await page.waitForTimeout(500);
+
+      collector.assertClean('layer slider operations');
+    });
+  });
+
+  // ── BUG 6: destroy() leaks DOM elements + stats loop ─────────────────
+  test.describe('BUG 6: destroy() cleans up DOM elements', () => {
+    test('stats overlay is removed after destroy', async ({ page }) => {
+      await page.goto('http://localhost:8099/');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      // Enable stats
+      const statsBtn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+      await statsBtn.click();
+      await page.waitForTimeout(300);
+
+      // Verify overlay exists
+      const overlay = page.locator('.stats-overlay');
+      await expect(overlay).toBeVisible();
+
+      // Call destroy via page evaluation
+      await page.evaluate(() => {
+        // @ts-ignore - app is a global for testing
+        if (window.__wgvApp) window.__wgvApp.destroy();
+      });
+
+      // Overlay should be removed from DOM
+      await expect(overlay).toHaveCount(0);
+    });
+
+    test('bbox overlay is removed after destroy', async ({ page }) => {
+      await page.goto('http://localhost:8099/');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      const bboxBtn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+      await bboxBtn.click();
+      await page.waitForTimeout(300);
+
+      const overlay = page.locator('.bbox-overlay');
+      await expect(overlay).toBeVisible();
+
+      await page.evaluate(() => {
+        // @ts-ignore
+        if (window.__wgvApp) window.__wgvApp.destroy();
+      });
+
+      await expect(overlay).toHaveCount(0);
+    });
+
+    test('help overlay is removed after destroy', async ({ page }) => {
+      await page.goto('http://localhost:8099/');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      // Show help overlay
+      await page.keyboard.press('?');
+      await page.waitForTimeout(300);
+
+      const overlay = page.locator('.help-overlay');
+      await expect(overlay).toBeVisible();
+
+      await page.evaluate(() => {
+        // @ts-ignore
+        if (window.__wgvApp) window.__wgvApp.destroy();
+      });
+
+      await expect(overlay).toHaveCount(0);
+    });
+  });
+
+  // ── BUG 7: BBox and Layer Count overlays overlap ─────────────────────
+  test.describe('BUG 7: overlays do not overlap', () => {
+    test('bbox and layer-count overlays are vertically stacked', async ({ page }) => {
+      await page.goto('http://localhost:8099/');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      // Enable both overlays
+      const layersBtn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+      await layersBtn.click();
+      await page.waitForTimeout(300);
+
+      const bboxBtn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+      await bboxBtn.click();
+      await page.waitForTimeout(300);
+
+      const layerOverlay = page.locator('.layer-count-overlay');
+      const bboxOverlay = page.locator('.bbox-overlay');
+
+      await expect(layerOverlay).toBeVisible();
+      await expect(bboxOverlay).toBeVisible();
+
+      // Get bounding boxes
+      const layerBox = await layerOverlay.boundingBox();
+      const bboxBox = await bboxOverlay.boundingBox();
+
+      expect(layerBox).not.toBeNull();
+      expect(bboxBox).not.toBeNull();
+
+      // BBox should be below layer-count (no vertical overlap)
+      expect(bboxBox!.y).toBeGreaterThanOrEqual(layerBox!.y + layerBox!.height - 1);
+    });
+  });
+
+  // ── BUG 8: touchIsPanning is dead code ───────────────────────────────
+  test.describe('BUG 8: two-finger touch pan works', () => {
+    test('two-finger touch does not cause errors', async ({ page }) => {
+      const collector = setupMessageCollector(page);
+      await page.goto('http://localhost:8099/');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      const canvas = page.locator('#webgpu-canvas');
+
+      // Simulate two-finger touch
+      const box = await canvas.boundingBox();
+      expect(box).not.toBeNull();
+
+      // Touch start with 2 fingers
+      await page.evaluate(() => {
+        const canvas = document.getElementById('webgpu-canvas')!;
+        const rect = canvas.getBoundingClientRect();
+        const touch1 = new Touch({ identifier: 1, target: canvas, clientX: rect.left + 100, clientY: rect.top + 100 });
+        const touch2 = new Touch({ identifier: 2, target: canvas, clientX: rect.left + 200, clientY: rect.top + 100 });
+        canvas.dispatchEvent(new TouchEvent('touchstart', { touches: [touch1, touch2], targetTouches: [touch1, touch2] }));
+      });
+      await page.waitForTimeout(100);
+
+      // Touch move with 2 fingers (pan)
+      await page.evaluate(() => {
+        const canvas = document.getElementById('webgpu-canvas')!;
+        const rect = canvas.getBoundingClientRect();
+        const touch1 = new Touch({ identifier: 1, target: canvas, clientX: rect.left + 110, clientY: rect.top + 110 });
+        const touch2 = new Touch({ identifier: 2, target: canvas, clientX: rect.left + 210, clientY: rect.top + 110 });
+        canvas.dispatchEvent(new TouchEvent('touchmove', { touches: [touch1, touch2], targetTouches: [touch1, touch2], cancelable: true }));
+      });
+      await page.waitForTimeout(100);
+
+      // Touch end
+      await page.evaluate(() => {
+        const canvas = document.getElementById('webgpu-canvas')!;
+        canvas.dispatchEvent(new TouchEvent('touchend', { touches: [], targetTouches: [] }));
+      });
+      await page.waitForTimeout(100);
+
+      collector.assertClean('two-finger touch pan');
+    });
+  });
+
+  // ── BUG 9: Inconsistent clipboard fallback status ────────────────────
+  test.describe('BUG 9: clipboard status is consistent', () => {
+    test('copy URL status message shows "copied" and restores', async ({ page, request }) => {
+      const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'bug9_clipboard.gcode');
+      expect(status).toBe('ready');
+
+      await page.goto(`http://localhost:8099/?job=${jobId}`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
+      const copyBtn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+      await copyBtn.click();
+      await page.waitForTimeout(300);
+
+      const statusEl = page.locator('.status-text');
+      const text = await statusEl.textContent();
+      expect(text).toContain('copied');
+
+      // Wait for status to restore (2 seconds)
+      await page.waitForTimeout(2500);
+      const restoredText = await statusEl.textContent();
+      // Should restore to "Ready: <filename>" since a job is loaded
+      expect(restoredText).toContain('Ready');
+    });
+  });
+
+  // ── BUG 10: const in switch case without braces ──────────────────────
+  test.describe('BUG 10: updateJobStatus works correctly', () => {
+    test('ready status shows formatted duration', async ({ page, request }) => {
+      const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'bug10_status.gcode');
+      expect(status).toBe('ready');
+
+      await page.goto(`http://localhost:8099/?job=${jobId}`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(3000);
+
+      const statusEl = page.locator('.status-text');
+      const text = await statusEl.textContent();
+      // Should contain "Ready:" with samples and time info
+      expect(text).toContain('Ready');
+      expect(text).toContain('samples');
+    });
+  });
+
+  // ── BUG 11: Slider value set below min ───────────────────────────────
+  test.describe('BUG 11: layer slider All button does not set below min', () => {
+    test('All button sets slider to valid range with dimmed opacity', async ({ page, request }) => {
+      const { jobId, status } = await uploadAndProcess(request, LAYERED_GCODE, 'bug11_slider.gcode');
+      expect(status).toBe('ready');
+
+      await page.goto(`http://localhost:8099/?job=${jobId}`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      const allBtn = page.locator('#bottom-panel button', { hasText: 'All' });
+      await allBtn.click();
+      await page.waitForTimeout(300);
+
+      const slider = page.locator('.layer-slider');
+      const value = await slider.inputValue();
+      // Value should not be -1 (below min)
+      expect(parseInt(value)).toBeGreaterThanOrEqual(0);
+
+      // Slider should be dimmed (opacity < 1)
+      const opacity = await slider.evaluate(el => getComputedStyle(el).opacity);
+      expect(parseFloat(opacity)).toBeLessThan(1);
+
+      // Label should say "All"
+      const label = page.locator('.layer-group .slider-value');
+      await expect(label).toHaveText('All');
+    });
+
+    test('selecting a layer restores slider opacity', async ({ page, request }) => {
+      const { jobId, status } = await uploadAndProcess(request, LAYERED_GCODE, 'bug11_opacity.gcode');
+      expect(status).toBe('ready');
+
+      await page.goto(`http://localhost:8099/?job=${jobId}`);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+
+      // Click "All" first to dim
+      const allBtn = page.locator('#bottom-panel button', { hasText: 'All' });
+      await allBtn.click();
+      await page.waitForTimeout(200);
+
+      // Now select a specific layer
+      const slider = page.locator('.layer-slider');
+      await slider.fill('0');
+      await page.waitForTimeout(200);
+
+      const opacity = await slider.evaluate(el => getComputedStyle(el).opacity);
+      expect(parseFloat(opacity)).toBe(1);
+    });
+  });
+
+  // ── BUG 12: Overlays don't adapt to light theme ──────────────────────
+  test.describe('BUG 12: overlays adapt to light theme', () => {
+    test('stats overlay uses theme-aware background', async ({ page }) => {
+      await page.goto('http://localhost:8099/');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      // Enable light theme
+      const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+      await themeBtn.click();
+      await page.waitForTimeout(200);
+
+      // Enable stats
+      const statsBtn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+      await statsBtn.click();
+      await page.waitForTimeout(500);
+
+      const overlay = page.locator('.stats-overlay');
+      const bg = await overlay.evaluate(el => getComputedStyle(el).backgroundColor);
+      // In light theme, background should be light (not black)
+      // Light theme bg-panel is #ffffff
+      expect(bg).not.toContain('0, 0, 0');
+    });
+
+    test('bbox overlay uses theme-aware background in light theme', async ({ page }) => {
+      await page.goto('http://localhost:8099/');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      // Enable light theme
+      const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+      await themeBtn.click();
+      await page.waitForTimeout(200);
+
+      // Enable BBox
+      const bboxBtn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+      await bboxBtn.click();
+      await page.waitForTimeout(300);
+
+      const overlay = page.locator('.bbox-overlay');
+      const bg = await overlay.evaluate(el => getComputedStyle(el).backgroundColor);
+      expect(bg).not.toContain('0, 0, 0');
+    });
+
+    test('layer-count overlay uses theme-aware background in light theme', async ({ page }) => {
+      await page.goto('http://localhost:8099/');
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(1000);
+
+      // Enable light theme
+      const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+      await themeBtn.click();
+      await page.waitForTimeout(200);
+
+      // Enable Layers
+      const layersBtn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+      await layersBtn.click();
+      await page.waitForTimeout(300);
+
+      const overlay = page.locator('.layer-count-overlay');
+      const bg = await overlay.evaluate(el => getComputedStyle(el).backgroundColor);
+      expect(bg).not.toContain('0, 0, 0');
+    });
+  });
+
+  // ── BUG 13: Stale CSS cache-busting version ──────────────────────────
+  test.describe('BUG 13: CSS and JS have cache-busting version', () => {
+    test('index.html references CSS with version parameter', async ({ page }) => {
+      const resp = await page.goto('http://localhost:8099/');
+      expect(resp?.ok()).toBe(true);
+      const html = await resp?.text();
+      expect(html).toContain('viewer.css?v=');
+      expect(html).toContain('tether-viewer.js?v=');
+      // Version should not be the old stale one
+      expect(html).not.toContain('v=20260815i');
+    });
+
+    test('CSS file is served correctly with new version', async ({ page }) => {
+      const resp = await page.goto('http://localhost:8099/css/viewer.css?v=20260814a');
+      expect(resp?.ok()).toBe(true);
+      const css = await resp?.text();
+      // Should contain the BUG 12 fix (theme-aware overlay)
+      expect(css).toContain('var(--bg-panel)');
+    });
+  });
+});

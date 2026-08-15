@@ -96,6 +96,13 @@ export class WebGPUApp {
   private showLayerCount = false;
   private layerCountEl: HTMLElement | null = null;
 
+  // BUG 3 FIX: Pending camera params from URL — applied after job data loads
+  // (because loadJobData calls camera.fitToBounds which would override them)
+  private pendingCamParams: { angle: number; elevation: number; distance: number } | null = null;
+
+  // BUG 6 FIX: Track stats-only loop animation ID so it can be cancelled in destroy()
+  private statsLoopId: number | null = null;
+
   constructor(
     canvas: HTMLCanvasElement,
     rpcClient: RpcClient,
@@ -202,11 +209,12 @@ export class WebGPUApp {
       }
     });
     this.controlPanel.on('resetView', () => {
-      if (this.currentData) {
-        const h = this.currentData.header;
+      // BUG 1 FIX: Check NURBS data first (the common path), then TTHR
+      const bounds = this.getCurrentFullBounds();
+      if (bounds) {
         this.camera.fitToBounds(
-          { x: h.boundsMin[0], y: h.boundsMin[1], z: h.boundsMin[2] },
-          { x: h.boundsMax[0], y: h.boundsMax[1], z: h.boundsMax[2] },
+          { x: bounds.min[0], y: bounds.min[1], z: bounds.min[2] },
+          { x: bounds.max[0], y: bounds.max[1], z: bounds.max[2] },
         );
       }
     });
@@ -279,15 +287,18 @@ export class WebGPUApp {
     // Feature #92: Copy current view URL to clipboard
     this.controlPanel.on('copyViewUrl', () => {
       const url = this.buildViewUrl();
+      // BUG 9 FIX: Extract the status restoration logic so both success
+      // and fallback paths use the same logic.
+      const restoreStatus = () => {
+        if (this.currentJobId) {
+          this.controlPanel.setStatus(`Ready: ${this.currentFilename}`);
+        } else {
+          this.controlPanel.setStatus('Ready');
+        }
+      };
       navigator.clipboard.writeText(url).then(() => {
         this.controlPanel.setStatus('URL copied to clipboard!');
-        setTimeout(() => {
-          if (this.currentJobId) {
-            this.controlPanel.setStatus(`Ready: ${this.currentFilename}`);
-          } else {
-            this.controlPanel.setStatus('Ready');
-          }
-        }, 2000);
+        setTimeout(restoreStatus, 2000);
       }).catch(() => {
         // Fallback: create a temporary input element
         const input = document.createElement('input');
@@ -297,7 +308,7 @@ export class WebGPUApp {
         document.execCommand('copy');
         document.body.removeChild(input);
         this.controlPanel.setStatus('URL copied to clipboard!');
-        setTimeout(() => this.controlPanel.setStatus('Ready'), 2000);
+        setTimeout(restoreStatus, 2000);  // BUG 9 FIX: same restore logic
       });
     });
     // Feature #128: Toggle layer count display
@@ -500,9 +511,10 @@ export class WebGPUApp {
           }
         }
       }
-      requestAnimationFrame(frame);
+      // BUG 6 FIX: Store the animation ID so destroy() can cancel it
+      this.statsLoopId = requestAnimationFrame(frame);
     };
-    requestAnimationFrame(frame);
+    this.statsLoopId = requestAnimationFrame(frame);
   }
 
   private setupInputHandlers(): void {
@@ -546,9 +558,13 @@ export class WebGPUApp {
     this.canvas.addEventListener('mouseleave', () => { isDragging = false; isPanning = false; });
 
     // Feature #150: Touch gesture support
+    // BUG 8 FIX: touchIsPanning is now properly set when two fingers are used,
+    // enabling two-finger pan. Single finger orbits, two-finger pinch zooms,
+    // and two-finger drag pans.
     let touchLastX = 0, touchLastY = 0;
     let touchPinchDist = 0;
     let touchIsPanning = false;
+    let touchTwoFingerLastX = 0, touchTwoFingerLastY = 0;
 
     this.canvas.addEventListener('touchstart', (e) => {
       e.preventDefault();
@@ -560,6 +576,10 @@ export class WebGPUApp {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         touchPinchDist = Math.sqrt(dx * dx + dy * dy);
+        // BUG 8 FIX: Enable panning with two-finger drag
+        touchIsPanning = true;
+        touchTwoFingerLastX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        touchTwoFingerLastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       }
     }, { passive: false });
 
@@ -584,6 +604,16 @@ export class WebGPUApp {
           this.camera.zoom(factor);
         }
         touchPinchDist = dist;
+        // BUG 8 FIX: Two-finger drag pans the camera
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        if (touchIsPanning) {
+          const panDx = midX - touchTwoFingerLastX;
+          const panDy = midY - touchTwoFingerLastY;
+          this.camera.pan(panDx, panDy);
+        }
+        touchTwoFingerLastX = midX;
+        touchTwoFingerLastY = midY;
       }
     }, { passive: false });
 
@@ -591,6 +621,12 @@ export class WebGPUApp {
       e.preventDefault();
       if (e.touches.length === 0) {
         touchPinchDist = 0;
+        touchIsPanning = false;
+      } else if (e.touches.length === 1) {
+        // Went from 2 fingers to 1 — switch back to orbit mode
+        touchIsPanning = false;
+        touchLastX = e.touches[0].clientX;
+        touchLastY = e.touches[0].clientY;
       }
     }, { passive: false });
 
@@ -825,6 +861,7 @@ export class WebGPUApp {
   }
 
   private startRenderLoop(): void {
+    let firstFrameRendered = false;
     const frame = (): void => {
       const now = performance.now();
       const dt = (now - this.lastFrameTime) / 1000;
@@ -844,6 +881,13 @@ export class WebGPUApp {
       }
 
       this.render();
+
+      // Signal that the first WebGPU frame has been rendered successfully.
+      // E2E tests wait for this attribute before taking screenshots.
+      if (!firstFrameRendered) {
+        firstFrameRendered = true;
+        this.canvas.setAttribute('data-ready', 'true');
+      }
 
       // Feature #120: Update render statistics (in animation loop, not render(),
       // so stats work even when WebGPU is unavailable)
@@ -1134,6 +1178,16 @@ export class WebGPUApp {
   }
 
   private async loadJobData(jobId: string): Promise<void> {
+    // BUG 2 FIX: Clear all stale data from previous job before loading new data.
+    // Without this, if file A loaded as NBP and file B falls back to TTHR,
+    // currentNBP would still point to file A's data, causing wrong bounds,
+    // wrong layer filters, and wrong bbox display.
+    this.currentNBP = null;
+    this.currentData = null;
+    this.fullData = null;
+    this.zLayers = [];
+    this.miniplotData = null;
+
     // Fetch NURBS path data — compact curve representation (typically <1MB
     // even for huge G-code files, vs 2GB+ for sampled trajectory data)
     try {
@@ -1198,6 +1252,18 @@ export class WebGPUApp {
     this.playing = false;
     this.controlPanel.setPlaying(false);
     this.updatePlayPosition();
+
+    // BUG 3 FIX: Apply deferred camera params from URL after data has loaded
+    // and fitToBounds has been called. This ensures ?cam= is not overridden.
+    if (this.pendingCamParams) {
+      this.camera.setOrbit(
+        this.pendingCamParams.angle,
+        this.pendingCamParams.elevation,
+        this.pendingCamParams.distance,
+      );
+      console.info(`Deferred camera params applied: angle=${this.pendingCamParams.angle}, elev=${this.pendingCamParams.elevation}, dist=${this.pendingCamParams.distance}`);
+      this.pendingCamParams = null;
+    }
   }
 
   /**
@@ -1262,6 +1328,11 @@ export class WebGPUApp {
 
   destroy(): void {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
+    // BUG 6 FIX: Cancel the stats-only animation loop
+    if (this.statsLoopId !== null) {
+      cancelAnimationFrame(this.statsLoopId);
+      this.statsLoopId = null;
+    }
     this.resizeObserver?.disconnect();
     this.gizmoResizeObserver?.disconnect();
     this.dirCubeResizeObserver?.disconnect();
@@ -1283,6 +1354,15 @@ export class WebGPUApp {
     this.depthReadbackBuffer?.destroy();
     this.depthReadbackBuffer = null;
     this.depthData = null;
+    // BUG 6 FIX: Remove dynamically created DOM elements to prevent leaks
+    this.statsEl?.remove();
+    this.statsEl = null;
+    this.bboxEl?.remove();
+    this.bboxEl = null;
+    this.layerCountEl?.remove();
+    this.layerCountEl = null;
+    this.helpOverlay?.remove();
+    this.helpOverlay = null;
   }
 
   /**
@@ -1371,12 +1451,23 @@ export class WebGPUApp {
   /**
    * Feature #145: Apply camera position from URL parameter.
    * Format: "angle,elevation,distance" (e.g. "0.5,0.3,400")
+   * BUG 3 FIX: If a job is being loaded, defer applying the camera until
+   * after loadJobData completes, because loadJobData calls
+   * camera.fitToBounds() which would override the URL camera params.
    */
   applyCameraFromUrl(camParam: string): void {
     const parts = camParam.split(',').map(parseFloat);
     if (parts.length >= 3 && parts.every(v => !isNaN(v))) {
-      this.camera.setOrbit(parts[0], parts[1], parts[2]);
-      console.info(`Camera applied from URL: angle=${parts[0]}, elev=${parts[1]}, dist=${parts[2]}`);
+      const params = { angle: parts[0], elevation: parts[1], distance: parts[2] };
+      if (this.currentJobId && !this.currentNBP && !this.fullData) {
+        // Job is loading but data not yet available — defer until data loads
+        this.pendingCamParams = params;
+        console.info(`Camera params deferred until job data loads: angle=${params.angle}, elev=${params.elevation}, dist=${params.distance}`);
+      } else {
+        // No job loading, or data already loaded — apply immediately
+        this.camera.setOrbit(params.angle, params.elevation, params.distance);
+        console.info(`Camera applied from URL: angle=${params.angle}, elev=${params.elevation}, dist=${params.distance}`);
+      }
     } else {
       console.info('Invalid camera URL parameter:', camParam);
     }
@@ -1431,6 +1522,26 @@ export class WebGPUApp {
     if (this.fullData) {
       const h = this.fullData.header;
       return { zMin: h.boundsMin[2], zMax: h.boundsMax[2] };
+    }
+    return null;
+  }
+
+  /**
+   * BUG 1 FIX: Get full 3D bounds from NBP or TTHR data.
+   * Used by resetView to fit the camera regardless of which data format is loaded.
+   */
+  private getCurrentFullBounds(): { min: number[]; max: number[] } | null {
+    if (this.currentNBP) {
+      const h = this.currentNBP.header;
+      return { min: h.boundsMin, max: h.boundsMax };
+    }
+    if (this.fullData) {
+      const h = this.fullData.header;
+      return { min: h.boundsMin, max: h.boundsMax };
+    }
+    if (this.currentData) {
+      const h = this.currentData.header;
+      return { min: h.boundsMin, max: h.boundsMax };
     }
     return null;
   }

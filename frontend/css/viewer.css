@@ -1393,12 +1393,13 @@ input[type="checkbox"] {
 }
 
 /* Feature #128: Layer count overlay */
+/* BUG 12 FIX: Use CSS variables with opacity for theme adaptation */
 .layer-count-overlay {
     position: fixed;
     top: 10px;
-    right: 340px;
-    background: rgba(0,0,0,0.7);
-    color: #e0e0e0;
+    right: 220px;
+    background: var(--bg-panel);
+    color: var(--text-primary);
     padding: 10px 14px;
     border-radius: 6px;
     font-family: var(--font-mono);
@@ -1406,6 +1407,8 @@ input[type="checkbox"] {
     z-index: 500;
     pointer-events: none;
     line-height: 1.8;
+    opacity: 0.92;
+    border: 1px solid var(--border);
 }
 
 .layer-count-overlay .layer-count-title {
@@ -1419,12 +1422,17 @@ input[type="checkbox"] {
 }
 
 /* Feature #48: Bounding box dimensions overlay */
+/* BUG 7 FIX: Positioned below the layer-count-overlay to avoid overlap.
+   Both overlays share right:220px, but bbox starts at top:140px while
+   layer-count starts at top:10px. This vertical stacking prevents overlap
+   when both are visible simultaneously. */
+/* BUG 12 FIX: Use CSS variables with opacity for theme adaptation */
 .bbox-overlay {
     position: fixed;
-    top: 10px;
+    top: 140px;
     right: 220px;
-    background: rgba(0,0,0,0.7);
-    color: #e0e0e0;
+    background: var(--bg-panel);
+    color: var(--text-primary);
     padding: 10px 14px;
     border-radius: 6px;
     font-family: var(--font-mono);
@@ -1432,6 +1440,8 @@ input[type="checkbox"] {
     z-index: 500;
     pointer-events: none;
     line-height: 1.8;
+    opacity: 0.92;
+    border: 1px solid var(--border);
 }
 
 .bbox-overlay .bbox-title {
@@ -1450,12 +1460,13 @@ input[type="checkbox"] {
 }
 
 /* Feature #120: Render statistics overlay */
+/* BUG 12 FIX: Use CSS variables with opacity for theme adaptation */
 .stats-overlay {
     position: fixed;
     top: 10px;
     left: 10px;
-    background: rgba(0,0,0,0.7);
-    color: #e0e0e0;
+    background: var(--bg-panel);
+    color: var(--text-primary);
     padding: 8px 12px;
     border-radius: 6px;
     font-family: var(--font-mono);
@@ -1463,6 +1474,8 @@ input[type="checkbox"] {
     z-index: 500;
     pointer-events: none;
     line-height: 1.6;
+    opacity: 0.92;
+    border: 1px solid var(--border);
 }
 
 .stats-overlay .stats-value {
