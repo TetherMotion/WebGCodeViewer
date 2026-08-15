@@ -170,35 +170,40 @@ std::vector<uint8_t> JobManager::getNurbsBinary(const std::string& jobId) const
     auto job = getJob(jobId);
     if (!job || job->state != JobState::Ready) return {};
 
-    // Use the pre-built NURBS path from ProcessResult (fast path).
-    // This was built directly from PlanningSegments during processing —
-    // no dense sampling needed.
-    if (job->result.nurbsPath && job->result.nurbsPath->numPieces() > 0) {
-        const auto& path = *job->result.nurbsPath;
+    try {
+        // Use the pre-built NURBS path from ProcessResult (fast path).
+        // This was built directly from PlanningSegments during processing —
+        // no dense sampling needed.
+        if (job->result.nurbsPath && job->result.nurbsPath->numPieces() > 0) {
+            const auto& path = *job->result.nurbsPath;
 
-        // Extract motion types from blocks (map block index → motion type)
-        std::vector<uint8_t> motionTypes;
-        motionTypes.reserve(path.numPieces());
-        for (std::size_t i = 0; i < path.numPieces(); ++i) {
-            motionTypes.push_back(1); // default linear
+            // Extract motion types from blocks (map block index → motion type)
+            std::vector<uint8_t> motionTypes;
+            motionTypes.reserve(path.numPieces());
+            for (std::size_t i = 0; i < path.numPieces(); ++i) {
+                motionTypes.push_back(1); // default linear
+            }
+
+            return serializeNurbsPath(path, job->result.blocks, motionTypes);
         }
 
-        return serializeNurbsPath(path, job->result.blocks, motionTypes);
-    }
+        // Fallback: convert from samples (slow, only if nurbsPath wasn't built)
+        if (!job->result.samples.empty()) {
+            tether::motion::replanner::SegmentToPieceMap map;
+            auto path = tether::motion::replanner::convertTrajectory(
+                job->result.samples, map);
 
-    // Fallback: convert from samples (slow, only if nurbsPath wasn't built)
-    if (!job->result.samples.empty()) {
-        tether::motion::replanner::SegmentToPieceMap map;
-        auto path = tether::motion::replanner::convertTrajectory(
-            job->result.samples, map);
+            std::vector<uint8_t> motionTypes;
+            motionTypes.reserve(path.numPieces());
+            for (std::size_t i = 0; i < path.numPieces(); ++i) {
+                motionTypes.push_back(1);
+            }
 
-        std::vector<uint8_t> motionTypes;
-        motionTypes.reserve(path.numPieces());
-        for (std::size_t i = 0; i < path.numPieces(); ++i) {
-            motionTypes.push_back(1);
+            return serializeNurbsPath(path, job->result.blocks, motionTypes);
         }
-
-        return serializeNurbsPath(path, job->result.blocks, motionTypes);
+    } catch (const std::exception& e) {
+        // Log and return empty — the REST handler will return 404
+        return {};
     }
 
     return {};
@@ -326,10 +331,20 @@ std::shared_ptr<Job> JobManager::getJob(const std::string& jobId) const {
 
 void JobManager::processWorker(std::shared_ptr<Job> job) {
     GCodeProcessor processor;
-    auto result = processor.process(
-        job->gcodeText, job->config,
-        [job](double p) { job->progress = p; }
-    );
+    ProcessResult result;
+
+    try {
+        result = processor.process(
+            job->gcodeText, job->config,
+            [job](double p) { job->progress = p; }
+        );
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errorMessage = std::string("Processing exception: ") + e.what();
+    } catch (...) {
+        result.success = false;
+        result.errorMessage = "Processing exception: unknown error";
+    }
 
     {
         std::lock_guard<std::mutex> lock(mutex_);

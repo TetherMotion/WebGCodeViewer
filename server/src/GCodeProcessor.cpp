@@ -56,8 +56,15 @@ ProcessResult GCodeProcessor::process(
 
     // ── Step 3: Build NURBS path directly from segments (FAST) ──
     // This is O(segments) — typically milliseconds, not minutes.
-    result.nurbsPath = buildNurbsFromSegments(segments);
-    result.pathLength = result.nurbsPath->totalLength();
+    try {
+        result.nurbsPath = buildNurbsFromSegments(segments);
+        result.pathLength = result.nurbsPath->totalLength();
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errorMessage = std::string("NURBS construction failed: ") + e.what();
+        if (progress) progress(1.0);
+        return result;
+    }
 
     if (progress) progress(0.6);
 
@@ -486,12 +493,13 @@ tether::motion::PiecewiseNurbsPath GCodeProcessor::buildNurbsFromSegments(
         RVec start{seg.start[0], seg.start[1], seg.start[2]};
         RVec end{seg.end[0], seg.end[1], seg.end[2]};
 
-        // Skip zero-length segments
+        // Skip zero-length or near-zero-length segments (e.g. retraction-only
+        // moves where XYZ doesn't change, or sub-nanometer floating-point noise)
         double dx = end[0] - start[0];
         double dy = end[1] - start[1];
         double dz = end[2] - start[2];
         double len = std::sqrt(dx*dx + dy*dy + dz*dz);
-        if (len < 1e-9) continue;
+        if (len < 1e-6) continue;
 
         if (seg.isArc() && seg.arcRadius > 1e-9) {
             // Build arc NURBS
