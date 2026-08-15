@@ -87,7 +87,7 @@ export class NavigationGizmo {
       `,
     });
 
-    // Triangle pipeline for arrow heads (with depth)
+    // Triangle pipeline for arrow heads (no depth test — always visible)
     this.pipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: {
@@ -112,12 +112,12 @@ export class NavigationGizmo {
       primitive: { topology: 'triangle-list' },
       depthStencil: {
         format: 'depth24plus',
-        depthCompare: 'less',
-        depthWriteEnabled: true,
+        depthCompare: 'always',
+        depthWriteEnabled: false,
       },
     });
 
-    // Line pipeline for axis shafts
+    // Line pipeline for axis shafts (no depth test — always visible)
     this.linePipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: {
@@ -142,8 +142,8 @@ export class NavigationGizmo {
       primitive: { topology: 'line-list' },
       depthStencil: {
         format: 'depth24plus',
-        depthCompare: 'less',
-        depthWriteEnabled: true,
+        depthCompare: 'always',
+        depthWriteEnabled: false,
       },
     });
 

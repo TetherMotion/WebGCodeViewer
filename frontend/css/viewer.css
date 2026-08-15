@@ -173,32 +173,38 @@ body {
 
 .nav-dir-buttons {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(4, 1fr);
     gap: 3px;
 }
 
 .nav-dir-btn {
     background: var(--bg-tertiary);
-    color: var(--text-secondary);
     border: 1px solid var(--border);
     border-radius: 4px;
-    padding: 4px 6px;
-    font-size: 10px;
-    font-weight: 600;
+    padding: 2px;
     cursor: pointer;
-    text-align: center;
     transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
 }
 
 .nav-dir-btn:hover {
-    background: var(--accent);
-    color: white;
+    background: var(--bg-primary);
+    border-color: var(--accent);
 }
 
 .nav-dir-btn.active {
-    background: var(--accent);
-    color: white;
+    background: var(--bg-primary);
     border-color: var(--accent);
+    box-shadow: 0 0 4px rgba(74, 158, 255, 0.4);
+}
+
+.nav-cube-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
 }
 
 .nav-proj-switch {

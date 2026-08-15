@@ -172,7 +172,7 @@ export class WebGPUApp {
       if (e.shiftKey) {
         this.camera.pan(dx, dy);
       } else {
-        this.camera.orbit(dx * 0.01, dy * 0.01);
+        this.camera.orbit(-dx * 0.01, dy * 0.01);
       }
     });
 
