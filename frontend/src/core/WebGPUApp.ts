@@ -154,6 +154,13 @@ export class WebGPUApp {
     this.controlPanel.on('toggleGrid', () => {
       if (this.gridRenderer) this.gridRenderer.visible = !this.gridRenderer.visible;
     });
+    // Feature #1: Toggle travel move visibility
+    this.controlPanel.on('toggleTravels', () => {
+      if (this.nurbsRenderer) {
+        this.nurbsRenderer.options.showTravels = !this.nurbsRenderer.options.showTravels;
+        if (this.currentNBP) this.nurbsRenderer.updateData(this.currentNBP);
+      }
+    });
     this.controlPanel.on('toggleCrossSection', () => {
       if (this.crossSectionRenderer) {
         this.crossSectionRenderer.visible = !this.crossSectionRenderer.visible;

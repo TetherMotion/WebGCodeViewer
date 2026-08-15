@@ -21,6 +21,7 @@ export interface NurbsRenderOptions {
   colorAttribute: NurbsColorAttribute;
   lineWidth: number;
   visible: boolean;
+  showTravels: boolean;       // Feature #1: show/hide travel moves (motionType 0)
 }
 
 export class NurbsRenderer {
@@ -42,6 +43,7 @@ export class NurbsRenderer {
     colorAttribute: 'pieceIndex',
     lineWidth: 2.0,
     visible: true,
+    showTravels: true,
   };
 
   constructor(private device: GPUDevice) {}
@@ -182,6 +184,10 @@ export class NurbsRenderer {
 
     for (let i = 0; i < pieces.length; i++) {
       const piece = pieces[i];
+
+      // Feature #1: Skip travel moves (motionType 0) when showTravels is false
+      if (!this.options.showTravels && piece.motionType === 0) continue;
+
       // Adaptive tessellation: more segments for higher-degree curves
       // and longer pieces
       const cpCount = piece.controlPoints.length / dim;

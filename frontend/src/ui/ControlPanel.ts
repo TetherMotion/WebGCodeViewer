@@ -21,6 +21,7 @@ export interface ControlPanelEvents {
   playStateChanged: boolean;  // true = playing
   toggleMiniplot: void;
   miniplotAxisChanged: string;
+  toggleTravels: void;        // Feature #1: show/hide travel moves
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -175,6 +176,17 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     exportBtn.textContent = 'Export';
     exportBtn.onclick = () => this.emit('exportImage', undefined);
     viewGroup.appendChild(exportBtn);
+
+    // Feature #1: Travel moves toggle
+    const travelsBtn = document.createElement('button');
+    travelsBtn.textContent = 'Travels';
+    travelsBtn.className = 'active';
+    travelsBtn.onclick = () => {
+      travelsBtn.classList.toggle('active');
+      this.emit('toggleTravels', undefined);
+    };
+    viewGroup.appendChild(travelsBtn);
+
     this.element.appendChild(viewGroup);
 
     // Miniplot group

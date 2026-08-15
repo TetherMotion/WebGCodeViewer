@@ -1300,3 +1300,82 @@ test.describe('Error recovery', () => {
     expect(['ready', 'failed']).toContain(state);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 13: Travel Move Visualization (Feature #1)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Travel move visualization (Feature #1)', () => {
+  test('travels toggle button exists and is active by default', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+    await expect(travelsBtn).toBeVisible();
+    await expect(travelsBtn).toHaveClass(/active/);
+  });
+
+  test('toggling travels off removes active class', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+    await expect(travelsBtn).toHaveClass(/active/);
+
+    await travelsBtn.click();
+    await expect(travelsBtn).not.toHaveClass(/active/);
+
+    // Toggle back on
+    await travelsBtn.click();
+    await expect(travelsBtn).toHaveClass(/active/);
+  });
+
+  test('travels toggle works without errors when G-code is loaded', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, COMPLEX_GCODE, 'travels_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+
+    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+
+    // Toggle off (hide travels)
+    await travelsBtn.click();
+    await page.waitForTimeout(500);
+    expect(await travelsBtn.getAttribute('class')).not.toContain('active');
+
+    // Toggle back on (show travels)
+    await travelsBtn.click();
+    await page.waitForTimeout(500);
+    expect(await travelsBtn.getAttribute('class')).toContain('active');
+
+    collector.assertClean('travels toggle with loaded G-code');
+  });
+
+  test('travels toggle can be combined with other toggles', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'travels_combo.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // Toggle grid + travels together
+    const gridBtn = page.locator('#bottom-panel button', { hasText: 'Grid' });
+    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+
+    await gridBtn.click();
+    await travelsBtn.click();
+    await page.waitForTimeout(300);
+    await gridBtn.click();
+    await travelsBtn.click();
+    await page.waitForTimeout(300);
+
+    collector.assertClean('travels + grid combo toggle');
+  });
+});
