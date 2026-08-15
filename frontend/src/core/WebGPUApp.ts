@@ -946,7 +946,7 @@ export class WebGPUApp {
         view: this.context.getCurrentTexture().createView(),
         clearValue: this.lightTheme
           ? { r: 0.94, g: 0.94, b: 0.95, a: 1 }
-          : { r: 0.18, g: 0.18, b: 0.2, a: 1 },
+          : { r: 0.35, g: 0.36, b: 0.40, a: 1 },
         loadOp: 'clear',
         storeOp: 'store',
       }],
