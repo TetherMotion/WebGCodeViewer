@@ -1379,3 +1379,73 @@ test.describe('Travel move visualization (Feature #1)', () => {
     collector.assertClean('travels + grid combo toggle');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 14: Extrusion Width Visualization (Feature #2)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Extrusion width visualization (Feature #2)', () => {
+  test('line width slider exists with default value 2', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const slider = page.locator('.width-slider');
+    await expect(slider).toBeVisible();
+    await expect(slider).toHaveValue('2');
+  });
+
+  test('line width slider changes value display', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const slider = page.locator('.width-slider');
+    const valueDisplay = page.locator('.width-slider + .slider-value, .width-slider').locator('..').locator('.slider-value');
+
+    // Change slider value
+    await slider.evaluate((el: HTMLInputElement) => {
+      el.value = '5';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForTimeout(200);
+
+    // The value display should update
+    const text = await valueDisplay.textContent();
+    expect(text).toContain('5');
+  });
+
+  test('line width slider works without errors with loaded G-code', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'linewidth_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    const slider = page.locator('.width-slider');
+
+    // Try different widths
+    for (const w of ['1', '3', '5', '8', '2']) {
+      await slider.evaluate((el: HTMLInputElement, val: string) => {
+        el.value = val;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }, w);
+      await page.waitForTimeout(200);
+    }
+
+    collector.assertClean('line width slider with loaded G-code');
+  });
+
+  test('line width slider has correct range', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const slider = page.locator('.width-slider');
+    await expect(slider).toHaveAttribute('min', '1');
+    await expect(slider).toHaveAttribute('max', '8');
+    await expect(slider).toHaveAttribute('step', '0.5');
+  });
+});

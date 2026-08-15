@@ -22,6 +22,7 @@ export interface ControlPanelEvents {
   toggleMiniplot: void;
   miniplotAxisChanged: string;
   toggleTravels: void;        // Feature #1: show/hide travel moves
+  lineWidthChanged: number;   // Feature #2: line width adjustment
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -112,6 +113,29 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     mapSelect.onchange = () => this.emit('colorMapChanged', mapSelect.value);
     mapLabel.appendChild(mapSelect);
     colorGroup.appendChild(mapLabel);
+
+    // Feature #2: Line width slider
+    const widthLabel = document.createElement('label');
+    widthLabel.textContent = 'Width:';
+    const widthSlider = document.createElement('input');
+    widthSlider.type = 'range';
+    widthSlider.min = '1';
+    widthSlider.max = '8';
+    widthSlider.value = '2';
+    widthSlider.step = '0.5';
+    widthSlider.className = 'width-slider';
+    widthSlider.style.width = '60px';
+    const widthValue = document.createElement('span');
+    widthValue.className = 'slider-value';
+    widthValue.textContent = '2';
+    widthSlider.oninput = () => {
+      widthValue.textContent = widthSlider.value;
+      this.emit('lineWidthChanged', parseFloat(widthSlider.value));
+    };
+    widthLabel.appendChild(widthSlider);
+    widthLabel.appendChild(widthValue);
+    colorGroup.appendChild(widthLabel);
+
     this.element.appendChild(colorGroup);
 
     // View group

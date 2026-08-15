@@ -161,6 +161,11 @@ export class WebGPUApp {
         if (this.currentNBP) this.nurbsRenderer.updateData(this.currentNBP);
       }
     });
+    // Feature #2: Line width adjustment
+    this.controlPanel.on('lineWidthChanged', (width) => {
+      if (this.nurbsRenderer) this.nurbsRenderer.options.lineWidth = width;
+      if (this.toolpathRenderer) this.toolpathRenderer.options.lineWidth = width;
+    });
     this.controlPanel.on('toggleCrossSection', () => {
       if (this.crossSectionRenderer) {
         this.crossSectionRenderer.visible = !this.crossSectionRenderer.visible;
