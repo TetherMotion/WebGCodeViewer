@@ -1,5 +1,7 @@
 #include "tether/web/GCodeProcessor.hpp"
 
+#include "tether/motion_planner/geometry/NurbsCurve.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -52,26 +54,41 @@ ProcessResult GCodeProcessor::process(
 
     if (progress) progress(0.4);
 
-    // ── Step 3: Run TrajectoryAnalyzer ──
-    AnalysisConfig analysisConfig;
-    analysisConfig.timeStep = config.sampleRate;
-    analysisConfig.derivativeOrder = config.derivativeOrder;
-    analysisConfig.limits.maxAcceleration = config.maxAcceleration;
-    analysisConfig.limits.maxDeceleration = config.maxAcceleration;
-    analysisConfig.limits.maxJerk = config.maxJerk;
-    analysisConfig.limits.maxVelocityLinear = config.maxVelocity * 60.0; // mm/s → mm/min
+    // ── Step 3: Build NURBS path directly from segments (FAST) ──
+    // This is O(segments) — typically milliseconds, not minutes.
+    result.nurbsPath = buildNurbsFromSegments(segments);
+    result.pathLength = result.nurbsPath->totalLength();
 
-    TrajectoryAnalyzer analyzer(analysisConfig);
-    result.samples = analyzer.analyze(segments, nullptr);
+    if (progress) progress(0.6);
 
-    if (progress) progress(0.8);
+    // ── Step 4 (optional): Dense sampling via TrajectoryAnalyzer ──
+    // Only run if explicitly requested (nurbsOnly=false).
+    // This is the slow O(samples) step that generates millions of points.
+    if (!config.nurbsOnly) {
+        AnalysisConfig analysisConfig;
+        analysisConfig.timeStep = config.sampleRate;
+        analysisConfig.derivativeOrder = config.derivativeOrder;
+        analysisConfig.limits.maxAcceleration = config.maxAcceleration;
+        analysisConfig.limits.maxDeceleration = config.maxAcceleration;
+        analysisConfig.limits.maxJerk = config.maxJerk;
+        analysisConfig.limits.maxVelocityLinear = config.maxVelocity * 60.0;
 
-    // ── Step 4: Compute statistics ──
-    result.statistics = analyzer.computeStatistics(result.samples);
+        TrajectoryAnalyzer analyzer(analysisConfig);
+        result.samples = analyzer.analyze(segments, nullptr);
+
+        if (progress) progress(0.9);
+
+        result.statistics = analyzer.computeStatistics(result.samples);
+        result.sampleCount = result.samples.size();
+        result.duration = result.samples.empty() ? 0.0 : result.samples.back().time;
+    } else {
+        // Compute basic statistics from segments (fast)
+        result.sampleCount = segments.size();
+        result.duration = 0.0;
+        for (const auto& seg : segments) result.duration += seg.segmentTime;
+    }
+
     result.blocks = std::move(blocks);
-    result.sampleCount = result.samples.size();
-    result.duration = result.samples.empty() ? 0.0 : result.samples.back().time;
-    result.pathLength = result.samples.empty() ? 0.0 : result.samples.back().pathPosition;
     result.success = true;
 
     if (progress) progress(1.0);
@@ -450,6 +467,85 @@ void GCodeProcessor::computeSegmentTimes(
         // Ensure minimum time for sampling
         seg.segmentTime = std::max(seg.segmentTime, 0.001);
     }
+}
+
+// ── NURBS path construction from segments ────────────────────────────────────
+
+using tether::motion::NurbsCurve;
+using tether::motion::PiecewiseNurbsPath;
+using tether::motion::RVec;
+
+tether::motion::PiecewiseNurbsPath GCodeProcessor::buildNurbsFromSegments(
+    const std::vector<PlanningSegment>& segments)
+{
+    std::vector<NurbsCurve> curves;
+    curves.reserve(segments.size());
+
+    for (const auto& seg : segments) {
+        // Extract 3D start/end positions (XYZ only for now)
+        RVec start{seg.start[0], seg.start[1], seg.start[2]};
+        RVec end{seg.end[0], seg.end[1], seg.end[2]};
+
+        // Skip zero-length segments
+        double dx = end[0] - start[0];
+        double dy = end[1] - start[1];
+        double dz = end[2] - start[2];
+        double len = std::sqrt(dx*dx + dy*dy + dz*dz);
+        if (len < 1e-9) continue;
+
+        if (seg.isArc() && seg.arcRadius > 1e-9) {
+            // Build arc NURBS
+            // Extract center in 3D
+            RVec center{seg.center[0], seg.center[1], seg.center[2]};
+
+            // Determine arc plane axes
+            RVec axis1, axis2;
+            double startAngle, sweepAngle;
+
+            switch (seg.plane) {
+                case InterpolationPlane::XZ:
+                    axis1 = RVec{1.0, 0.0, 0.0};
+                    axis2 = RVec{0.0, 0.0, 1.0};
+                    break;
+                case InterpolationPlane::YZ:
+                    axis1 = RVec{0.0, 1.0, 0.0};
+                    axis2 = RVec{0.0, 0.0, 1.0};
+                    break;
+                case InterpolationPlane::XY:
+                default:
+                    axis1 = RVec{1.0, 0.0, 0.0};
+                    axis2 = RVec{0.0, 1.0, 0.0};
+                    break;
+            }
+
+            startAngle = std::atan2(
+                (start[1] - center[1]) * 1.0, // project onto plane
+                (start[0] - center[0]) * 1.0
+            );
+            sweepAngle = seg.arcSweep;
+
+            try {
+                auto curve = NurbsCurve::fromArc(
+                    center, seg.arcRadius, axis1, axis2,
+                    startAngle, sweepAngle);
+                curves.push_back(std::move(curve));
+            } catch (...) {
+                // Fall back to line if arc construction fails
+                try {
+                    curves.push_back(NurbsCurve::fromLine(start, end));
+                } catch (...) {}
+            }
+        } else {
+            // Linear or rapid — build line NURBS
+            try {
+                curves.push_back(NurbsCurve::fromLine(start, end));
+            } catch (...) {
+                // Skip degenerate segments
+            }
+        }
+    }
+
+    return PiecewiseNurbsPath(std::move(curves));
 }
 
 // ── Statistics computation ───────────────────────────────────────────────────

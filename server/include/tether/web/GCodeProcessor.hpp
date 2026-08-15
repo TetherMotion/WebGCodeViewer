@@ -1,16 +1,21 @@
 #pragma once
 
 /// @file GCodeProcessor.hpp
-/// @brief Processes G-code text into TrajectorySample[] for visualization.
+/// @brief Processes G-code text into trajectory data for visualization.
 ///
-/// Pipeline: G-code text → PlanningSegment[] → TrajectoryAnalyzer → TrajectorySample[]
-/// Also extracts G-code block metadata for the TTHR block section.
+/// Primary pipeline: G-code text → PlanningSegment[] → NurbsCurve[] → PiecewiseNurbsPath
+/// (fast, O(segments) — used for NBP/NURBS rendering)
+///
+/// Fallback pipeline: G-code text → PlanningSegment[] → TrajectoryAnalyzer → TrajectorySample[]
+/// (slow, O(samples) — only used when TTHR sampled data is explicitly requested)
 
 #include "tether/export/TrajectoryAnalyzer.hpp"
 #include "tether/gcode/motion/InterpolationStrategy.hpp"
 #include "tether/web/TrajectorySerializer.hpp"
+#include "tether/motion_planner/geometry/PiecewiseNurbsPath.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include <atomic>
@@ -26,11 +31,21 @@ struct ProcessConfig {
     double maxAcceleration = 2000.0; ///< mm/s² acceleration limit
     double maxJerk = 20000.0;       ///< mm/s³ jerk limit
     std::string strategy = "FixedTime"; ///< Approximation strategy name
+    /// If true, skip dense sampling (TrajectoryAnalyzer) and only build
+    /// the NURBS path. Samples will be empty. Default true since the
+    /// viewer uses NURBS rendering.
+    bool nurbsOnly = true;
 };
 
 /// @brief Result of G-code processing.
 struct ProcessResult {
+    /// NURBS path — built directly from segments (fast, always available).
+    std::optional<tether::motion::PiecewiseNurbsPath> nurbsPath;
+
+    /// Dense sampled trajectory — only populated if nurbsOnly=false.
+    /// Can be very large (millions of samples) for big G-code files.
     std::vector<GCodeExport::TrajectorySample> samples;
+
     std::vector<BlockMetadata> blocks;
     GCodeExport::TrajectoryStatistics statistics;
     double duration = 0.0;
@@ -72,6 +87,12 @@ private:
 
     /// @brief Compute segment time from feed rate and distance.
     void computeSegmentTimes(std::vector<GCode::PlanningSegment>& segments);
+
+    /// @brief Build a PiecewiseNurbsPath directly from PlanningSegments.
+    /// Uses NurbsCurve::fromLine for linear/rapid segments and
+    /// NurbsCurve::fromArc for arc segments. O(segments) — fast.
+    tether::motion::PiecewiseNurbsPath buildNurbsFromSegments(
+        const std::vector<GCode::PlanningSegment>& segments);
 
     /// @brief Compute statistics from samples.
     GCodeExport::TrajectoryStatistics computeStats(

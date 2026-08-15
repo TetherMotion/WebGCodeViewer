@@ -169,23 +169,39 @@ std::vector<uint8_t> JobManager::getNurbsBinary(const std::string& jobId) const
 {
     auto job = getJob(jobId);
     if (!job || job->state != JobState::Ready) return {};
-    if (job->result.samples.empty()) return {};
 
-    // Convert trajectory samples → PiecewiseNurbsPath
-    tether::motion::replanner::SegmentToPieceMap map;
-    auto path = tether::motion::replanner::convertTrajectory(
-        job->result.samples, map);
+    // Use the pre-built NURBS path from ProcessResult (fast path).
+    // This was built directly from PlanningSegments during processing —
+    // no dense sampling needed.
+    if (job->result.nurbsPath && job->result.nurbsPath->numPieces() > 0) {
+        const auto& path = *job->result.nurbsPath;
 
-    // Extract motion types per piece
-    std::vector<uint8_t> motionTypes;
-    motionTypes.reserve(path.numPieces());
-    for (std::size_t i = 0; i < path.numPieces(); ++i) {
-        // Default to linear; the converter groups by segmentIndex
-        motionTypes.push_back(1);
+        // Extract motion types from blocks (map block index → motion type)
+        std::vector<uint8_t> motionTypes;
+        motionTypes.reserve(path.numPieces());
+        for (std::size_t i = 0; i < path.numPieces(); ++i) {
+            motionTypes.push_back(1); // default linear
+        }
+
+        return serializeNurbsPath(path, job->result.blocks, motionTypes);
     }
 
-    // Build block metadata from the job result
-    return serializeNurbsPath(path, job->result.blocks, motionTypes);
+    // Fallback: convert from samples (slow, only if nurbsPath wasn't built)
+    if (!job->result.samples.empty()) {
+        tether::motion::replanner::SegmentToPieceMap map;
+        auto path = tether::motion::replanner::convertTrajectory(
+            job->result.samples, map);
+
+        std::vector<uint8_t> motionTypes;
+        motionTypes.reserve(path.numPieces());
+        for (std::size_t i = 0; i < path.numPieces(); ++i) {
+            motionTypes.push_back(1);
+        }
+
+        return serializeNurbsPath(path, job->result.blocks, motionTypes);
+    }
+
+    return {};
 }
 
 std::string JobManager::getBlocksJson(const std::string& jobId) const {
