@@ -25,23 +25,12 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${WGV_BIN_DIR})
 
 # ── Tether submodule ─────────────────────────────────────────────────────────
 # Build Tether as a subdirectory to get all library targets.
-# We disable the web component in Tether (it lives here now) and only
-# build the libraries we need: common, gcode, export, motion_planner.
+# We only need: gcode, export, motion_planner (and their deps, resolved
+# automatically). Using TETHER_COMPONENTS disables everything else including
+# tools (extract_esi), tests, examples, benchmarks, and python bindings.
+set(TETHER_COMPONENTS "gcode;export;motion_planner" CACHE STRING "" FORCE)
 set(TETHER_BUILD_WEB OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_PYTHON_BINDINGS OFF CACHE BOOL "" FORCE)
 set(TETHER_BUILD_KLIPPER OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_ETHERCAT_MASTER OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_CIA_PROFILES OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_MOTION_CONTROL OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_FSOE OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_DRIVES OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_SIMULATION OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_IO_PROTOCOL OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_ETHERCAT_SLAVE OFF CACHE BOOL "" FORCE)
-set(TETHER_BUILD_ETHERCAT_COMMON OFF CACHE BOOL "" FORCE)
 set(TETHER_ENABLE_KLIPPER_HTTP OFF CACHE BOOL "" FORCE)
 set(TETHER_ENABLE_PRESSURE_ADVANCE OFF CACHE BOOL "" FORCE)
 
