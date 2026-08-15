@@ -26,6 +26,7 @@ export interface ControlPanelEvents {
   toggleRetractions: void;    // Feature #3: highlight retraction moves
   toggleTheme: void;          // Feature #66: dark/light theme toggle
   toggleFullscreen: void;     // Feature #73: fullscreen mode
+  toggleStats: void;          // Feature #120: render statistics
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -350,6 +351,16 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     themeBtn.className = 'theme-btn';
     themeBtn.onclick = () => this.emit('toggleTheme', undefined);
     statusGroup.appendChild(themeBtn);
+
+    // Feature #120: Stats toggle button
+    const statsBtn = document.createElement('button');
+    statsBtn.textContent = 'Stats';
+    statsBtn.className = 'stats-btn';
+    statsBtn.onclick = () => {
+      statsBtn.classList.toggle('active');
+      this.emit('toggleStats', undefined);
+    };
+    statusGroup.appendChild(statsBtn);
 
     this.statusEl = document.createElement('span');
     this.statusEl.className = 'status-text';

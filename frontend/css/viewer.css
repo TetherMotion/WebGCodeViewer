@@ -1392,6 +1392,27 @@ input[type="checkbox"] {
     backdrop-filter: blur(8px);
 }
 
+/* Feature #120: Render statistics overlay */
+.stats-overlay {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    background: rgba(0,0,0,0.7);
+    color: #e0e0e0;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    z-index: 500;
+    pointer-events: none;
+    line-height: 1.6;
+}
+
+.stats-overlay .stats-value {
+    color: var(--accent);
+    font-weight: bold;
+}
+
 /* Feature #86: Drag-and-drop active state */
 body.drag-active::after {
     content: '';

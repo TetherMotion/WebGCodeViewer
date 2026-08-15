@@ -1944,3 +1944,88 @@ test.describe('Fullscreen mode (Feature #73)', () => {
     collector.assertClean('fullscreen with loaded G-code');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 21: Render Statistics (Feature #120)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Render statistics (Feature #120)', () => {
+  test('stats button exists and is not active by default', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+    await expect(btn).toBeVisible();
+    expect(await btn.getAttribute('class')).not.toContain('active');
+  });
+
+  test('clicking stats button shows stats overlay', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+    await btn.click();
+    await page.waitForTimeout(1000); // Wait for FPS calculation
+
+    const overlay = page.locator('.stats-overlay');
+    await expect(overlay).toBeVisible();
+
+    // Should show FPS info
+    const text = await overlay.textContent();
+    expect(text).toContain('FPS');
+  });
+
+  test('stats overlay shows piece and sample counts with loaded G-code', async ({ page, request }) => {
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'stats_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+    await btn.click();
+    await page.waitForTimeout(1000);
+
+    const overlay = page.locator('.stats-overlay');
+    await expect(overlay).toBeVisible();
+
+    const text = await overlay.textContent();
+    expect(text).toContain('FPS');
+    expect(text).toContain('Pieces');
+    expect(text).toContain('Canvas');
+  });
+
+  test('clicking stats again hides overlay', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+    await btn.click();
+    await page.waitForTimeout(500);
+    await expect(page.locator('.stats-overlay')).toBeVisible();
+
+    await btn.click();
+    await page.waitForTimeout(300);
+    await expect(page.locator('.stats-overlay')).not.toBeVisible();
+  });
+
+  test('stats display works without errors during rendering', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, COMPLEX_GCODE, 'stats_render.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+    await btn.click();
+    await page.waitForTimeout(2000); // Let it render with stats for a while
+
+    collector.assertClean('stats display during rendering');
+  });
+});

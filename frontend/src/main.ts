@@ -37,6 +37,8 @@ async function main(): Promise<void> {
     errorDiv.className = 'error-message';
     errorDiv.textContent = 'WebGPU initialization failed. Please use a WebGPU-compatible browser.';
     document.body.appendChild(errorDiv);
+    // Feature #120: Start stats loop even without WebGPU
+    app.startStatsOnlyLoop();
   }
 }
 

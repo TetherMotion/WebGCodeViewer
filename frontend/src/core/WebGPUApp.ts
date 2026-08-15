@@ -81,6 +81,13 @@ export class WebGPUApp {
   // Feature #66: Theme state
   private lightTheme = false;
 
+  // Feature #120: Render statistics
+  private showStats = false;
+  private statsEl: HTMLElement | null = null;
+  private frameCount = 0;
+  private lastFpsTime = 0;
+  private currentFps = 0;
+
   constructor(
     canvas: HTMLCanvasElement,
     rpcClient: RpcClient,
@@ -228,6 +235,21 @@ export class WebGPUApp {
         document.documentElement.requestFullscreen().catch(() => {});
       } else {
         document.exitFullscreen().catch(() => {});
+      }
+    });
+    // Feature #120: Toggle render statistics
+    this.controlPanel.on('toggleStats', () => {
+      this.showStats = !this.showStats;
+      if (this.showStats) {
+        if (!this.statsEl) {
+          this.statsEl = document.createElement('div');
+          this.statsEl.className = 'stats-overlay';
+          this.statsEl.style.display = 'none';
+          document.body.appendChild(this.statsEl);
+        }
+        this.statsEl.style.display = 'block';
+      } else {
+        if (this.statsEl) this.statsEl.style.display = 'none';
       }
     });
     this.controlPanel.on('toggleCrossSection', () => {
@@ -385,6 +407,38 @@ export class WebGPUApp {
 
     this.setupInputHandlers();
     this.startRenderLoop();
+  }
+
+  /**
+   * Feature #120: Start a minimal animation loop for stats tracking
+   * even when WebGPU is not available.
+   */
+  startStatsOnlyLoop(): void {
+    const frame = (): void => {
+      const now = performance.now();
+      if (this.showStats) {
+        this.frameCount++;
+        if (this.lastFpsTime === 0) this.lastFpsTime = now;
+        const elapsed = now - this.lastFpsTime;
+        if (elapsed >= 500) {
+          this.currentFps = Math.round((this.frameCount * 1000) / elapsed);
+          this.frameCount = 0;
+          this.lastFpsTime = now;
+          if (this.statsEl) {
+            const pieces = this.currentNBP?.pieces.length ?? 0;
+            const samples = this.currentData?.header.sampleCount ?? 0;
+            this.statsEl.innerHTML = `
+              <div>FPS: <span class="stats-value">${this.currentFps}</span></div>
+              <div>Pieces: <span class="stats-value">${pieces}</span></div>
+              <div>Samples: <span class="stats-value">${samples}</span></div>
+              <div>Canvas: <span class="stats-value">${this.canvas.width}×${this.canvas.height}</span></div>
+            `;
+          }
+        }
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
   }
 
   private setupInputHandlers(): void {
@@ -677,6 +731,29 @@ export class WebGPUApp {
       }
 
       this.render();
+
+      // Feature #120: Update render statistics (in animation loop, not render(),
+      // so stats work even when WebGPU is unavailable)
+      if (this.showStats) {
+        this.frameCount++;
+        const elapsed = now - this.lastFpsTime;
+        if (this.lastFpsTime === 0) this.lastFpsTime = now;
+        if (elapsed >= 500) {
+          this.currentFps = Math.round((this.frameCount * 1000) / elapsed);
+          this.frameCount = 0;
+          this.lastFpsTime = now;
+          if (this.statsEl) {
+            const pieces = this.currentNBP?.pieces.length ?? 0;
+            const samples = this.currentData?.header.sampleCount ?? 0;
+            this.statsEl.innerHTML = `
+              <div>FPS: <span class="stats-value">${this.currentFps}</span></div>
+              <div>Pieces: <span class="stats-value">${pieces}</span></div>
+              <div>Samples: <span class="stats-value">${samples}</span></div>
+              <div>Canvas: <span class="stats-value">${this.canvas.width}×${this.canvas.height}</span></div>
+            `;
+          }
+        }
+      }
 
       // Render miniplot (separate WebGPU context)
       if (this.miniplotVisible && this.miniplotRenderer) {
