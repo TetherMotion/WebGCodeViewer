@@ -4,11 +4,11 @@
  * Reads binary data produced by the C++ NurbsSerializer.
  *
  * NBP format (little-endian):
- *   Header (80 bytes):
+ *   Header (82 bytes):
  *     magic[4] = "TNBP"
  *     version (u16)
  *     dim (u8)
- *     reserved (u8)
+ *     reserved[3] (u8)
  *     pieceCount (u32)
  *     blockCount (u32)
  *     totalControlPoints (u32)
@@ -99,7 +99,7 @@ export function parseNBP(data: Uint8Array | ArrayBuffer): NBPData {
     throw new Error(`Unsupported NBP version: ${version}`);
   }
   const dim = reader.readU8();
-  reader.readU8(); // reserved
+  reader.readU8(); reader.readU8(); reader.readU8(); // reserved[3]
 
   const pieceCount = reader.readU32();
   const blockCount = reader.readU32();

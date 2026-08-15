@@ -157,14 +157,19 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
                 return it != params.end() ? it->second : "";
             };
 
-            std::string sr = getParam("sampleRate");
-            if (!sr.empty()) config.sampleRate = std::stod(sr);
-            std::string mv = getParam("maxVelocity");
-            if (!mv.empty()) config.maxVelocity = std::stod(mv);
-            std::string ma = getParam("maxAcceleration");
-            if (!ma.empty()) config.maxAcceleration = std::stod(ma);
-            std::string mj = getParam("maxJerk");
-            if (!mj.empty()) config.maxJerk = std::stod(mj);
+            try {
+                std::string sr = getParam("sampleRate");
+                if (!sr.empty()) config.sampleRate = std::stod(sr);
+                std::string mv = getParam("maxVelocity");
+                if (!mv.empty()) config.maxVelocity = std::stod(mv);
+                std::string ma = getParam("maxAcceleration");
+                if (!ma.empty()) config.maxAcceleration = std::stod(ma);
+                std::string mj = getParam("maxJerk");
+                if (!mj.empty()) config.maxJerk = std::stod(mj);
+            } catch (const std::exception& e) {
+                cb(makeErrorResponse(400, std::string("Invalid numeric parameter: ") + e.what(), enableCors));
+                return;
+            }
             std::string strat = getParam("strategy");
             if (!strat.empty()) config.strategy = strat;
 
@@ -184,10 +189,15 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
                            body[end] != '"') ++end;
                     return body.substr(pos, end - pos);
                 };
-                std::string bsr = extractVal("sampleRate");
-                if (!bsr.empty()) config.sampleRate = std::stod(bsr);
-                std::string bmv = extractVal("maxVelocity");
-                if (!bmv.empty()) config.maxVelocity = std::stod(bmv);
+                try {
+                    std::string bsr = extractVal("sampleRate");
+                    if (!bsr.empty()) config.sampleRate = std::stod(bsr);
+                    std::string bmv = extractVal("maxVelocity");
+                    if (!bmv.empty()) config.maxVelocity = std::stod(bmv);
+                } catch (const std::exception& e) {
+                    cb(makeErrorResponse(400, std::string("Invalid JSON parameter: ") + e.what(), enableCors));
+                    return;
+                }
             }
 
             if (!jobManager->startProcessing(jobId, config)) {
@@ -237,19 +247,24 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
             SerializeOptions opts;
             opts.flags = parseFlags(req->getParameter("fields"));
 
-            std::string axesStr = req->getParameter("axes");
-            opts.axisCount = axesStr.empty() ? 3 : static_cast<uint8_t>(std::stoi(axesStr));
+            try {
+                std::string axesStr = req->getParameter("axes");
+                opts.axisCount = axesStr.empty() ? 3 : static_cast<uint8_t>(std::stoi(axesStr));
 
-            std::string startStr = req->getParameter("start");
-            if (!startStr.empty()) opts.timeStart = std::stod(startStr);
-            std::string endStr = req->getParameter("end");
-            if (!endStr.empty()) opts.timeEnd = std::stod(endStr);
-            std::string segStartStr = req->getParameter("segStart");
-            if (!segStartStr.empty()) opts.segStart = std::stoi(segStartStr);
-            std::string segEndStr = req->getParameter("segEnd");
-            if (!segEndStr.empty()) opts.segEnd = std::stoi(segEndStr);
-            std::string dsStr = req->getParameter("downsample");
-            if (!dsStr.empty()) opts.downsample = static_cast<uint32_t>(std::stoi(dsStr));
+                std::string startStr = req->getParameter("start");
+                if (!startStr.empty()) opts.timeStart = std::stod(startStr);
+                std::string endStr = req->getParameter("end");
+                if (!endStr.empty()) opts.timeEnd = std::stod(endStr);
+                std::string segStartStr = req->getParameter("segStart");
+                if (!segStartStr.empty()) opts.segStart = std::stoi(segStartStr);
+                std::string segEndStr = req->getParameter("segEnd");
+                if (!segEndStr.empty()) opts.segEnd = std::stoi(segEndStr);
+                std::string dsStr = req->getParameter("downsample");
+                if (!dsStr.empty()) opts.downsample = static_cast<uint32_t>(std::stoi(dsStr));
+            } catch (const std::exception& e) {
+                cb(makeErrorResponse(400, std::string("Invalid parameter: ") + e.what(), enableCors));
+                return;
+            }
 
             auto binary = jobManager->getBinary(jobId, opts);
             if (binary.empty()) {

@@ -152,6 +152,16 @@ export class NavigationGizmo {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
+    // Create bind groups once during init (not lazily during render)
+    this.lineBindGroup = this.device.createBindGroup({
+      layout: this.linePipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
+    });
+    this.bindGroup = this.device.createBindGroup({
+      layout: this.pipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
+    });
+
     this.buildGeometry();
     this.resize();
   }
@@ -320,12 +330,13 @@ export class NavigationGizmo {
 
   render(viewRot: Mat4): void {
     if (!this.device || !this.context || !this.pipeline || !this.linePipeline) return;
+    if (!this.depthTexture || !this.uniformBuffer || !this.lineBindGroup || !this.bindGroup) return;
 
     // Update uniform (view rotation matrix)
     const uniformData = new ArrayBuffer(64);
     const view = new Float32Array(uniformData);
     for (let i = 0; i < 16; i++) view[i] = viewRot[i];
-    this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
@@ -336,7 +347,7 @@ export class NavigationGizmo {
         storeOp: 'store',
       }],
       depthStencilAttachment: {
-        view: this.depthTexture!.createView(),
+        view: this.depthTexture.createView(),
         depthClearValue: 1.0,
         depthLoadOp: 'clear',
         depthStoreOp: 'store',
@@ -344,12 +355,6 @@ export class NavigationGizmo {
     });
 
     // Draw axis lines
-    if (!this.lineBindGroup) {
-      this.lineBindGroup = this.device.createBindGroup({
-        layout: this.linePipeline.getBindGroupLayout(0),
-        entries: [{ binding: 0, resource: { buffer: this.uniformBuffer! } }],
-      });
-    }
     pass.setPipeline(this.linePipeline);
     pass.setBindGroup(0, this.lineBindGroup);
     pass.setVertexBuffer(0, this.lineBuffer!);
@@ -358,12 +363,6 @@ export class NavigationGizmo {
     pass.drawIndexed(6);
 
     // Draw arrow heads
-    if (!this.bindGroup) {
-      this.bindGroup = this.device.createBindGroup({
-        layout: this.pipeline.getBindGroupLayout(0),
-        entries: [{ binding: 0, resource: { buffer: this.uniformBuffer! } }],
-      });
-    }
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.setVertexBuffer(0, this.axisBuffer!);

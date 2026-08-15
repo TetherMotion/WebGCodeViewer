@@ -30,6 +30,7 @@ export class NurbsRenderer {
   private bindGroup: GPUBindGroup | null = null;
   private colorLUTTexture: GPUTexture | null = null;
   private sampler: GPUSampler | null = null;
+  private sampleIdxBuffer: GPUBuffer | null = null;
   private sampleCount: number = 0;
   private progress: number = 1.0;
 
@@ -138,6 +139,16 @@ export class NurbsRenderer {
       size: 80,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+
+    // Create bind group once during init (not lazily during render)
+    this.bindGroup = this.device.createBindGroup({
+      layout: this.pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.uniformBuffer } },
+        { binding: 1, resource: this.colorLUTTexture.createView() },
+        { binding: 2, resource: this.sampler },
+      ],
+    });
   }
 
   /**
@@ -222,7 +233,7 @@ export class NurbsRenderer {
     });
     this.device.queue.writeBuffer(sampleIdxBuffer, 0, sampleIdxData);
     // Store on this for rendering
-    (this as any)._sampleIdxBuffer = sampleIdxBuffer;
+    this.sampleIdxBuffer = sampleIdxBuffer;
 
     if (this.indexBuffer) this.indexBuffer.destroy();
     this.indexBuffer = this.device.createBuffer({
@@ -260,30 +271,20 @@ export class NurbsRenderer {
 
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.options.visible || !this.pipeline || !this.positionBuffer || this.indexCount < 2) return;
+    if (!this.uniformBuffer || !this.bindGroup || !this.colorBuffer || !this.sampleIdxBuffer || !this.indexBuffer) return;
 
     const uniformData = new ArrayBuffer(80);
     const view = new Float32Array(uniformData);
     for (let i = 0; i < 16; i++) view[i] = viewProj[i];
     view[16] = this.progress;
-    this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
-
-    if (!this.bindGroup) {
-      this.bindGroup = this.device.createBindGroup({
-        layout: this.pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: { buffer: this.uniformBuffer! } },
-          { binding: 1, resource: this.colorLUTTexture!.createView() },
-          { binding: 2, resource: this.sampler! },
-        ],
-      });
-    }
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.setVertexBuffer(0, this.positionBuffer);
-    pass.setVertexBuffer(1, this.colorBuffer!);
-    pass.setVertexBuffer(2, (this as any)._sampleIdxBuffer);
-    pass.setIndexBuffer(this.indexBuffer!, 'uint32');
+    pass.setVertexBuffer(1, this.colorBuffer);
+    pass.setVertexBuffer(2, this.sampleIdxBuffer);
+    pass.setIndexBuffer(this.indexBuffer, 'uint32');
     pass.drawIndexed(this.indexCount);
   }
 
@@ -293,6 +294,6 @@ export class NurbsRenderer {
     this.indexBuffer?.destroy();
     this.uniformBuffer?.destroy();
     this.colorLUTTexture?.destroy();
-    (this as any)._sampleIdxBuffer?.destroy();
+    this.sampleIdxBuffer?.destroy();
   }
 }

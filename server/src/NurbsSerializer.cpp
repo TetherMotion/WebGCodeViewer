@@ -177,7 +177,7 @@ std::vector<uint8_t> serializeNurbsPath(
 
 ParsedNBP parseNurbsPath(std::span<const uint8_t> data) {
     ParsedNBP result;
-    if (data.size() < 80) return result;
+    if (data.size() < 82) return result;
 
     const uint8_t* p = data.data();
 

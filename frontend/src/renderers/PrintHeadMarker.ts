@@ -84,6 +84,11 @@ export class PrintHeadMarker {
       size: 80, // 64 (viewProj) + 4 (pointSize) + 12 (padding)
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+
+    this.bindGroup = this.device.createBindGroup({
+      layout: this.pipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
+    });
   }
 
   /**
@@ -101,13 +106,6 @@ export class PrintHeadMarker {
     const view = new Float32Array(uniformData);
     for (let i = 0; i < 16; i++) view[i] = viewProj[i];
     this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
-
-    if (!this.bindGroup) {
-      this.bindGroup = this.device.createBindGroup({
-        layout: this.pipeline.getBindGroupLayout(0),
-        entries: [{ binding: 0, resource: { buffer: this.uniformBuffer! } }],
-      });
-    }
 
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);

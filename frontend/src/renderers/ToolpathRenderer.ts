@@ -153,6 +153,15 @@ export class ToolpathRenderer {
       size: 80, // 64 (viewProj) + 4 (progress) + 12 (padding)
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+
+    this.bindGroup = this.device.createBindGroup({
+      layout: this.pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.uniformBuffer } },
+        { binding: 1, resource: this.colorLUTTexture.createView() },
+        { binding: 2, resource: this.sampler },
+      ],
+    });
   }
 
   updateData(data: TTHRData): void {
@@ -183,7 +192,6 @@ export class ToolpathRenderer {
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.positionBuffer, 0, positions);
-    this.bindGroup = null;
 
     // Color value buffer (normalized 0-1)
     const colorValues = new Float32Array(n);
@@ -329,17 +337,6 @@ export class ToolpathRenderer {
     for (let i = 0; i < 16; i++) view[i] = viewProj[i];
     view[16] = this.progress; // progress at offset 64 bytes (index 16)
     this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
-
-    if (!this.bindGroup) {
-      this.bindGroup = this.device.createBindGroup({
-        layout: this.pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: { buffer: this.uniformBuffer! } },
-          { binding: 1, resource: this.colorLUTTexture!.createView() },
-          { binding: 2, resource: this.sampler! },
-        ],
-      });
-    }
 
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);

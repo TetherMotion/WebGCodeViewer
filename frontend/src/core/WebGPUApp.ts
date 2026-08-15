@@ -44,6 +44,10 @@ export class WebGPUApp {
   private nurbsRenderer: NurbsRenderer | null = null;
   private gridLabels: GridLabels | null = null;
 
+  private resizeObserver: ResizeObserver | null = null;
+  private gizmoResizeObserver: ResizeObserver | null = null;
+  private dirCubeResizeObserver: ResizeObserver | null = null;
+
   private controlPanel: ControlPanel;
   private gcodeViewer: GcodeViewer;
   private navCube: NavigationCube;
@@ -251,20 +255,20 @@ export class WebGPUApp {
     });
 
     // Resize handling
-    const resizeObserver = new ResizeObserver(() => {
-      this.resize();
+    this.resizeObserver = new ResizeObserver(() => {
+      if (document.body.contains(this.canvas)) this.resize();
     });
-    resizeObserver.observe(this.canvas);
+    this.resizeObserver.observe(this.canvas);
     // Also observe the gizmo canvas for size changes
-    const gizmoResizeObserver = new ResizeObserver(() => {
+    this.gizmoResizeObserver = new ResizeObserver(() => {
       this.navGizmo?.resize();
     });
-    gizmoResizeObserver.observe(this.navCube.gizmoCanvas);
+    this.gizmoResizeObserver.observe(this.navCube.gizmoCanvas);
     // Observe the direction cube canvas for size changes
-    const dirCubeResizeObserver = new ResizeObserver(() => {
+    this.dirCubeResizeObserver = new ResizeObserver(() => {
       this.dirCubeRenderer?.resize();
     });
-    dirCubeResizeObserver.observe(this.navCube.dirCanvas);
+    this.dirCubeResizeObserver.observe(this.navCube.dirCanvas);
     this.resize();
     this.navGizmo?.resize();
     this.dirCubeRenderer?.resize();
@@ -405,7 +409,7 @@ export class WebGPUApp {
   }
 
   private render(): void {
-    if (!this.device || !this.context) return;
+    if (!this.device || !this.context || !this.depthTexture) return;
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
@@ -415,7 +419,7 @@ export class WebGPUApp {
         storeOp: 'store',
       }],
       depthStencilAttachment: {
-        view: this.depthTexture!.createView(),
+        view: this.depthTexture.createView(),
         depthClearValue: 1.0,
         depthLoadOp: 'clear',
         depthStoreOp: 'store',
@@ -593,6 +597,12 @@ export class WebGPUApp {
 
   destroy(): void {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
+    this.resizeObserver?.disconnect();
+    this.gizmoResizeObserver?.disconnect();
+    this.dirCubeResizeObserver?.disconnect();
+    this.resizeObserver = null;
+    this.gizmoResizeObserver = null;
+    this.dirCubeResizeObserver = null;
     this.toolpathRenderer?.destroy();
     this.nurbsRenderer?.destroy();
     this.gridRenderer?.destroy();
@@ -603,5 +613,6 @@ export class WebGPUApp {
     this.printHeadMarker?.destroy();
     this.dirCubeRenderer?.destroy();
     this.depthTexture?.destroy();
+    this.depthTexture = null;
   }
 }

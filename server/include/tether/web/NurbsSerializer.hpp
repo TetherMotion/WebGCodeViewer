@@ -44,13 +44,13 @@ namespace tether::web {
 constexpr char NBP_MAGIC[4] = {'T', 'N', 'B', 'P'};
 constexpr uint16_t NBP_VERSION = 1;
 
-/// NBP header (80 bytes, little-endian, packed).
+/// NBP header (82 bytes, little-endian, packed).
 #pragma pack(push, 1)
 struct NBPHeader {
     char magic[4] = {'T', 'N', 'B', 'P'};
     uint16_t version = NBP_VERSION;
     uint8_t dim = 3;
-    uint8_t reserved = 0;              // 1 byte (not 3)
+    uint8_t reserved[3] = {0, 0, 0};
     uint32_t pieceCount = 0;
     uint32_t blockCount = 0;
     uint32_t totalControlPoints = 0;
@@ -60,7 +60,7 @@ struct NBPHeader {
     double boundsMax[3] = {0, 0, 0};
 };
 #pragma pack(pop)
-static_assert(sizeof(NBPHeader) == 80, "NBPHeader must be 80 bytes");
+static_assert(sizeof(NBPHeader) == 82, "NBPHeader must be 82 bytes");
 
 /// Per-piece metadata entry (16 bytes, packed).
 #pragma pack(push, 1)

@@ -76,6 +76,11 @@ export class OverlayRenderer {
     this.uniformBuffer = this.device.createBuffer({
       size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+
+    this.bindGroup = this.device.createBindGroup({
+      layout: this.pipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
+    });
   }
 
   setLines(lines: OverlayLine[]): void {
@@ -104,7 +109,6 @@ export class OverlayRenderer {
 
     if (this.vertexBuffer) this.vertexBuffer.destroy();
     this.vertexBuffer = null;
-    this.bindGroup = null;
 
     if (vertices.byteLength === 0) return;
 
@@ -120,12 +124,6 @@ export class OverlayRenderer {
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.visible || !this.pipeline || !this.vertexBuffer || this.vertexCount === 0) return;
     this.device.queue.writeBuffer(this.uniformBuffer!, 0, viewProj.buffer as ArrayBuffer);
-    if (!this.bindGroup) {
-      this.bindGroup = this.device.createBindGroup({
-        layout: this.pipeline.getBindGroupLayout(0),
-        entries: [{ binding: 0, resource: { buffer: this.uniformBuffer! } }],
-      });
-    }
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.setVertexBuffer(0, this.vertexBuffer);

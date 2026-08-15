@@ -38,8 +38,8 @@ struct Job {
     std::string filename;
     ProcessConfig config;
     ProcessResult result;
-    JobState state = JobState::Pending;
-    double progress = 0.0;
+    std::atomic<JobState> state{JobState::Pending};
+    std::atomic<double> progress{0.0};
     std::chrono::steady_clock::time_point createdAt;
     std::chrono::steady_clock::time_point completedAt;
     std::thread worker;

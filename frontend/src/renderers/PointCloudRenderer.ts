@@ -59,6 +59,11 @@ export class PointCloudRenderer {
     this.uniformBuffer = this.device.createBuffer({
       size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+
+    this.bindGroup = this.device.createBindGroup({
+      layout: this.pipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
+    });
   }
 
   updateData(data: TTHRData): void {
@@ -79,7 +84,6 @@ export class PointCloudRenderer {
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.positionBuffer, 0, positions);
-    this.bindGroup = null;
   }
 
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
@@ -94,13 +98,6 @@ export class PointCloudRenderer {
     view[20] = this.pointColor[2];
     view[21] = 1.0; // alpha padding for vec4
     this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
-
-    if (!this.bindGroup) {
-      this.bindGroup = this.device.createBindGroup({
-        layout: this.pipeline.getBindGroupLayout(0),
-        entries: [{ binding: 0, resource: { buffer: this.uniformBuffer! } }],
-      });
-    }
 
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
