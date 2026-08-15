@@ -267,29 +267,43 @@ export class WebGPUApp {
 
   private setupInputHandlers(): void {
     let isDragging = false;
+    let isPanning = false;
     let lastX = 0, lastY = 0;
 
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
     this.canvas.addEventListener('mousedown', (e) => {
-      isDragging = true;
+      if (e.button === 2) {
+        // Right-click → pan
+        isPanning = true;
+        isDragging = false;
+      } else if (e.button === 0) {
+        // Left-click → orbit (or pan with shift)
+        isDragging = true;
+        isPanning = false;
+      }
       lastX = e.clientX;
       lastY = e.clientY;
     });
 
     this.canvas.addEventListener('mousemove', (e) => {
-      if (!isDragging) return;
+      if (!isDragging && !isPanning) return;
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
       lastX = e.clientX;
       lastY = e.clientY;
-      if (e.shiftKey) {
+      if (isPanning || e.shiftKey) {
         this.camera.pan(dx, dy);
       } else {
         this.camera.orbit(-dx * 0.01, dy * 0.01);
       }
     });
 
-    this.canvas.addEventListener('mouseup', () => { isDragging = false; });
-    this.canvas.addEventListener('mouseleave', () => { isDragging = false; });
+    this.canvas.addEventListener('mouseup', (e) => {
+      if (e.button === 2) isPanning = false;
+      else isDragging = false;
+    });
+    this.canvas.addEventListener('mouseleave', () => { isDragging = false; isPanning = false; });
 
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -299,7 +313,7 @@ export class WebGPUApp {
 
     // Click on canvas → pick nearest toolpath sample → highlight gcode line
     this.canvas.addEventListener('click', (e) => {
-      if (isDragging) return;
+      if (isDragging || isPanning) return;
       this.handleCanvasClick(e);
     });
 
