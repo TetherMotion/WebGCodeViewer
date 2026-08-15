@@ -69,7 +69,7 @@ export class PrintHeadMarker {
       },
       primitive: { topology: 'point-list' },
       depthStencil: {
-        format: 'depth24plus',
+        format: 'depth32float',
         depthCompare: 'less',
         depthWriteEnabled: true,
       },

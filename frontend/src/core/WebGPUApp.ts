@@ -29,6 +29,10 @@ export class WebGPUApp {
   private context: GPUCanvasContext | null = null;
   private format: GPUTextureFormat = 'bgra8unorm';
   private depthTexture: GPUTexture | null = null;
+  private depthReadbackBuffer: GPUBuffer | null = null;
+  private depthData: Float32Array | null = null;  // previous frame's depth values
+  private depthReadbackPending = false;
+  private depthBufferSize: [number, number] = [0, 0];  // [width, height]
 
   private camera: Camera;
   private rpcClient: RpcClient;
@@ -427,9 +431,19 @@ export class WebGPUApp {
       this.depthTexture?.destroy();
       this.depthTexture = this.device.createTexture({
         size: [w, h],
-        format: 'depth24plus',
-        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        format: 'depth32float',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
       });
+
+      // Create/recreate depth readback buffer (4 bytes per pixel for f32)
+      this.depthReadbackBuffer?.destroy();
+      this.depthReadbackBuffer = this.device.createBuffer({
+        size: w * h * 4,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+      });
+      this.depthData = null;
+      this.depthReadbackPending = false;
+      this.depthBufferSize = [w, h];
     }
   }
 
@@ -499,7 +513,31 @@ export class WebGPUApp {
     this.overlayRenderer?.render(pass, viewProj);
 
     pass.end();
+
+    // Copy depth texture to readback buffer for label visibility checks
+    if (this.depthReadbackBuffer && !this.depthReadbackPending) {
+      const [w, h] = this.depthBufferSize;
+      encoder.copyTextureToBuffer(
+        { texture: this.depthTexture, mipLevel: 0, origin: { x: 0, y: 0, z: 0 } },
+        { buffer: this.depthReadbackBuffer, offset: 0, bytesPerRow: w * 4, rowsPerImage: h },
+        { width: w, height: h, depthOrArrayLayers: 1 },
+      );
+    }
+
     this.device.queue.submit([encoder.finish()]);
+
+    // Start async readback of previous frame's depth buffer
+    if (this.depthReadbackBuffer && !this.depthReadbackPending) {
+      this.depthReadbackPending = true;
+      this.depthReadbackBuffer.mapAsync(GPUMapMode.READ).then(() => {
+        const arr = new Float32Array(this.depthReadbackBuffer!.getMappedRange());
+        this.depthData = new Float32Array(arr);  // copy
+        this.depthReadbackBuffer!.unmap();
+        this.depthReadbackPending = false;
+      }).catch(() => {
+        this.depthReadbackPending = false;
+      });
+    }
 
     // Render navigation gizmo (separate canvas, uses camera rotation only)
     this.navGizmo?.render(this.camera.viewRotationMatrix);
@@ -508,12 +546,15 @@ export class WebGPUApp {
     this.dirCubeRenderer?.render();
 
     // Render grid labels overlay (2D canvas, projects 3D ticks to screen)
+    // Uses previous frame's depth buffer to cull occluded labels
     if (this.gridLabels && this.gridRenderer) {
       this.gridLabels.render(
         this.gridRenderer.ticks,
         viewProj,
         this.canvas.clientWidth,
         this.canvas.clientHeight,
+        this.depthData,
+        this.depthBufferSize,
       );
     }
   }
@@ -718,6 +759,9 @@ export class WebGPUApp {
     this.dirCubeRenderer?.destroy();
     this.depthTexture?.destroy();
     this.depthTexture = null;
+    this.depthReadbackBuffer?.destroy();
+    this.depthReadbackBuffer = null;
+    this.depthData = null;
   }
 
   /**

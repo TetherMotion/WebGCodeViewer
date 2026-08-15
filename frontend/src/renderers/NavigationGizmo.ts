@@ -111,7 +111,7 @@ export class NavigationGizmo {
       },
       primitive: { topology: 'triangle-list' },
       depthStencil: {
-        format: 'depth24plus',
+        format: 'depth32float',
         depthCompare: 'always',
         depthWriteEnabled: false,
       },
@@ -141,7 +141,7 @@ export class NavigationGizmo {
       },
       primitive: { topology: 'line-list' },
       depthStencil: {
-        format: 'depth24plus',
+        format: 'depth32float',
         depthCompare: 'always',
         depthWriteEnabled: false,
       },
@@ -323,7 +323,7 @@ export class NavigationGizmo {
     this.depthTexture?.destroy();
     this.depthTexture = this.device.createTexture({
       size: [w, h],
-      format: 'depth24plus',
+      format: 'depth32float',
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
   }

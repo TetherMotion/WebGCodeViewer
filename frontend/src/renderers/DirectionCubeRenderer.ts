@@ -173,7 +173,7 @@ export class DirectionCubeRenderer {
       },
       primitive: { topology: 'triangle-list' },
       depthStencil: {
-        format: 'depth24plus',
+        format: 'depth32float',
         depthCompare: 'less',
         depthWriteEnabled: true,
       },
@@ -269,7 +269,7 @@ export class DirectionCubeRenderer {
     this.depthTexture?.destroy();
     this.depthTexture = this.device.createTexture({
       size: [w, h],
-      format: 'depth24plus',
+      format: 'depth32float',
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
   }

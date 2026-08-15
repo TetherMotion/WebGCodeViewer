@@ -89,7 +89,7 @@ export class GridRenderer {
       },
       primitive: { topology: 'line-list' },
       depthStencil: {
-        format: 'depth24plus',
+        format: 'depth32float',
         depthCompare: 'less',
         depthWriteEnabled: false,
       },

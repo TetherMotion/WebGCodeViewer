@@ -46,12 +46,16 @@ export class GridLabels {
    * @param viewProj Camera view-projection matrix
    * @param canvasWidth WebGPU canvas width in CSS pixels
    * @param canvasHeight WebGPU canvas height in CSS pixels
+   * @param depthData Previous frame's depth buffer (Float32Array, row-major, top-to-bottom), or null
+   * @param depthSize [width, height] of the depth buffer in pixels
    */
   render(
     ticks: TickInfo[],
     viewProj: Mat4,
     canvasWidth: number,
     canvasHeight: number,
+    depthData: Float32Array | null = null,
+    depthSize: [number, number] = [0, 0],
   ): void {
     if (!this.visible) return;
 
@@ -78,18 +82,41 @@ export class GridLabels {
       const [px, py, pz] = tick.position;
       const clipX = viewProj[0] * px + viewProj[4] * py + viewProj[8] * pz + viewProj[12];
       const clipY = viewProj[1] * px + viewProj[5] * py + viewProj[9] * pz + viewProj[13];
+      const clipZ = viewProj[2] * px + viewProj[6] * py + viewProj[10] * pz + viewProj[14];
       const clipW = viewProj[3] * px + viewProj[7] * py + viewProj[11] * pz + viewProj[15];
 
       if (clipW <= 0.001) continue;
 
       const ndcX = clipX / clipW;
       const ndcY = clipY / clipW;
+      const ndcZ = clipZ / clipW;  // NDC depth: -1..1, maps to 0..1 in depth buffer
       const screenX = (ndcX + 1) * 0.5 * canvasWidth;
       const screenY = (1 - ndcY) * 0.5 * canvasHeight;
 
       // Cull off-screen (with margin)
       if (screenX < -30 || screenX > canvasWidth + 30 ||
           screenY < -30 || screenY > canvasHeight + 30) continue;
+
+      // Depth test: check if this tick is occluded by geometry
+      // NDC z maps to depth buffer value as: depth = (ndcZ + 1) * 0.5
+      // But WebGPU uses the reverse: depth = ndcZ * 0.5 + 0.5
+      const tickDepth = ndcZ * 0.5 + 0.5;
+
+      if (depthData && depthSize[0] > 0 && depthSize[1] > 0) {
+        // Sample the depth buffer at the tick's screen position
+        // depthData is in device pixels (dpr-scaled), screenX/screenY are in CSS pixels
+        const bufW = depthSize[0];
+        const bufH = depthSize[1];
+        const sx = Math.round((screenX / canvasWidth) * bufW);
+        const sy = Math.round((screenY / canvasHeight) * bufH);
+        if (sx >= 0 && sx < bufW && sy >= 0 && sy < bufH) {
+          const bufDepth = depthData[sy * bufW + sx];
+          // If the depth buffer value is closer (smaller) than the tick's depth,
+          // the tick is behind geometry and should be culled.
+          // Use a small epsilon to avoid z-fighting with the grid plane itself.
+          if (bufDepth < tickDepth - 0.002) continue;
+        }
+      }
 
       const pt = { tick, screenX, screenY };
       if (tick.axis === 0) xTicks.push(pt);
