@@ -47,7 +47,6 @@ private:
     std::shared_ptr<JobManager> jobManager_;
     std::shared_ptr<ViewerRpcHandler> rpcHandler_;
     std::atomic<bool> running_{false};
-    std::thread drogonThread_;
     std::thread cleanupThread_;
     std::atomic<bool> cleanupRunning_{false};
 };

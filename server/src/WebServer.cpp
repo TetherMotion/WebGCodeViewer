@@ -4,6 +4,7 @@
 #include "tether/web/ViewerRpcHandler.hpp"
 
 #include <drogon/drogon.h>
+#include <csignal>
 #include <iostream>
 
 namespace tether::web {
@@ -28,6 +29,13 @@ WebServer::~WebServer() {
 bool WebServer::start() {
     if (running_.load()) return true;
 
+    // Reset SIGINT/SIGTERM to default. Shells set SIGINT to SIG_IGN
+    // for background processes (using &), which prevents signal handlers
+    // from working. Resetting to SIG_DFL allows Drogon's handler to install.
+    // When run in the foreground (normal case), this is a no-op.
+    std::signal(SIGINT, SIG_DFL);
+    std::signal(SIGTERM, SIG_DFL);
+
     // Mount API routes
     mountWebRoutes(jobManager_, config_.enableCors);
 
@@ -45,34 +53,41 @@ bool WebServer::start() {
     cleanupRunning_ = true;
     cleanupThread_ = std::thread([this]() {
         while (cleanupRunning_.load()) {
-            std::this_thread::sleep_for(std::chrono::seconds(30));
-            jobManager_->cleanupExpired();
+            for (int i = 0; i < 60 && cleanupRunning_.load(); ++i) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+            if (cleanupRunning_.load()) {
+                jobManager_->cleanupExpired();
+            }
         }
     });
 
-    // Start Drogon in background thread
     running_ = true;
-    drogonThread_ = std::thread([this]() {
-        auto& app = drogon::app();
-        app.setLogLevel(trantor::Logger::kWarn);
-        std::string addr = config_.bindAddress.empty() ? "0.0.0.0" : config_.bindAddress;
-        app.addListener(addr, config_.port);
-        if (config_.threads > 0) app.setThreadNum(config_.threads);
-        app.run();
-    });
+
+    // Configure Drogon
+    auto& app = drogon::app();
+    app.setLogLevel(trantor::Logger::kWarn);
+    // Set signal handlers that call quit() on Ctrl+C / SIGTERM.
+    app.setIntSignalHandler([]() { drogon::app().quit(); });
+    app.setTermSignalHandler([]() { drogon::app().quit(); });
+    std::string addr = config_.bindAddress.empty() ? "0.0.0.0" : config_.bindAddress;
+    app.addListener(addr, config_.port);
+    if (config_.threads > 0) app.setThreadNum(config_.threads);
+
+    // Run Drogon in the main thread — blocks until quit() is called.
+    // Ctrl+C sends SIGINT → Drogon's handler calls quit() → app.run() returns.
+    app.run();
+    running_ = false;
 
     return true;
 }
 
 void WebServer::stop() {
-    if (!running_.load()) return;
     running_ = false;
-
     cleanupRunning_ = false;
     drogon::app().quit();
 
     if (cleanupThread_.joinable()) cleanupThread_.join();
-    if (drogonThread_.joinable()) drogonThread_.join();
 }
 
 void WebServer::registerStaticAssets() {

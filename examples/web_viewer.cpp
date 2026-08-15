@@ -24,19 +24,10 @@
 #include "tether/web/WebServer.hpp"
 #include "tether/web/WebServerConfig.hpp"
 
-#include <atomic>
-#include <csignal>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <string>
-#include <thread>
-
-static std::atomic<bool> g_running{true};
-
-static void signalHandler(int) {
-    g_running = false;
-}
 
 static void printUsage(const char* prog) {
     std::cerr << "Usage: " << prog << " [options]\n"
@@ -102,9 +93,6 @@ int main(int argc, char* argv[]) {
         config.webRoot = findWebRoot(argv[0]);
     }
 
-    std::signal(SIGINT, signalHandler);
-    std::signal(SIGTERM, signalHandler);
-
     std::cout << "╔══════════════════════════════════════════════════════════════╗\n"
               << "║                   WebGCodeViewer Server                      ║\n"
               << "╚══════════════════════════════════════════════════════════════╝\n"
@@ -124,16 +112,12 @@ int main(int argc, char* argv[]) {
     }
 
     tether::web::WebServer server(config);
-    if (!server.start()) {
-        std::cerr << "ERROR: Failed to start server\n";
-        return 1;
-    }
 
     std::cout << "Server running. Press Ctrl+C to stop.\n\n";
 
-    while (g_running.load()) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
+    // start() blocks — runs Drogon's event loop in this thread.
+    // Ctrl+C triggers Drogon's signal handler → quit() → start() returns.
+    server.start();
 
     std::cout << "\nShutting down...\n";
     server.stop();
