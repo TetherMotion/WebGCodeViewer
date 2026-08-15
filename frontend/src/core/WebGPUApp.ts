@@ -92,6 +92,10 @@ export class WebGPUApp {
   private showBBox = false;
   private bboxEl: HTMLElement | null = null;
 
+  // Feature #128: Layer count display
+  private showLayerCount = false;
+  private layerCountEl: HTMLElement | null = null;
+
   constructor(
     canvas: HTMLCanvasElement,
     rpcClient: RpcClient,
@@ -295,6 +299,22 @@ export class WebGPUApp {
         this.controlPanel.setStatus('URL copied to clipboard!');
         setTimeout(() => this.controlPanel.setStatus('Ready'), 2000);
       });
+    });
+    // Feature #128: Toggle layer count display
+    this.controlPanel.on('toggleLayerCount', () => {
+      this.showLayerCount = !this.showLayerCount;
+      if (this.showLayerCount) {
+        if (!this.layerCountEl) {
+          this.layerCountEl = document.createElement('div');
+          this.layerCountEl.className = 'layer-count-overlay';
+          this.layerCountEl.style.display = 'none';
+          document.body.appendChild(this.layerCountEl);
+        }
+        this.updateLayerCountDisplay();
+        this.layerCountEl.style.display = 'block';
+      } else {
+        if (this.layerCountEl) this.layerCountEl.style.display = 'none';
+      }
     });
     this.controlPanel.on('toggleCrossSection', () => {
       if (this.crossSectionRenderer) {
@@ -1165,6 +1185,7 @@ export class WebGPUApp {
       const layersResp = await this.rpcClient.getZLayersHttp(jobId);
       this.zLayers = layersResp.layers;
       this.controlPanel.updateLayersFromHttp(layersResp);
+      if (this.showLayerCount) this.updateLayerCountDisplay(); // Feature #128
     } catch (e) { console.error('Failed to load Z-layers:', e); }
 
     // Load miniplot speed data (if miniplot is visible)
@@ -1376,6 +1397,27 @@ export class WebGPUApp {
     const dist = this.camera.orbitDistanceVal.toFixed(2);
     params.set('cam', `${angle},${elev},${dist}`);
     return `${base}?${params.toString()}`;
+  }
+
+  /**
+   * Feature #128: Update layer count display.
+   */
+  private updateLayerCountDisplay(): void {
+    if (!this.layerCountEl) return;
+    if (this.zLayers.length === 0) {
+      this.layerCountEl.innerHTML = '<div class="layer-count-title">No layers loaded</div>';
+      return;
+    }
+    const count = this.zLayers.length;
+    const zMin = this.zLayers[0].zHeight.toFixed(2);
+    const zMax = this.zLayers[count - 1].zHeight.toFixed(2);
+    const avgPieces = (this.zLayers.reduce((s, l) => s + l.pieceCount, 0) / count).toFixed(1);
+    this.layerCountEl.innerHTML = `
+      <div class="layer-count-title">Layer Info</div>
+      <div>Layers: <span class="layer-count-val">${count}</span></div>
+      <div>Z range: <span class="layer-count-val">${zMin} → ${zMax} mm</span></div>
+      <div>Avg pieces/layer: <span class="layer-count-val">${avgPieces}</span></div>
+    `;
   }
 
   /**

@@ -1392,6 +1392,32 @@ input[type="checkbox"] {
     backdrop-filter: blur(8px);
 }
 
+/* Feature #128: Layer count overlay */
+.layer-count-overlay {
+    position: fixed;
+    top: 10px;
+    right: 340px;
+    background: rgba(0,0,0,0.7);
+    color: #e0e0e0;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    z-index: 500;
+    pointer-events: none;
+    line-height: 1.8;
+}
+
+.layer-count-overlay .layer-count-title {
+    color: var(--accent);
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.layer-count-overlay .layer-count-val {
+    color: var(--text-primary);
+}
+
 /* Feature #48: Bounding box dimensions overlay */
 .bbox-overlay {
     position: fixed;

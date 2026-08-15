@@ -2610,3 +2610,88 @@ test.describe('Copy view URL to clipboard (Feature #92)', () => {
     expect(text).toContain('copied');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 29: Layer Count Display (Feature #128)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Layer count display (Feature #128)', () => {
+  test('Layers button exists and is not active by default', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+    await expect(btn).toBeVisible();
+    expect(await btn.getAttribute('class') || '').not.toContain('active');
+  });
+
+  test('clicking Layers shows overlay with no data message', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+    await btn.click();
+    await page.waitForTimeout(300);
+
+    const overlay = page.locator('.layer-count-overlay');
+    await expect(overlay).toBeVisible();
+    const text = await overlay.textContent();
+    expect(text).toContain('No layers loaded');
+  });
+
+  test('Layers shows count when G-code is loaded', async ({ page, request }) => {
+    const { jobId, status } = await uploadAndProcess(request, LAYERED_GCODE, 'layer_count_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+    await btn.click();
+    await page.waitForTimeout(500);
+
+    const overlay = page.locator('.layer-count-overlay');
+    await expect(overlay).toBeVisible();
+
+    const text = await overlay.textContent();
+    expect(text).toContain('Layer Info');
+    expect(text).toContain('Layers:');
+    expect(text).toContain('Z range:');
+  });
+
+  test('clicking Layers again hides overlay', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+    await btn.click();
+    await page.waitForTimeout(300);
+    await expect(page.locator('.layer-count-overlay')).toBeVisible();
+
+    await btn.click();
+    await page.waitForTimeout(300);
+    await expect(page.locator('.layer-count-overlay')).not.toBeVisible();
+  });
+
+  test('Layers display works without errors', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, COMPLEX_GCODE, 'layer_count_errors.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    const btn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+    await btn.click();
+    await page.waitForTimeout(500);
+    await btn.click();
+    await page.waitForTimeout(300);
+
+    collector.assertClean('layer count display');
+  });
+});

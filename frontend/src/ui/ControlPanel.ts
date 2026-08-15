@@ -29,6 +29,7 @@ export interface ControlPanelEvents {
   toggleStats: void;          // Feature #120: render statistics
   toggleBoundingBox: void;    // Feature #48: bounding box dimensions
   copyViewUrl: void;          // Feature #92: copy current view URL
+  toggleLayerCount: void;     // Feature #128: layer count display
 }
 
 export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
@@ -240,6 +241,15 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
       this.emit('toggleBoundingBox', undefined);
     };
     viewGroup.appendChild(bboxBtn);
+
+    // Feature #128: Layer count display
+    const layerCountBtn = document.createElement('button');
+    layerCountBtn.textContent = 'Layers';
+    layerCountBtn.onclick = () => {
+      layerCountBtn.classList.toggle('active');
+      this.emit('toggleLayerCount', undefined);
+    };
+    viewGroup.appendChild(layerCountBtn);
 
     this.element.appendChild(viewGroup);
 
