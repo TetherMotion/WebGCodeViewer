@@ -17,6 +17,14 @@ export class PointCloudRenderer {
   pointColor: [number, number, number] = [0.2, 0.8, 1.0];
   pointSize: number = 3.0;
 
+  setColor(color: [number, number, number]): void {
+    this.pointColor = color;
+  }
+
+  setPointSize(size: number): void {
+    this.pointSize = size;
+  }
+
   constructor(private device: GPUDevice) {}
 
   async init(format: GPUTextureFormat): Promise<void> {

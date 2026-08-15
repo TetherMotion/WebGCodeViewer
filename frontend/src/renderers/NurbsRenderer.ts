@@ -14,7 +14,7 @@ import { Mat4 } from '../core/MathUtils';
 import { NBPData, NBPPiece, tessellatePiece } from '../core/NurbsParser';
 import { ColorMap } from '../core/ColorMap';
 
-export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'extruderSpeed' | 'motion' | 'solid';
+export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'extruderSpeed' | 'motion' | 'solid' | 'feedRate' | 'spindleRpm' | 'toolNumber' | 'coolant' | 'featureType';
 
 export interface NurbsRenderOptions {
   colorMap: ColorMap;
@@ -23,6 +23,10 @@ export interface NurbsRenderOptions {
   visible: boolean;
   showTravels: boolean;       // Feature #1: show/hide travel moves (motionType 0)
   highlightRetractions: boolean; // Feature #3: highlight retraction moves in red
+  highlightOverhangs: boolean;   // Highlight overhang regions
+  zSeamVisible: boolean;         // Show Z-seam markers
+  highlightBridges: boolean;     // Highlight bridge regions
+  highlightSupport: boolean;     // Highlight support structure
 }
 
 export class NurbsRenderer {
@@ -43,6 +47,25 @@ export class NurbsRenderer {
   // Stored as a flat Float32Array of XYZ triples, matching the GPU vertex buffer.
   private cachedPositions: Float32Array | null = null;
 
+  // Per-piece feed rates (mm/min), set externally for feedRate color attribute
+  private pieceFeedRates: Float32Array | null = null;
+  private maxFeedRate: number = 0;
+
+  // Per-piece spindle RPM, set externally for spindleRpm color attribute
+  private pieceSpindleRpm: Float32Array | null = null;
+  private maxSpindleRpm: number = 0;
+
+  // Per-piece tool numbers, set externally for toolNumber color attribute
+  private pieceToolNumbers: Float32Array | null = null;
+  private maxToolNumber: number = 0;
+
+  // Per-piece coolant states (0=off, 1=mist, 2=flood, 3=mist+flood)
+  private pieceCoolantStates: Float32Array | null = null;
+
+  // Per-piece feature type indices for slicer feature type coloring
+  private pieceFeatureTypes: Float32Array | null = null;
+  private maxFeatureType: number = 0;
+
   options: NurbsRenderOptions = {
     colorMap: new ColorMap('viridis'),
     colorAttribute: 'pieceIndex',
@@ -50,6 +73,10 @@ export class NurbsRenderer {
     visible: true,
     showTravels: true,
     highlightRetractions: false,
+    highlightOverhangs: false,
+    zSeamVisible: false,
+    highlightBridges: false,
+    highlightSupport: false,
   };
 
   constructor(private device: GPUDevice) {}
@@ -249,6 +276,41 @@ export class NurbsRenderer {
           colorValue = 0.5;
           break;
         }
+        case 'feedRate': {
+          // Color by feed rate (mm/min), normalized to 0-1
+          const fr = this.pieceFeedRates && i < this.pieceFeedRates.length
+            ? this.pieceFeedRates[i] : 0;
+          colorValue = this.maxFeedRate > 1e-6 ? fr / this.maxFeedRate : 0;
+          break;
+        }
+        case 'spindleRpm': {
+          // Color by spindle RPM, normalized to 0-1
+          const rpm = this.pieceSpindleRpm && i < this.pieceSpindleRpm.length
+            ? this.pieceSpindleRpm[i] : 0;
+          colorValue = this.maxSpindleRpm > 1e-6 ? rpm / this.maxSpindleRpm : 0;
+          break;
+        }
+        case 'toolNumber': {
+          // Color by tool number, normalized to 0-1
+          const tn = this.pieceToolNumbers && i < this.pieceToolNumbers.length
+            ? this.pieceToolNumbers[i] : 0;
+          colorValue = this.maxToolNumber > 0 ? tn / this.maxToolNumber : 0;
+          break;
+        }
+        case 'coolant': {
+          // Color by coolant state: 0=off, 0.33=mist, 0.67=flood, 1=mist+flood
+          const cs = this.pieceCoolantStates && i < this.pieceCoolantStates.length
+            ? this.pieceCoolantStates[i] : 0;
+          colorValue = cs / 3.0;
+          break;
+        }
+        case 'featureType': {
+          // Color by slicer feature type index, normalized to 0-1
+          const ft = this.pieceFeatureTypes && i < this.pieceFeatureTypes.length
+            ? this.pieceFeatureTypes[i] : 0;
+          colorValue = this.maxFeatureType > 0 ? ft / this.maxFeatureType : 0;
+          break;
+        }
         case 'pieceIndex':
         default: {
           // Map piece index to 0..1 across all pieces
@@ -363,6 +425,80 @@ export class NurbsRenderer {
 
   setProgress(frac: number): void {
     this.progress = Math.max(0, Math.min(1, frac));
+  }
+
+  /** Toggle overhang highlighting */
+  setHighlightOverhangs(enabled: boolean): void {
+    this.options.highlightOverhangs = enabled;
+  }
+
+  /** Toggle Z-seam marker visibility */
+  setZSeamVisible(visible: boolean): void {
+    this.options.zSeamVisible = visible;
+  }
+
+  /** Toggle bridge highlighting */
+  setHighlightBridges(enabled: boolean): void {
+    this.options.highlightBridges = enabled;
+  }
+
+  /** Toggle support structure highlighting */
+  setHighlightSupport(enabled: boolean): void {
+    this.options.highlightSupport = enabled;
+  }
+
+  /**
+   * Set per-piece feed rates for the 'feedRate' color attribute.
+   * @param feedRates Array of feed rates in mm/min, one per piece.
+   */
+  setFeedRates(feedRates: number[]): void {
+    this.pieceFeedRates = new Float32Array(feedRates);
+    this.maxFeedRate = 0;
+    for (const f of feedRates) {
+      if (f > this.maxFeedRate) this.maxFeedRate = f;
+    }
+  }
+
+  /**
+   * Set per-piece spindle RPM for the 'spindleRpm' color attribute.
+   */
+  setSpindleRpms(rpms: number[]): void {
+    this.pieceSpindleRpm = new Float32Array(rpms);
+    this.maxSpindleRpm = 0;
+    for (const r of rpms) {
+      if (r > this.maxSpindleRpm) this.maxSpindleRpm = r;
+    }
+  }
+
+  /**
+   * Set per-piece tool numbers for the 'toolNumber' color attribute.
+   */
+  setToolNumbers(tools: number[]): void {
+    this.pieceToolNumbers = new Float32Array(tools);
+    this.maxToolNumber = 0;
+    for (const t of tools) {
+      if (t > this.maxToolNumber) this.maxToolNumber = t;
+    }
+  }
+
+  /**
+   * Set per-piece coolant states for the 'coolant' color attribute.
+   * Values: 0=off, 1=mist, 2=flood, 3=mist+flood
+   */
+  setCoolantStates(states: number[]): void {
+    this.pieceCoolantStates = new Float32Array(states);
+  }
+
+  /**
+   * Set per-piece feature type indices for the 'featureType' color attribute.
+   * Each unique feature type gets a sequential index.
+   */
+  setFeatureTypes(types: number[]): void {
+    this.pieceFeatureTypes = new Float32Array(types);
+    this.maxFeatureType = 0;
+    for (const t of types) {
+      if (t > this.maxFeatureType) this.maxFeatureType = t;
+    }
   }
 
   /**

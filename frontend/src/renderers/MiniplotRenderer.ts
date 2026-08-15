@@ -29,6 +29,11 @@ export interface MiniplotSegment {
 export interface MiniplotData {
   totalTime: number;
   segments: MiniplotSegment[];
+  // Optional timeline event overlays (line numbers where events occur)
+  toolChangeLines?: number[];
+  tempChangeLines?: number[];
+  fanChangeLines?: number[];
+  coolantChangeLines?: number[];
 }
 
 interface ViewRange {
@@ -463,6 +468,49 @@ export class MiniplotRenderer {
         vertices.push(x2, h - padBottom, HIGHLIGHT_COLOR[0], HIGHLIGHT_COLOR[1], HIGHLIGHT_COLOR[2]);
         break; // Only highlight first matching segment
       }
+    }
+
+    // ── Draw timeline event overlays (tool changes, temp, fan, coolant) ──
+    // Build a line-to-time lookup from segments
+    const lineToTime = new Map<number, number>();
+    for (const s of segments) {
+      if (!lineToTime.has(s.lineNumber)) {
+        lineToTime.set(s.lineNumber, s.timeStart);
+      }
+    }
+
+    // Helper: draw a small colored tick at the top of the plot for an event
+    const drawEventTick = (lineNum: number, color: [number, number, number]): void => {
+      const t = lineToTime.get(lineNum);
+      if (t === undefined || t < this.view.tMin || t > this.view.tMax) return;
+      const x = t2x(t);
+      const tickH = 8 * dpr;
+      // Small triangle/tick at the top
+      vertices.push(x - 3 * dpr, padTop, color[0], color[1], color[2]);
+      vertices.push(x + 3 * dpr, padTop, color[0], color[1], color[2]);
+      vertices.push(x + 3 * dpr, padTop, color[0], color[1], color[2]);
+      vertices.push(x + 3 * dpr, padTop + tickH, color[0], color[1], color[2]);
+      vertices.push(x - 3 * dpr, padTop + tickH, color[0], color[1], color[2]);
+      vertices.push(x + 3 * dpr, padTop + tickH, color[0], color[1], color[2]);
+      vertices.push(x - 3 * dpr, padTop + tickH, color[0], color[1], color[2]);
+      vertices.push(x - 3 * dpr, padTop, color[0], color[1], color[2]);
+    };
+
+    // Tool changes: yellow ticks
+    if (this.data.toolChangeLines) {
+      for (const ln of this.data.toolChangeLines) drawEventTick(ln, [1.0, 0.85, 0.0]);
+    }
+    // Temperature changes: red ticks
+    if (this.data.tempChangeLines) {
+      for (const ln of this.data.tempChangeLines) drawEventTick(ln, [1.0, 0.3, 0.2]);
+    }
+    // Fan changes: blue ticks
+    if (this.data.fanChangeLines) {
+      for (const ln of this.data.fanChangeLines) drawEventTick(ln, [0.3, 0.6, 1.0]);
+    }
+    // Coolant changes: cyan ticks
+    if (this.data.coolantChangeLines) {
+      for (const ln of this.data.coolantChangeLines) drawEventTick(ln, [0.2, 0.9, 0.9]);
     }
 
     // Upload to GPU

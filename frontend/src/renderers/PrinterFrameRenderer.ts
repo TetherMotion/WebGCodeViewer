@@ -26,11 +26,16 @@ export class PrinterFrameRenderer {
   private bindGroup: GPUBindGroup | null = null;
   private staticVertexCount: number = 0;
   private dynamicVertexCount: number = 0;
+  private buildPlateStart: number = 0;  // vertex index where build plate starts
+  private buildPlateCount: number = 0;  // number of build plate vertices
 
   private visibleFlag: boolean = true;
   private extruderX: number = 0;
   private extruderY: number = 0;
   private extruderZ: number = 0;
+
+  // Bed temperature for build plate color (0°C = gray, 100°C = red)
+  private bedTemp: number = 0;
 
   // Printer frame dimensions (derived from the print's bounding box)
   private frameMin: [number, number, number] = [-100, -100, 0];
@@ -148,6 +153,14 @@ export class PrinterFrameRenderer {
     this.buildDynamicGeometry();
   }
 
+  /**
+   * Set the bed temperature for build plate color visualization.
+   * 0°C = gray, 60°C = warm orange, 100°C+ = red.
+   */
+  setBedTemperature(temp: number): void {
+    this.bedTemp = temp;
+  }
+
   private buildStaticGeometry(): void {
     const [minX, minY, minZ] = this.frameMin;
     const [maxX, maxY, maxZ] = this.frameMax;
@@ -164,11 +177,13 @@ export class PrinterFrameRenderer {
     // Column 4: (minX, maxY)
     verts.push(minX, maxY, minZ,  minX, maxY, maxZ);
 
-    // Build plate (rectangle at z=minZ)
+    // Build plate (rectangle at z=minZ) — tracked separately for temperature coloring
+    this.buildPlateStart = verts.length / 3;
     verts.push(minX, minY, minZ,  maxX, minY, minZ);
     verts.push(maxX, minY, minZ,  maxX, maxY, minZ);
     verts.push(maxX, maxY, minZ,  minX, maxY, minZ);
     verts.push(minX, maxY, minZ,  minX, minY, minZ);
+    this.buildPlateCount = (verts.length / 3) - this.buildPlateStart;
 
     // Top frame (rectangle at z=maxZ)
     verts.push(minX, minY, maxZ,  maxX, minY, maxZ);
@@ -255,18 +270,49 @@ export class PrinterFrameRenderer {
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.visibleFlag || !this.pipeline || !this.uniformBuffer || !this.bindGroup) return;
 
+    // Compute build plate color from bed temperature
+    // 0°C = gray (0.5, 0.5, 0.55), 60°C = warm orange (0.8, 0.5, 0.2), 100°C+ = red (0.9, 0.2, 0.1)
+    const tempFactor = Math.min(1.0, this.bedTemp / 100);
+    const plateR = 0.5 + tempFactor * 0.4;
+    const plateG = 0.5 - tempFactor * 0.3;
+    const plateB = 0.55 - tempFactor * 0.45;
+
     // Draw static frame (semi-transparent gray)
     if (this.staticBuffer && this.staticVertexCount > 0) {
-      const uniformData = new ArrayBuffer(80);
-      const view = new Float32Array(uniformData);
-      for (let i = 0; i < 16; i++) view[i] = viewProj[i];
-      view[16] = 0.5; view[17] = 0.5; view[18] = 0.55; view[19] = 0.4; // gray, 40% alpha
-      this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+      // Draw non-plate vertices in gray
+      const nonPlateCount = this.staticVertexCount - this.buildPlateCount;
+      if (nonPlateCount > 0) {
+        const uniformData = new ArrayBuffer(80);
+        const view = new Float32Array(uniformData);
+        for (let i = 0; i < 16; i++) view[i] = viewProj[i];
+        view[16] = 0.5; view[17] = 0.5; view[18] = 0.55; view[19] = 0.4; // gray, 40% alpha
+        this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
-      pass.setPipeline(this.pipeline);
-      pass.setBindGroup(0, this.bindGroup);
-      pass.setVertexBuffer(0, this.staticBuffer);
-      pass.draw(this.staticVertexCount);
+        pass.setPipeline(this.pipeline);
+        pass.setBindGroup(0, this.bindGroup);
+        pass.setVertexBuffer(0, this.staticBuffer);
+        // Draw columns + top frame + braces (before build plate)
+        pass.draw(this.buildPlateStart);
+        // Draw vertices after build plate (top frame + braces)
+        if (this.buildPlateStart + this.buildPlateCount < this.staticVertexCount) {
+          pass.draw(this.staticVertexCount - this.buildPlateStart - this.buildPlateCount,
+                    1, this.buildPlateStart + this.buildPlateCount, 0);
+        }
+      }
+
+      // Draw build plate with temperature color
+      if (this.buildPlateCount > 0) {
+        const uniformData = new ArrayBuffer(80);
+        const view = new Float32Array(uniformData);
+        for (let i = 0; i < 16; i++) view[i] = viewProj[i];
+        view[16] = plateR; view[17] = plateG; view[18] = plateB; view[19] = 0.5;
+        this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+
+        pass.setPipeline(this.pipeline);
+        pass.setBindGroup(0, this.bindGroup);
+        pass.setVertexBuffer(0, this.staticBuffer);
+        pass.draw(this.buildPlateCount, 1, this.buildPlateStart, 0);
+      }
     }
 
     // Draw dynamic parts (gantry + extruder) in bright orange

@@ -29,10 +29,10 @@ const ATLAS_ROWS = Math.ceil(NUM_GLYPHS / ATLAS_COLS);
 const ATLAS_W = ATLAS_COLS * GLYPH_CELL;
 const ATLAS_H = ATLAS_ROWS * GLYPH_CELL;
 
-// World-space character dimensions (mm)
-const CHAR_HEIGHT = 2.5;
-const CHAR_WIDTH = 1.5;
-const CHAR_GAP = 0.3;
+// World-space character dimensions (mm) — 3x enlarged for readability
+const CHAR_HEIGHT = 7.5;
+const CHAR_WIDTH = 4.5;
+const CHAR_GAP = 0.9;
 
 // Label thinning: show every Nth tick to avoid clutter
 const TICK_STRIDE = 2;
@@ -193,22 +193,24 @@ export class GridLabelRenderer {
 
     for (const tick of thinnedTicks) {
       const label = this.formatValue(tick.value);
-      const [tx, ty] = tick.position;
 
-      // Compute label offset from tick position
-      // X-axis labels: below the grid (negative Y), centered on tick X
-      // Y-axis labels: left of the grid (negative X), right-aligned on tick Y
+      // Labels are placed OUTSIDE the grid:
+      // X-axis ticks are at [p, tickLen, 0] — the grid edge is at Y=0,
+      //   so labels go at negative Y (below the grid).
+      // Y-axis ticks are at [tickLen, p, 0] — the grid edge is at X=0,
+      //   so labels go at negative X (left of the grid).
+      const labelMargin = 2; // mm gap from the grid edge
       let originX: number, originY: number;
       if (tick.axis === 0) {
-        // X-axis: center the label below the tick
+        // X-axis: center the label below the grid edge (Y = 0)
         const labelWidth = label.length * (CHAR_WIDTH + CHAR_GAP) - CHAR_GAP;
-        originX = tx - labelWidth / 2;
-        originY = ty - CHAR_HEIGHT - 1; // 1mm below the tick
+        originX = tick.value - labelWidth / 2;
+        originY = -CHAR_HEIGHT - labelMargin; // outside, below Y=0
       } else {
-        // Y-axis: right-align the label to the left of the tick
+        // Y-axis: right-align the label to the left of the grid edge (X = 0)
         const labelWidth = label.length * (CHAR_WIDTH + CHAR_GAP) - CHAR_GAP;
-        originX = tx - labelWidth - 1; // 1mm left of the tick
-        originY = ty - CHAR_HEIGHT / 2;
+        originX = -labelWidth - labelMargin; // outside, left of X=0
+        originY = tick.value - CHAR_HEIGHT / 2;
       }
 
       // Render each character as a quad
