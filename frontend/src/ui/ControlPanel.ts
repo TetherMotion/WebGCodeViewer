@@ -109,7 +109,7 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     const mapLabel = document.createElement('label');
     mapLabel.textContent = 'Map:';
     const mapSelect = document.createElement('select');
-    for (const map of ['viridis', 'plasma', 'jet', 'turbo', 'grayscale', 'rainbow']) {
+    for (const map of ['viridis', 'plasma', 'jet', 'turbo', 'grayscale', 'rainbow', 'cividis', 'coolwarm']) {
       const opt = document.createElement('option');
       opt.value = map;
       opt.textContent = map;

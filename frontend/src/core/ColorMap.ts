@@ -4,7 +4,7 @@
  * Maps scalar values (velocity, acceleration, jerk, curvature) to RGB colors.
  */
 
-export type ColorMapName = 'viridis' | 'plasma' | 'jet' | 'turbo' | 'grayscale' | 'rainbow';
+export type ColorMapName = 'viridis' | 'plasma' | 'jet' | 'turbo' | 'grayscale' | 'rainbow' | 'cividis' | 'coolwarm';
 
 export interface ColorStop {
   t: number;
@@ -58,6 +58,25 @@ const rainbowStops: ColorStop[] = [
   { t: 1.0, color: [200, 0, 0] },
 ];
 
+// Feature #126: Colorblind-friendly color maps
+// Cividis: designed for color vision deficiency (blue-yellow)
+const cividisStops: ColorStop[] = [
+  { t: 0.0, color: [0, 32, 77] },
+  { t: 0.25, color: [48, 76, 119] },
+  { t: 0.5, color: [120, 132, 47] },
+  { t: 0.75, color: [205, 184, 32] },
+  { t: 1.0, color: [255, 233, 69] },
+];
+
+// Cool-warm: diverging blue-red, distinguishable for most CVD types
+const coolwarmStops: ColorStop[] = [
+  { t: 0.0, color: [59, 76, 192] },
+  { t: 0.25, color: [98, 130, 234] },
+  { t: 0.5, color: [221, 221, 221] },
+  { t: 0.75, color: [234, 130, 98] },
+  { t: 1.0, color: [192, 76, 59] },
+];
+
 const colorMapStops: Record<ColorMapName, ColorStop[]> = {
   viridis: viridisStops,
   plasma: plasmaStops,
@@ -65,6 +84,8 @@ const colorMapStops: Record<ColorMapName, ColorStop[]> = {
   turbo: turboStops,
   grayscale: grayscaleStops,
   rainbow: rainbowStops,
+  cividis: cividisStops,
+  coolwarm: coolwarmStops,
 };
 
 function interpStops(stops: ColorStop[], t: number): [number, number, number] {
@@ -126,6 +147,6 @@ export class ColorMap {
   }
 
   static availableMaps(): ColorMapName[] {
-    return ['viridis', 'plasma', 'jet', 'turbo', 'grayscale', 'rainbow'];
+    return ['viridis', 'plasma', 'jet', 'turbo', 'grayscale', 'rainbow', 'cividis', 'coolwarm'];
   }
 }

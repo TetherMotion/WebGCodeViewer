@@ -2204,3 +2204,76 @@ test.describe('Enhanced status bar (Feature #84)', () => {
     expect(text).toBeTruthy();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// PART 24: Colorblind-Friendly Color Maps (Feature #126)
+// ═══════════════════════════════════════════════════════════════════════
+
+test.describe('Colorblind-friendly color maps (Feature #126)', () => {
+  test('color map dropdown includes cividis option', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const mapSelect = page.locator('.control-group select').nth(1);
+    const options = await mapSelect.locator('option').allTextContents();
+    expect(options).toContain('cividis');
+  });
+
+  test('color map dropdown includes coolwarm option', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const mapSelect = page.locator('.control-group select').nth(1);
+    const options = await mapSelect.locator('option').allTextContents();
+    expect(options).toContain('coolwarm');
+  });
+
+  test('selecting cividis color map works without errors', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'cividis_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    const mapSelect = page.locator('.control-group select').nth(1);
+    await mapSelect.selectOption('cividis');
+    await page.waitForTimeout(500);
+
+    collector.assertClean('cividis color map');
+  });
+
+  test('selecting coolwarm color map works without errors', async ({ page, request }) => {
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'coolwarm_test.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    const mapSelect = page.locator('.control-group select').nth(1);
+    await mapSelect.selectOption('coolwarm');
+    await page.waitForTimeout(500);
+
+    collector.assertClean('coolwarm color map');
+  });
+
+  test('all 8 color maps can be selected', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const mapSelect = page.locator('.control-group select').nth(1);
+    const maps = ['viridis', 'plasma', 'jet', 'turbo', 'grayscale', 'rainbow', 'cividis', 'coolwarm'];
+
+    for (const map of maps) {
+      await mapSelect.selectOption(map);
+      await page.waitForTimeout(200);
+      expect(await mapSelect.inputValue()).toBe(map);
+    }
+  });
+});

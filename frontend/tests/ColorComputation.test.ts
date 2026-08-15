@@ -197,15 +197,17 @@ describe('ColorMap.sampleNormalized', () => {
 // ─── Color Map Distinctness ────────────────────────────────────────────
 
 describe('Color map distinctness', () => {
-  it('all 6 color maps are available', () => {
+  it('all 8 color maps are available', () => {
     const maps = ColorMap.availableMaps();
-    expect(maps).toHaveLength(6);
+    expect(maps).toHaveLength(8);
     expect(maps).toContain('viridis');
     expect(maps).toContain('plasma');
     expect(maps).toContain('jet');
     expect(maps).toContain('turbo');
     expect(maps).toContain('grayscale');
     expect(maps).toContain('rainbow');
+    expect(maps).toContain('cividis');
+    expect(maps).toContain('coolwarm');
   });
 
   it('different color maps produce different colors at t=0.5', () => {
@@ -215,8 +217,8 @@ describe('Color map distinctness', () => {
       const [r, g, b] = cm.sample(0.5);
       colors.add(`${Math.round(r)}_${Math.round(g)}_${Math.round(b)}`);
     }
-    // All 6 should produce distinct colors at t=0.5
-    expect(colors.size).toBe(6);
+    // All 8 should produce distinct colors at t=0.5
+    expect(colors.size).toBe(8);
   });
 
   it('color map name is stored correctly', () => {
