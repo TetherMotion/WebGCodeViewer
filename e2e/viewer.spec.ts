@@ -57,7 +57,17 @@ function setupErrorCollector(page: Page) {
              e.includes('CreateBindGroup') ||
              e.includes('Invalid BindGroup') ||
              e.includes('Invalid CommandBuffer') ||
-             e.includes('minBindingSize'),
+             e.includes('minBindingSize') ||
+             e.includes('Buffer size') ||
+             e.includes('offset') ||
+             e.includes('Viewport') ||
+             e.includes('Scissor') ||
+             e.includes('depth texture') ||
+             e.includes('Attachment') ||
+             e.includes('RenderPass') ||
+             e.includes('GPUBuffer') ||
+             e.includes('GPUTexture') ||
+             e.includes('destroyed'),
       );
       expect(webgpuErrors, 'WebGPU validation errors detected').toEqual([]);
     },
@@ -253,6 +263,257 @@ test.describe('Rendering stability', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(5000);
     collector.assertNoErrors('5 second render loop');
+    collector.assertNoWebGPUErrors();
+  });
+
+  test('no errors after rapid resize events', async ({ page }) => {
+    const collector = setupErrorCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Rapidly change viewport size to trigger ResizeObserver
+    for (let i = 0; i < 5; i++) {
+      await page.setViewportSize({
+        width: 800 + i * 100,
+        height: 600 + i * 50,
+      });
+      await page.waitForTimeout(200);
+    }
+
+    // Wait for resize to settle
+    await page.waitForTimeout(1000);
+    collector.assertNoErrors('rapid resize');
+    collector.assertNoWebGPUErrors();
+  });
+
+  test('no errors when canvas has zero size (minimized)', async ({ page }) => {
+    const collector = setupErrorCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Set viewport to very small size
+    await page.setViewportSize({ width: 1, height: 1 });
+    await page.waitForTimeout(500);
+
+    // Restore
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.waitForTimeout(500);
+
+    collector.assertNoErrors('zero-size canvas');
+  });
+});
+
+// ─── WebGPU Renderer Tests ──────────────────────────────────────────
+
+test.describe('WebGPU renderer initialization', () => {
+  test('all renderer canvases exist in DOM', async ({ page }) => {
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // Main canvas
+    await expect(page.locator('#webgpu-canvas')).toBeVisible();
+    // Gizmo canvas
+    await expect(page.locator('.nav-gizmo-canvas')).toBeVisible();
+    // Direction cube canvas
+    await expect(page.locator('.nav-dir-canvas')).toBeVisible();
+  });
+
+  test('no WebGPU errors after all direction cube cells clicked', async ({ page }) => {
+    const collector = setupErrorCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    const dirCanvas = page.locator('.nav-dir-canvas');
+    const box = await dirCanvas.boundingBox();
+    expect(box).not.toBeNull();
+
+    // Click each cell in the 4x2 grid (8 cells)
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 4; col++) {
+        const x = box!.x + (col + 0.5) * (box!.width / 4);
+        const y = box!.y + (row + 0.5) * (box!.height / 2);
+        await page.mouse.click(x, y);
+        await page.waitForTimeout(100);
+      }
+    }
+
+    await page.waitForTimeout(500);
+    collector.assertNoErrors('all direction cube cells clicked');
+    collector.assertNoWebGPUErrors();
+  });
+
+  test('no WebGPU errors after projection toggle', async ({ page }) => {
+    const collector = setupErrorCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Toggle projection multiple times
+    for (let i = 0; i < 3; i++) {
+      await page.locator('.nav-proj-btn', { hasText: 'Ortho' }).click();
+      await page.waitForTimeout(300);
+      await page.locator('.nav-proj-btn', { hasText: 'Persp' }).click();
+      await page.waitForTimeout(300);
+    }
+
+    collector.assertNoErrors('projection toggle');
+    collector.assertNoWebGPUErrors();
+  });
+
+  test('no WebGPU errors after grid toggle', async ({ page }) => {
+    const collector = setupErrorCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    // Toggle grid on/off multiple times
+    const gridBtn = page.locator('#bottom-panel button', { hasText: 'Grid' });
+    for (let i = 0; i < 3; i++) {
+      await gridBtn.click();
+      await page.waitForTimeout(300);
+    }
+
+    collector.assertNoErrors('grid toggle');
+    collector.assertNoWebGPUErrors();
+  });
+
+  test('no WebGPU errors after camera reset', async ({ page }) => {
+    const collector = setupErrorCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const resetBtn = page.locator('#bottom-panel button', { hasText: 'Reset View' });
+    for (let i = 0; i < 3; i++) {
+      await resetBtn.click();
+      await page.waitForTimeout(300);
+    }
+
+    collector.assertNoErrors('camera reset');
+    collector.assertNoWebGPUErrors();
+  });
+
+  test('no WebGPU errors after mouse drag on main canvas', async ({ page }) => {
+    const collector = setupErrorCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const canvas = page.locator('#webgpu-canvas');
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+
+    // Simulate mouse drag (rotate camera)
+    const cx = box!.x + box!.width / 2;
+    const cy = box!.y + box!.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    for (let i = 0; i < 10; i++) {
+      await page.mouse.move(cx + i * 10, cy + i * 5);
+      await page.waitForTimeout(20);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(500);
+
+    collector.assertNoErrors('mouse drag');
+    collector.assertNoWebGPUErrors();
+  });
+
+  test('no WebGPU errors after mouse wheel zoom', async ({ page }) => {
+    const collector = setupErrorCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(1000);
+
+    const canvas = page.locator('#webgpu-canvas');
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+
+    // Zoom in and out with mouse wheel
+    const cx = box!.x + box!.width / 2;
+    const cy = box!.y + box!.height / 2;
+    await page.mouse.move(cx, cy);
+    for (let i = 0; i < 5; i++) {
+      await page.mouse.wheel(0, -100); // zoom in
+      await page.waitForTimeout(50);
+    }
+    for (let i = 0; i < 5; i++) {
+      await page.mouse.wheel(0, 100); // zoom out
+      await page.waitForTimeout(50);
+    }
+    await page.waitForTimeout(500);
+
+    collector.assertNoErrors('mouse wheel zoom');
+    collector.assertNoWebGPUErrors();
+  });
+});
+
+// ─── G-code Upload via UI ───────────────────────────────────────────
+
+test.describe('G-code upload and render', () => {
+  test('upload G-code via UI and verify no render errors', async ({ page }) => {
+    const collector = setupErrorCollector(page);
+    await page.goto('http://localhost:8099/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // Check if file input exists (may be hidden)
+    const fileInput = page.locator('input[type="file"]');
+    const inputCount = await fileInput.count();
+
+    if (inputCount > 0) {
+      // Upload via file input
+      const gcode = 'G1 X0 Y0 Z0 F600\nG1 X10 Y0 Z0 E1\nG1 X10 Y10 Z0 E1\nG1 X0 Y10 Z0 E1\nG1 X0 Y0 Z0 E1\n';
+      await fileInput.setInputFiles({
+        name: 'test_square.gcode',
+        mimeType: 'text/plain',
+        buffer: Buffer.from(gcode),
+      });
+
+      // Wait for processing and rendering
+      await page.waitForTimeout(5000);
+    }
+
+    collector.assertNoErrors('G-code upload and render');
+    collector.assertNoWebGPUErrors();
+  });
+
+  test('upload G-code via API and load in viewer', async ({ page, request }) => {
+    const collector = setupErrorCollector(page);
+
+    // Upload via API (request is already an APIRequestContext in Playwright)
+    const gcode = 'G1 X0 Y0 Z0 F600\nG1 X20 Y0 Z0 E1\nG1 X20 Y20 Z0 E1\nG1 X0 Y20 Z0 E1\nG1 X0 Y0 Z0 E1\n';
+    const uploadResp = await request.post('http://localhost:8099/api/trajectory/upload', {
+      headers: { 'Content-Type': 'text/plain' },
+      params: { filename: 'api_test.gcode' },
+      data: gcode,
+    });
+    expect(uploadResp.ok()).toBe(true);
+    const { jobId } = await uploadResp.json();
+
+    // Process
+    await request.post(`http://localhost:8099/api/trajectory/${jobId}/process`);
+
+    // Wait for processing
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      const statusResp = await request.get(`http://localhost:8099/api/trajectory/${jobId}/status`);
+      if (statusResp.ok()) {
+        const sj = await statusResp.json();
+        if (sj.state === 'ready') break;
+      }
+    }
+
+    // Navigate to viewer with job loaded
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(5000);
+
+    collector.assertNoErrors('API upload + viewer load');
     collector.assertNoWebGPUErrors();
   });
 });
