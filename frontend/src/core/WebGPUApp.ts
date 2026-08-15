@@ -853,6 +853,8 @@ export class WebGPUApp {
       this.depthReadbackBuffer = this.device.createBuffer({
         size: paddedBytesPerRow * h,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        // BUG 16 FIX: Label the buffer so WebGPU validation errors identify it
+        label: 'depth-readback',
       });
       this.depthData = null;
       this.depthReadbackPending = false;
@@ -988,20 +990,31 @@ export class WebGPUApp {
       buf.mapAsync(GPUMapMode.READ).then(() => {
         // Stale callback: buffer was replaced by resize, ignore
         if (gen !== this.depthReadbackGen) return;
-        const [w, h] = this.depthBufferSize;
-        const stride = this.depthPaddedRowFloats;
-        const mapped = new Float32Array(buf.getMappedRange());
-        // Unpack: copy row by row, skipping padding bytes at end of each row
-        const compact = new Float32Array(w * h);
-        for (let row = 0; row < h; row++) {
-          compact.set(mapped.subarray(row * stride, row * stride + w), row * w);
+        // BUG 16 FIX: Use try/finally to guarantee unmap() is always called.
+        // Previously, if getMappedRange() or the row-unpacking loop threw,
+        // unmap() was never called and the buffer stayed mapped forever.
+        // The .catch() handler would set depthReadbackPending = false,
+        // causing the next frame to copy to a mapped buffer →
+        // "Buffer used in submit while mapped" + "Buffer is already mapped".
+        try {
+          const [w, h] = this.depthBufferSize;
+          const stride = this.depthPaddedRowFloats;
+          const mapped = new Float32Array(buf.getMappedRange());
+          // Unpack: copy row by row, skipping padding bytes at end of each row
+          const compact = new Float32Array(w * h);
+          for (let row = 0; row < h; row++) {
+            compact.set(mapped.subarray(row * stride, row * stride + w), row * w);
+          }
+          this.depthData = compact;
+        } finally {
+          buf.unmap();
+          this.depthReadbackPending = false;
         }
-        this.depthData = compact;
-        buf.unmap();
-        this.depthReadbackPending = false;
       }).catch(() => {
         // Stale callback: buffer was replaced by resize, don't touch pending
         if (gen !== this.depthReadbackGen) return;
+        // mapAsync rejected (e.g., buffer was destroyed) — buffer is not mapped,
+        // so no unmap() needed. Just release the pending flag.
         this.depthReadbackPending = false;
       });
     }

@@ -230,7 +230,9 @@ test.describe('WebGPU canvas rendering', () => {
   });
 
   test('no buffer mapping errors during rendering', async ({ page, request }) => {
-    // This tests the "Buffer used in submit while mapped" error
+    // BUG 16: "Buffer used in submit while mapped" + "Buffer is already mapped"
+    // The depth readback buffer's mapAsync callback didn't call unmap() if
+    // getMappedRange() threw, leaving the buffer mapped forever.
     const collector = setupMessageCollector(page);
     const { jobId, status } = await uploadAndProcess(request, COMPLEX_GCODE, 'webgpu_buffer.gcode');
     expect(status).toBe('ready');
@@ -246,6 +248,140 @@ test.describe('WebGPU canvas rendering', () => {
        (m.text.includes('mapped') || m.text.includes('submit')))
     );
     expect(bufferErrors).toEqual([]);
+  });
+
+  test('no buffer mapping errors during aggressive resize', async ({ page, request }) => {
+    // BUG 16 regression: resizing the canvas destroys and recreates the depth
+    // readback buffer. If a mapAsync is in-flight during resize, the buffer
+    // could be left in a mapped state.
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, COMPLEX_GCODE, 'webgpu_buffer_resize.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.locator('canvas[data-ready="true"]').waitFor({ timeout: 10000 });
+    await page.waitForTimeout(1000);
+
+    // Aggressively resize the viewport to trigger depth buffer reallocation
+    for (let i = 0; i < 10; i++) {
+      await page.setViewportSize({ width: 800 + i * 50, height: 600 + i * 30 });
+      await page.waitForTimeout(200);
+    }
+    // Resize back to small then large to stress-test
+    await page.setViewportSize({ width: 400, height: 300 });
+    await page.waitForTimeout(500);
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.waitForTimeout(500);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.waitForTimeout(1000);
+
+    const bufferErrors = collector.messages.filter(m =>
+      m.type === 'error' &&
+      m.text.includes('Buffer') &&
+      (m.text.includes('mapped') || m.text.includes('submit'))
+    );
+    expect(bufferErrors, 'Buffer mapping errors during resize').toEqual([]);
+  });
+
+  test('no buffer mapping errors during rapid resize with G-code loaded', async ({ page, request }) => {
+    // BUG 16 regression: rapid resize cycles while rendering G-code
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'webgpu_buffer_rapid.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.locator('canvas[data-ready="true"]').waitFor({ timeout: 10000 });
+    await page.waitForTimeout(1000);
+
+    // Rapid resize cycle: small → large → small → large
+    const sizes = [
+      { width: 320, height: 240 },
+      { width: 1920, height: 1080 },
+      { width: 320, height: 240 },
+      { width: 1280, height: 720 },
+      { width: 100, height: 100 },
+      { width: 2560, height: 1440 },
+    ];
+    for (const size of sizes) {
+      await page.setViewportSize(size);
+      await page.waitForTimeout(300);
+    }
+    // Wait for any pending mapAsync to resolve
+    await page.waitForTimeout(2000);
+
+    const bufferErrors = collector.messages.filter(m =>
+      m.type === 'error' &&
+      m.text.includes('Buffer') &&
+      (m.text.includes('mapped') || m.text.includes('submit'))
+    );
+    expect(bufferErrors, 'Buffer mapping errors during rapid resize').toEqual([]);
+  });
+
+  test('no buffer mapping errors after long rendering session', async ({ page, request }) => {
+    // BUG 16 regression: the error may only appear after many frames of
+    // rendering, when a transient getMappedRange failure leaves the buffer
+    // mapped. Run for 5 seconds to catch intermittent issues.
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, COMPLEX_GCODE, 'webgpu_buffer_long.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.locator('canvas[data-ready="true"]').waitFor({ timeout: 10000 });
+
+    // Interact with the viewer during rendering to trigger depth readback
+    const canvas = page.locator('#webgpu-canvas');
+    const box = await canvas.boundingBox();
+    if (box) {
+      // Mouse drag to rotate camera (triggers depth re-rendering)
+      await canvas.hover();
+      await page.mouse.down();
+      for (let i = 0; i < 20; i++) {
+        await page.mouse.move(box.x + 100 + i * 5, box.y + 100 + i * 2);
+        await page.waitForTimeout(50);
+      }
+      await page.mouse.up();
+    }
+    // Zoom in/out (triggers depth re-rendering at different distances)
+    for (let i = 0; i < 10; i++) {
+      await canvas.hover();
+      await page.mouse.wheel(0, i % 2 === 0 ? 100 : -100);
+      await page.waitForTimeout(100);
+    }
+    await page.waitForTimeout(2000);
+
+    const bufferErrors = collector.messages.filter(m =>
+      m.type === 'error' &&
+      m.text.includes('Buffer') &&
+      (m.text.includes('mapped') || m.text.includes('submit'))
+    );
+    expect(bufferErrors, 'Buffer mapping errors after long session').toEqual([]);
+  });
+
+  test('depth readback buffer is labeled', async ({ page, request }) => {
+    // BUG 16: The depth readback buffer should be labeled so that any
+    // future WebGPU validation errors clearly identify the source.
+    const collector = setupMessageCollector(page);
+    const { jobId, status } = await uploadAndProcess(request, SQUARE_GCODE, 'webgpu_buffer_label.gcode');
+    expect(status).toBe('ready');
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.locator('canvas[data-ready="true"]').waitFor({ timeout: 10000 });
+    await page.waitForTimeout(2000);
+
+    // If there are any buffer errors, they should mention "depth-readback"
+    // (the label we set on the buffer). If the buffer is unlabeled, the
+    // error would say "Buffer (unlabeled)".
+    const unlabeledErrors = collector.messages.filter(m =>
+      m.type === 'error' &&
+      m.text.includes('Buffer (unlabeled)')
+    );
+    // We don't expect any errors, but if there are any, they should NOT
+    // say "unlabeled" — they should identify the buffer by its label.
+    expect(unlabeledErrors, 'Unlabeled buffer errors found — buffer label not set').toEqual([]);
   });
 });
 

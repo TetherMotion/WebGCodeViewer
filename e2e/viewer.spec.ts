@@ -398,6 +398,41 @@ test.describe('Rendering stability', () => {
     collector.assertNoWebGPUErrors();
   });
 
+  // BUG 16 regression: specifically check for buffer mapping error strings
+  // that indicate the depth readback buffer was left in a mapped state.
+  // These errors appear as "Buffer used in submit while mapped" and
+  // "Buffer is already mapped" in the WebGPU validation layer.
+  test('BUG 16: no "Buffer used in submit while mapped" errors', async ({ page, request }) => {
+    const collector = setupErrorCollector(page);
+
+    const gcode = 'G1 X0 Y0 Z0 F600\nG1 X20 Y0 Z0 E1\nG1 X20 Y20 Z0 E1\nG1 X0 Y20 Z0 E1\nG1 X0 Y0 Z0 E1\n';
+    const uploadResp = await request.post('http://localhost:8099/api/trajectory/upload', {
+      headers: { 'Content-Type': 'text/plain' },
+      params: { filename: 'bug16_buffer.gcode' },
+      data: gcode,
+    });
+    expect(uploadResp.ok()).toBe(true);
+    const { jobId } = await uploadResp.json();
+    await request.post(`http://localhost:8099/api/trajectory/${jobId}/process`);
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      const s = await request.get(`http://localhost:8099/api/trajectory/${jobId}/status`);
+      if (s.ok() && (await s.json()).state === 'ready') break;
+    }
+
+    await page.goto(`http://localhost:8099/?job=${jobId}`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);
+
+    // Specifically check for the exact error messages from BUG 16
+    const bufferMappedErrors = collector.consoleErrors.filter(e =>
+      e.includes('used in submit while mapped') ||
+      e.includes('is already mapped') ||
+      e.includes('MapAsync')
+    );
+    expect(bufferMappedErrors, 'Buffer mapping errors (BUG 16)').toEqual([]);
+  });
+
   test('no errors when canvas has zero size (minimized)', async ({ page }) => {
     const collector = setupErrorCollector(page);
     await page.goto('http://localhost:8099/');
