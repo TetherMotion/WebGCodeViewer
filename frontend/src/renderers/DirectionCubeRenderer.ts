@@ -3,8 +3,15 @@
  * @brief WebGPU renderer for CAD-like direction cube buttons.
  *
  * Renders 7 small 3D cubes to a single canvas, each viewed from a
- * different direction. The face pointing toward the viewer is
- * highlighted (full color), all other faces are dimmed.
+ * different direction. Cubes are gray with semi-transparent faces
+ * and more opaque edges. The face pointing toward the viewer (the
+ * "marked" face) is rendered at higher opacity than the other sides.
+ *
+ * Opacity levels:
+ *   - Edges (corners):  50%
+ *   - Normal faces:     10%
+ *   - Marked face:      30%
+ *
  * Uses WebGPU viewports to render each cube in its own grid cell.
  */
 
@@ -21,7 +28,7 @@ const FACE_NZ = 5; // -Z (bottom)
 
 // Which face to highlight for each direction
 const HIGHLIGHT_MAP: Record<ViewDirection, number> = {
-  iso:    -1,   // no highlight (all faces full color)
+  iso:    -1,   // no highlight (all faces same)
   top:    FACE_PZ,
   bottom: FACE_NZ,
   front:  FACE_NY,
@@ -43,21 +50,31 @@ const VIEW_PARAMS: Record<ViewDirection, { eye: Vec3; up: Vec3 }> = {
 
 const DIRECTIONS: ViewDirection[] = ['iso', 'top', 'front', 'right', 'left', 'back', 'bottom'];
 
+// Gray color for all cube parts
+const GRAY = [0.6, 0.6, 0.6] as const;
+
+// Opacity levels
+const ALPHA_EDGE = 0.5;     // edges (corners)
+const ALPHA_FACE = 0.1;     // normal faces (sides)
+const ALPHA_MARKED = 0.3;   // marked/highlighted face
+
 export class DirectionCubeRenderer {
   private device: GPUDevice;
   private canvas: HTMLCanvasElement;
   private context: GPUCanvasContext | null = null;
   private format: GPUTextureFormat = 'bgra8unorm';
   private depthTexture: GPUTexture | null = null;
-  private pipeline: GPURenderPipeline | null = null;
-  private vertexBuffer: GPUBuffer | null = null;
+  private facePipeline: GPURenderPipeline | null = null;
+  private edgePipeline: GPURenderPipeline | null = null;
+  private faceVertexBuffer: GPUBuffer | null = null;
+  private edgeVertexBuffer: GPUBuffer | null = null;
   private indexBuffer: GPUBuffer | null = null;
   private uniformBuffer: GPUBuffer | null = null;
-  private bindGroup: GPUBindGroup | null = null;
+  private faceBindGroup: GPUBindGroup | null = null;
+  private edgeBindGroup: GPUBindGroup | null = null;
 
   private cols = 4;
   private rows = 2;
-  private cellSize = 36; // CSS pixels per cell
 
   // Uniform buffer slot size must be 256-byte aligned for dynamic offsets
   private static readonly UNIFORM_SLOT_SIZE = 256;
@@ -88,58 +105,67 @@ export class DirectionCubeRenderer {
         };
         @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
-        struct VertexInput {
+        // ── Face pipeline vertex ──
+        struct FaceVertexInput {
           @location(0) position: vec3<f32>,
           @location(1) normal: vec3<f32>,
           @location(2) faceIdx: f32,
         };
-
-        struct VertexOutput {
+        struct FaceVertexOutput {
           @builtin(position) clipPosition: vec4<f32>,
           @location(0) normal: vec3<f32>,
           @location(1) faceIdx: f32,
         };
-
         @vertex
-        fn vs_main(input: VertexInput) -> VertexOutput {
-          var output: VertexOutput;
+        fn vs_face(input: FaceVertexInput) -> FaceVertexOutput {
+          var output: FaceVertexOutput;
           output.clipPosition = uniforms.viewProj * vec4<f32>(input.position, 1.0);
           output.normal = input.normal;
           output.faceIdx = input.faceIdx;
           return output;
         }
-
         @fragment
-        fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+        fn fs_face(input: FaceVertexOutput) -> @location(0) vec4<f32> {
           let faceIdx = i32(input.faceIdx);
           let highlighted = i32(uniforms.highlightedFace);
 
-          // Base face colors: X=red, Y=green, Z=blue
-          var color: vec3<f32>;
-          if (faceIdx == 0 || faceIdx == 1) {
-            color = vec3<f32>(0.85, 0.25, 0.25); // red
-          } else if (faceIdx == 2 || faceIdx == 3) {
-            color = vec3<f32>(0.25, 0.75, 0.25); // green
-          } else {
-            color = vec3<f32>(0.25, 0.45, 0.9);  // blue
-          }
-
-          // Dim non-highlighted faces
-          if (highlighted >= 0 && faceIdx != highlighted) {
-            color = color * 0.25;
-          }
-
-          // Simple directional lighting
+          // Gray base color with simple directional lighting
           let lightDir = normalize(vec3<f32>(0.4, -0.4, 0.8));
           let ndotl = max(dot(normalize(input.normal), lightDir), 0.0);
-          let lit = color * (0.45 + 0.55 * ndotl);
+          let lit = ${GRAY[0].toFixed(1)}, ${GRAY[1].toFixed(1)}, ${GRAY[2].toFixed(1)};
+          let color = vec3<f32>(lit) * (0.5 + 0.5 * ndotl);
 
-          return vec4<f32>(lit, 1.0);
+          // Alpha: marked face is more opaque than other faces
+          var alpha = ${ALPHA_FACE.toFixed(2)};
+          if (highlighted >= 0 && faceIdx == highlighted) {
+            alpha = ${ALPHA_MARKED.toFixed(2)};
+          }
+
+          return vec4<f32>(color * alpha, alpha);
+        }
+
+        // ── Edge pipeline vertex ──
+        struct EdgeVertexInput {
+          @location(0) position: vec3<f32>,
+        };
+        struct EdgeVertexOutput {
+          @builtin(position) clipPosition: vec4<f32>,
+        };
+        @vertex
+        fn vs_edge(input: EdgeVertexInput) -> EdgeVertexOutput {
+          var output: EdgeVertexOutput;
+          output.clipPosition = uniforms.viewProj * vec4<f32>(input.position, 1.0);
+          return output;
+        }
+        @fragment
+        fn fs_edge(input: EdgeVertexOutput) -> @location(0) vec4<f32> {
+          let alpha = ${ALPHA_EDGE.toFixed(2)};
+          return vec4<f32>(vec3<f32>(${GRAY[0].toFixed(1)}, ${GRAY[1].toFixed(1)}, ${GRAY[2].toFixed(1)}) * alpha, alpha);
         }
       `,
     });
 
-    // Explicit bind group layout with dynamic offset for per-cube uniforms
+    // Bind group layout with dynamic offset for per-cube uniforms
     const bindGroupLayout = this.device.createBindGroupLayout({
       entries: [{
         binding: 0,
@@ -152,11 +178,26 @@ export class DirectionCubeRenderer {
       bindGroupLayouts: [bindGroupLayout],
     });
 
-    this.pipeline = this.device.createRenderPipeline({
+    // Blend state for semi-transparent rendering (premultiplied alpha)
+    const blendState: GPUBlendState = {
+      color: {
+        srcFactor: 'one',
+        dstFactor: 'one-minus-src-alpha',
+        operation: 'add',
+      },
+      alpha: {
+        srcFactor: 'one',
+        dstFactor: 'one-minus-src-alpha',
+        operation: 'add',
+      },
+    };
+
+    // Face pipeline (triangles with alpha blending)
+    this.facePipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: {
         module: shader,
-        entryPoint: 'vs_main',
+        entryPoint: 'vs_face',
         buffers: [{
           arrayStride: 28, // 3 pos + 3 normal + 1 faceIdx = 7 floats
           attributes: [
@@ -168,20 +209,46 @@ export class DirectionCubeRenderer {
       },
       fragment: {
         module: shader,
-        entryPoint: 'fs_main',
-        targets: [{ format: this.format }],
+        entryPoint: 'fs_face',
+        targets: [{ format: this.format, blend: blendState }],
       },
-      primitive: { topology: 'triangle-list' },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
       depthStencil: {
         format: 'depth32float',
         depthCompare: 'less',
-        depthWriteEnabled: true,
+        depthWriteEnabled: false, // don't write depth so edges can draw over faces
       },
     });
 
-    // Build cube geometry: 6 faces × 4 vertices = 24 vertices
+    // Edge pipeline (lines with alpha blending)
+    this.edgePipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: {
+        module: shader,
+        entryPoint: 'vs_edge',
+        buffers: [{
+          arrayStride: 12, // 3 pos
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x3' },
+          ],
+        }],
+      },
+      fragment: {
+        module: shader,
+        entryPoint: 'fs_edge',
+        targets: [{ format: this.format, blend: blendState }],
+      },
+      primitive: { topology: 'line-list' },
+      depthStencil: {
+        format: 'depth32float',
+        depthCompare: 'always', // edges always visible
+        depthWriteEnabled: false,
+      },
+    });
+
+    // ── Build cube face geometry: 6 faces × 4 vertices = 24 vertices ──
     const S = 0.5; // half-size
-    const vertices = new Float32Array([
+    const faceVertices = new Float32Array([
       // +X face (right) - faceIdx 0
       S, -S, -S,  1, 0, 0,  0,
       S,  S, -S,  1, 0, 0,  0,
@@ -224,11 +291,11 @@ export class DirectionCubeRenderer {
       20, 21, 22, 20, 22, 23,  // -Z
     ]);
 
-    this.vertexBuffer = this.device.createBuffer({
-      size: vertices.byteLength,
+    this.faceVertexBuffer = this.device.createBuffer({
+      size: faceVertices.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.vertexBuffer, 0, vertices);
+    this.device.queue.writeBuffer(this.faceVertexBuffer, 0, faceVertices);
 
     this.indexBuffer = this.device.createBuffer({
       size: indices.byteLength,
@@ -236,24 +303,55 @@ export class DirectionCubeRenderer {
     });
     this.device.queue.writeBuffer(this.indexBuffer, 0, indices);
 
+    // ── Build cube edge geometry: 12 edges × 2 vertices = 24 vertices ──
+    // Cube corners
+    const c = [
+      [-S, -S, -S], // 0
+      [ S, -S, -S], // 1
+      [ S,  S, -S], // 2
+      [-S,  S, -S], // 3
+      [-S, -S,  S], // 4
+      [ S, -S,  S], // 5
+      [ S,  S,  S], // 6
+      [-S,  S,  S], // 7
+    ];
+    // 12 edges as pairs of corner indices
+    const edges = [
+      [0,1], [1,2], [2,3], [3,0], // bottom face
+      [4,5], [5,6], [6,7], [7,4], // top face
+      [0,4], [1,5], [2,6], [3,7], // vertical edges
+    ];
+    const edgeVertices = new Float32Array(edges.length * 2 * 3);
+    let ei = 0;
+    for (const [a, b] of edges) {
+      edgeVertices[ei++] = c[a][0]; edgeVertices[ei++] = c[a][1]; edgeVertices[ei++] = c[a][2];
+      edgeVertices[ei++] = c[b][0]; edgeVertices[ei++] = c[b][1]; edgeVertices[ei++] = c[b][2];
+    }
+
+    this.edgeVertexBuffer = this.device.createBuffer({
+      size: edgeVertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.edgeVertexBuffer, 0, edgeVertices);
+
     this.uniformBuffer = this.device.createBuffer({
       size: DirectionCubeRenderer.UNIFORM_SLOT_SIZE * DirectionCubeRenderer.NUM_CUBES,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    // Create bind group once — dynamic offset is set per-draw.
-    // Must specify size: without it, the binding defaults to the full
-    // buffer, and offset + fullSize overflows when hasDynamicOffset=true.
     const slotSize = DirectionCubeRenderer.UNIFORM_SLOT_SIZE;
-    this.bindGroup = this.device.createBindGroup({
+    this.faceBindGroup = this.device.createBindGroup({
       layout: bindGroupLayout,
       entries: [{
         binding: 0,
-        resource: {
-          buffer: this.uniformBuffer,
-          offset: 0,
-          size: slotSize,
-        },
+        resource: { buffer: this.uniformBuffer, offset: 0, size: slotSize },
+      }],
+    });
+    this.edgeBindGroup = this.device.createBindGroup({
+      layout: bindGroupLayout,
+      entries: [{
+        binding: 0,
+        resource: { buffer: this.uniformBuffer, offset: 0, size: slotSize },
       }],
     });
 
@@ -292,16 +390,16 @@ export class DirectionCubeRenderer {
   }
 
   render(): void {
-    if (!this.device || !this.context || !this.pipeline || !this.bindGroup) return;
-    if (!this.vertexBuffer || !this.indexBuffer || !this.uniformBuffer || !this.depthTexture) return;
+    if (!this.device || !this.context || !this.facePipeline || !this.edgePipeline) return;
+    if (!this.faceBindGroup || !this.edgeBindGroup) return;
+    if (!this.faceVertexBuffer || !this.edgeVertexBuffer || !this.indexBuffer) return;
+    if (!this.uniformBuffer || !this.depthTexture) return;
 
     const dpr = window.devicePixelRatio || 1;
     const cellW = Math.max(1, this.canvas.clientWidth * dpr / this.cols);
     const cellH = Math.max(1, this.canvas.clientHeight * dpr / this.rows);
 
     // ── Write all per-cube uniform data BEFORE recording the render pass ──
-    // Each cube gets its own 256-byte slot in the uniform buffer.
-    // We write all 7 slots now, then use dynamic offsets in setBindGroup.
     for (let i = 0; i < DIRECTIONS.length; i++) {
       const dir = DIRECTIONS[i];
       const params = VIEW_PARAMS[dir];
@@ -336,17 +434,12 @@ export class DirectionCubeRenderer {
       },
     });
 
-    pass.setPipeline(this.pipeline);
-    pass.setVertexBuffer(0, this.vertexBuffer);
-    pass.setIndexBuffer(this.indexBuffer, 'uint32');
-
     const slotSize = DirectionCubeRenderer.UNIFORM_SLOT_SIZE;
 
     for (let i = 0; i < DIRECTIONS.length; i++) {
       const col = i % this.cols;
       const row = Math.floor(i / this.cols);
 
-      // Set viewport to this cell
       pass.setViewport(
         col * cellW, row * cellH,
         cellW, cellH,
@@ -357,9 +450,18 @@ export class DirectionCubeRenderer {
         cellW, cellH,
       );
 
-      // Bind uniform with dynamic offset for this cube's slot
-      pass.setBindGroup(0, this.bindGroup, [i * slotSize]);
+      // Draw faces (semi-transparent triangles)
+      pass.setPipeline(this.facePipeline);
+      pass.setBindGroup(0, this.faceBindGroup, [i * slotSize]);
+      pass.setVertexBuffer(0, this.faceVertexBuffer);
+      pass.setIndexBuffer(this.indexBuffer, 'uint32');
       pass.drawIndexed(36);
+
+      // Draw edges (more opaque lines)
+      pass.setPipeline(this.edgePipeline);
+      pass.setBindGroup(0, this.edgeBindGroup, [i * slotSize]);
+      pass.setVertexBuffer(0, this.edgeVertexBuffer);
+      pass.draw(24); // 12 edges × 2 vertices
     }
 
     pass.end();
@@ -367,7 +469,8 @@ export class DirectionCubeRenderer {
   }
 
   destroy(): void {
-    this.vertexBuffer?.destroy();
+    this.faceVertexBuffer?.destroy();
+    this.edgeVertexBuffer?.destroy();
     this.indexBuffer?.destroy();
     this.uniformBuffer?.destroy();
     this.depthTexture?.destroy();
