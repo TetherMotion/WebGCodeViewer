@@ -79,6 +79,9 @@ struct ProcessResult {
     size_t sampleCount = 0;
     bool success = false;
     std::string errorMessage;
+    /// Non-fatal warning message (e.g. parse errors with recovered segments).
+    /// Shown to the user but doesn't prevent loading.
+    std::string warning;
 
     /// Per-piece G64 corner deviation % (0-100). One entry per NURBS piece.
     /// Populated by computeCornerDeviation() during processing.
