@@ -1978,7 +1978,10 @@ export class WebGPUApp {
           this.controlPanel.setStatus(`Load failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
         }
       } else if (status.state === 'processing') {
-        setTimeout(poll, 500);
+        setTimeout(() => poll().catch((e) => {
+          console.error(`Polling error for job ${jobId}:`, e);
+          this.controlPanel.setStatus(`Polling failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
+        }), 500);
       } else if (status.state === 'failed') {
         const errMsg = status.errorMessage || 'Unknown error';
         // Log full structured error to console for debugging
@@ -3009,7 +3012,10 @@ export class WebGPUApp {
             this.controlPanel.setStatus(`Load failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
           }
         } else if (status.state === 'processing') {
-          setTimeout(poll, 500);
+          setTimeout(() => poll().catch((e) => {
+            console.error(`Polling error for job ${jobId}:`, e);
+            this.controlPanel.setStatus(`Polling failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
+          }), 500);
         } else if (status.state === 'failed') {
           const errMsg = status.errorMessage || 'Unknown error';
           console.group('%c[Job Failed]', 'color: #ff4444; font-weight: bold; font-size: 13px');
