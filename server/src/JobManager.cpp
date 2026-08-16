@@ -511,10 +511,24 @@ void JobManager::processWorker(std::shared_ptr<Job> job) {
         );
     } catch (const std::exception& e) {
         result.success = false;
-        result.errorMessage = std::string("Processing exception: ") + e.what();
+        // Include exception type name and the G-code size/first line for context.
+        // typeid(*e).name() gives the mangled name on some compilers, but
+        // e.what() is usually sufficient. We also include the file size and
+        // first line to help diagnose encoding/format issues.
+        size_t gcodeSize = job->gcodeText.size();
+        std::string firstLine;
+        size_t nl = job->gcodeText.find('\n');
+        firstLine = nl != std::string::npos
+            ? job->gcodeText.substr(0, std::min(nl, size_t(80)))
+            : job->gcodeText.substr(0, std::min(gcodeSize, size_t(80)));
+        result.errorMessage = std::format(
+            "Processing exception: {} (G-code: {} bytes, first line: \"{}\")",
+            e.what(), gcodeSize, firstLine);
     } catch (...) {
         result.success = false;
-        result.errorMessage = "Processing exception: unknown error";
+        result.errorMessage = std::format(
+            "Processing exception: unknown error (non-std::exception thrown, "
+            "G-code: {} bytes)", job->gcodeText.size());
     }
 
     {

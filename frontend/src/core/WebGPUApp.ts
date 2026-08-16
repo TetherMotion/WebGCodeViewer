@@ -1949,8 +1949,11 @@ export class WebGPUApp {
       } else if (status.state === 'processing') {
         setTimeout(poll, 500);
       } else if (status.state === 'failed') {
-        console.error('Job failed:', status.errorMessage);
-        this.controlPanel.setStatus(`Failed: ${status.errorMessage}`);
+        const errMsg = status.errorMessage || 'Unknown error';
+        console.error('Job failed:', errMsg);
+        // Show the full error message — it now includes error code, line number,
+        // context snippet, and G-code details from the server.
+        this.controlPanel.setStatus(`Failed: ${errMsg}`);
       }
     };
     await poll();
@@ -2960,8 +2963,9 @@ export class WebGPUApp {
         } else if (status.state === 'processing') {
           setTimeout(poll, 500);
         } else if (status.state === 'failed') {
-          console.error('Job failed:', status.errorMessage);
-          this.controlPanel.setStatus(`Failed: ${status.errorMessage}`);
+          const errMsg = status.errorMessage || 'Unknown error';
+          console.error('Job failed:', errMsg);
+          this.controlPanel.setStatus(`Failed: ${errMsg}`);
         }
       };
       await poll();

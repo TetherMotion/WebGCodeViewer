@@ -41,7 +41,62 @@ ProcessResult GCodeProcessor::process(
 
     if (!parseResult.error.ok()) {
         result.success = false;
-        result.errorMessage = "G-code parse error";
+        const auto& err = parseResult.error;
+        // Build a detailed error message including the error code, line number,
+        // message text, and context snippet from the GCode::Error struct.
+        // This makes it possible to diagnose parse failures without guessing.
+        std::string codeStr = std::to_string(static_cast<uint16_t>(err.code));
+        // Map error code to a human-readable name
+        const char* codeName = "UNKNOWN";
+        switch (err.code) {
+            case GCode::ErrorCode::SYNTAX_ERROR:      codeName = "SYNTAX_ERROR"; break;
+            case GCode::ErrorCode::UNKNOWN_GCODE:     codeName = "UNKNOWN_GCODE"; break;
+            case GCode::ErrorCode::UNKNOWN_MCODE:     codeName = "UNKNOWN_MCODE"; break;
+            case GCode::ErrorCode::INVALID_WORD:      codeName = "INVALID_WORD"; break;
+            case GCode::ErrorCode::MISSING_VALUE:     codeName = "MISSING_VALUE"; break;
+            case GCode::ErrorCode::INVALID_LINE_NUMBER: codeName = "INVALID_LINE_NUMBER"; break;
+            case GCode::ErrorCode::EXPRESSION_ERROR:  codeName = "EXPRESSION_ERROR"; break;
+            case GCode::ErrorCode::PARAMETER_ERROR:   codeName = "PARAMETER_ERROR"; break;
+            case GCode::ErrorCode::MISSING_BRACKET:   codeName = "MISSING_BRACKET"; break;
+            case GCode::ErrorCode::INVALID_OCODE:     codeName = "INVALID_OCODE"; break;
+            case GCode::ErrorCode::SUBROUTINE_ERROR:  codeName = "SUBROUTINE_ERROR"; break;
+            case GCode::ErrorCode::FILE_NOT_FOUND:    codeName = "FILE_NOT_FOUND"; break;
+            case GCode::ErrorCode::NESTED_TOO_DEEP:   codeName = "NESTED_TOO_DEEP"; break;
+            case GCode::ErrorCode::NO_FEED_RATE:      codeName = "NO_FEED_RATE"; break;
+            case GCode::ErrorCode::INVALID_MOTION:    codeName = "INVALID_MOTION"; break;
+            case GCode::ErrorCode::ARC_RADIUS_ERROR:  codeName = "ARC_RADIUS_ERROR"; break;
+            case GCode::ErrorCode::AXIS_WORD_MISSING: codeName = "AXIS_WORD_MISSING"; break;
+            case GCode::ErrorCode::CONFLICTING_WORDS: codeName = "CONFLICTING_WORDS"; break;
+            case GCode::ErrorCode::INVALID_PLANE:     codeName = "INVALID_PLANE"; break;
+            case GCode::ErrorCode::SPINDLE_NOT_ON:    codeName = "SPINDLE_NOT_ON"; break;
+            case GCode::ErrorCode::TOOL_ERROR:        codeName = "TOOL_ERROR"; break;
+            case GCode::ErrorCode::PROBE_ERROR:       codeName = "PROBE_ERROR"; break;
+            case GCode::ErrorCode::LIMIT_EXCEEDED:    codeName = "LIMIT_EXCEEDED"; break;
+            case GCode::ErrorCode::INTERLOCK_ERROR:   codeName = "INTERLOCK_ERROR"; break;
+            case GCode::ErrorCode::CUTTER_COMP_ERROR: codeName = "CUTTER_COMP_ERROR"; break;
+            case GCode::ErrorCode::QUEUE_FULL:        codeName = "QUEUE_FULL"; break;
+            case GCode::ErrorCode::UNDEFINED_SUBROUTINE: codeName = "UNDEFINED_SUBROUTINE"; break;
+            case GCode::ErrorCode::RETURN_WITHOUT_CALL: codeName = "RETURN_WITHOUT_CALL"; break;
+            case GCode::ErrorCode::BREAK_OUTSIDE_LOOP: codeName = "BREAK_OUTSIDE_LOOP"; break;
+            case GCode::ErrorCode::CONTINUE_OUTSIDE_LOOP: codeName = "CONTINUE_OUTSIDE_LOOP"; break;
+            case GCode::ErrorCode::ENDIF_WITHOUT_IF:  codeName = "ENDIF_WITHOUT_IF"; break;
+            case GCode::ErrorCode::ELSE_WITHOUT_IF:   codeName = "ELSE_WITHOUT_IF"; break;
+            case GCode::ErrorCode::ENDWHILE_WITHOUT_WHILE: codeName = "ENDWHILE_WITHOUT_WHILE"; break;
+            case GCode::ErrorCode::DUPLICATE_LABEL:   codeName = "DUPLICATE_LABEL"; break;
+            case GCode::ErrorCode::MEMORY_ERROR:      codeName = "MEMORY_ERROR"; break;
+            case GCode::ErrorCode::HARDWARE_ERROR:    codeName = "HARDWARE_ERROR"; break;
+            case GCode::ErrorCode::TIMEOUT:           codeName = "TIMEOUT"; break;
+            case GCode::ErrorCode::ESTOP:             codeName = "ESTOP"; break;
+            default: break;
+        }
+        // Extract null-terminated strings from fixed-size char arrays
+        std::string msg(err.message.data(), strnlen(err.message.data(), err.message.size()));
+        std::string ctx(err.context.data(), strnlen(err.context.data(), err.context.size()));
+        result.errorMessage = std::format("G-code parse error [{} {}] at line {}: {}{}{}",
+            codeStr, codeName, err.line,
+            msg.empty() ? "(no message)" : msg,
+            ctx.empty() ? "" : " | context: \"",
+            ctx.empty() ? "" : ctx + "\"");
         if (progress) progress(1.0);
         return result;
     }
@@ -63,7 +118,13 @@ ProcessResult GCodeProcessor::process(
 
     if (segments.empty()) {
         result.success = false;
-        result.errorMessage = "No motion segments found in G-code";
+        // Include block count and a hint about what was parsed, so the user
+        // can distinguish "empty file" from "only comments/M-codes" from
+        // "all moves were zero-length".
+        result.errorMessage = std::format(
+            "No motion segments found in G-code (parsed {} blocks, 0 motion segments). "
+            "Check that the file contains G0/G1/G2/G3 motion commands.",
+            blocks.size());
         if (progress) progress(1.0);
         return result;
     }
@@ -121,7 +182,12 @@ ProcessResult GCodeProcessor::process(
         result.pathLength = result.nurbsPath->totalLength();
     } catch (const std::exception& e) {
         result.success = false;
-        result.errorMessage = std::string("NURBS construction failed: ") + e.what();
+        // Sum segment lengths for total path length context
+        double totalLen = 0.0;
+        for (const auto& seg : segments) totalLen += seg.segmentLength;
+        result.errorMessage = std::format(
+            "NURBS construction failed: {} ({} segments, total path length: {:.1} mm)",
+            e.what(), segments.size(), totalLen);
         if (progress) progress(1.0);
         return result;
     }
