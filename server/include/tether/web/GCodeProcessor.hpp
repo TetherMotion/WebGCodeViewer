@@ -23,6 +23,8 @@
 #include "tether/web/TrajectorySerializer.hpp"
 #include "tether/motion_planner/geometry/PiecewiseNurbsPath.hpp"
 #include "tether/motion_planner/geometry/PlanningSegmentConverter.hpp"
+#include "tether/export/GCodeAnalysis.hpp"
+#include "tether/motion_planner/profile_renurbs/ReNURBSProfile.hpp"
 
 #include <memory>
 #include <optional>
@@ -90,6 +92,26 @@ struct ProcessResult {
     /// Per-segment speed data for miniplot visualization.
     /// One entry per segment (before NURBS piece filtering).
     std::vector<SegmentSpeed> segmentSpeeds;
+
+    /// Parsed PlanningSegments — retained for G-code analysis queries.
+    /// Populated during process() from PlanningSegmentBuilder output.
+    std::vector<GCode::PlanningSegment> planningSegments;
+
+    /// G-code block metadata from PlanningSegmentBuilder (original GCode namespace).
+    std::vector<GCode::BlockMetadata> gcodeBlocks;
+
+    /// ReNURBS profile — per-segment NURBS curves for v(s), a(s), j(s), t(s).
+    /// Built from the velocity profile (BasicTOPPRA) fitted to NURBS curves.
+    /// WAY smaller than dense samples: O(segments × controlPoints) vs O(samples).
+    /// Used for shader-based velocity/acceleration/jerk visualization.
+    std::optional<tether::motion::profile_renurbs::ReNURBSProfile> renurbsProfile;
+
+    /// Maximum velocity/acceleration/jerk values across all segments.
+    /// Used for normalization in the frontend color mapping.
+    float renurbsMaxVelocity = 0.0f;
+    float renurbsMaxAcceleration = 0.0f;
+    float renurbsMaxJerk = 0.0f;
+    float renurbsMaxTime = 0.0f;
 };
 
 /// @brief Processes G-code text into trajectory samples.

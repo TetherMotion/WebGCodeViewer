@@ -1,5 +1,8 @@
 #include "tether/web/GCodeProcessor.hpp"
 #include "tether/gcode/motion/G64CornerMode.hpp"
+#include "tether/motion_planner/PathAdapter.hpp"
+#include "tether/motion_planner/BasicTOPPRA.hpp"
+#include "tether/motion_planner/profile_renurbs/ReNURBSProfileBuilder.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -124,6 +127,94 @@ ProcessResult GCodeProcessor::process(
 
     if (progress) progress(0.6);
 
+    // ── Step 3b: Build ReNURBS profile (velocity/accel/jerk as NURBS curves) ──
+    // Constructs a PathAdapter from the PiecewiseNurbsPath, runs BasicTOPPRA
+    // to get a sampled VelocityProfile, then fits per-segment NURBS curves
+    // via buildReNURBSProfile(). This produces a WAY smaller representation
+    // than dense sampling: O(segments × controlPoints) vs O(samples).
+    // The resulting curves are evaluated in the frontend shader directly.
+    try {
+        if (result.nurbsPath && !result.nurbsPath->pieces().empty()) {
+            // Build PathAdapter from the NURBS path
+            MotionPlanner::PathAdapter<3, double> pathAdapter(*result.nurbsPath);
+
+            // Configure kinematic limits from ProcessConfig
+            MotionPlanner::KinematicLimits<3, double> limits;
+            limits.path.maxPathVelocity = config.maxVelocity;
+            limits.path.maxPathAcceleration = config.maxAcceleration;
+            limits.path.maxPathJerk = config.maxJerk;
+            limits.path.jerkLimitEnabled = (config.maxJerk > 0.0);
+            for (int i = 0; i < 3; ++i) {
+                limits.axis.maxVelocity[i] = config.maxVelocity;
+                limits.axis.maxAcceleration[i] = config.maxAcceleration;
+                limits.axis.maxJerk[i] = config.maxJerk;
+            }
+            limits.axis.jerkLimitEnabled = limits.path.jerkLimitEnabled;
+
+            // Run BasicTOPPRA to get a sampled velocity profile
+            MotionPlanner::BasicTOPPRA<3, double> profiler(limits);
+            // Use the first segment's feed rate as the global feed rate.
+            // Feed rate in G-code is mm/min; convert to mm/s.
+            // For a more accurate profile, per-segment feed rates would be
+            // used, but BasicTOPPRA takes a single feed rate.
+            double feedRate = config.maxVelocity;
+            for (const auto& seg : parseResult.segments) {
+                if (seg.feedRate > 0.0) {
+                    feedRate = std::min(feedRate, seg.feedRate / 60.0);
+                    break;
+                }
+            }
+            // Number of samples for the velocity profile — enough resolution
+            // for the ReNURBS fitter to capture the profile shape.
+            std::size_t numSamples = std::max<std::size_t>(
+                200, pathAdapter.numSegments() * 20);
+            auto velocityProfile = profiler.computeProfile(
+                pathAdapter, feedRate, 0.0, 0.0, numSamples);
+
+            // Build ReNURBS profile from the velocity profile
+            tether::motion::profile_renurbs::ReNURBSConfig renurbsConfig;
+            renurbsConfig.enabled = true;
+            renurbsConfig.certify = false;  // skip certification for speed
+            renurbsConfig.certifyThrowOnFailure = false;
+            // Use default tolerances and degrees
+
+            auto renurbsProfile = tether::motion::profile_renurbs::buildReNURBSProfile(
+                velocityProfile, pathAdapter, limits, renurbsConfig);
+
+            // Compute max values for normalization from control point convex hull
+            float maxVel = 0.0f, maxAccel = 0.0f, maxJerk = 0.0f, maxTime = 0.0f;
+            for (const auto& seg : renurbsProfile.perSegment) {
+                if (seg.velocity.curve) {
+                    for (const auto& cp : seg.velocity.curve->controlPoints()) {
+                        if (cp.dim() > 0) maxVel = std::max(maxVel, static_cast<float>(cp[0]));
+                    }
+                }
+                if (seg.acceleration.curve) {
+                    for (const auto& cp : seg.acceleration.curve->controlPoints()) {
+                        if (cp.dim() > 0) maxAccel = std::max(maxAccel, static_cast<float>(std::abs(cp[0])));
+                    }
+                }
+                if (seg.jerk.curve) {
+                    for (const auto& cp : seg.jerk.curve->controlPoints()) {
+                        if (cp.dim() > 0) maxJerk = std::max(maxJerk, static_cast<float>(std::abs(cp[0])));
+                    }
+                }
+                maxTime = std::max(maxTime, static_cast<float>(seg.sEnd));
+            }
+
+            result.renurbsProfile = std::move(renurbsProfile);
+            result.renurbsMaxVelocity = maxVel;
+            result.renurbsMaxAcceleration = maxAccel;
+            result.renurbsMaxJerk = maxJerk;
+            result.renurbsMaxTime = maxTime;
+        }
+    } catch (const std::exception& e) {
+        // ReNURBS is optional — if it fails, continue without it.
+        // The viewer will fall back to piece-level coloring.
+    }
+
+    if (progress) progress(0.7);
+
     // ── Step 4 (optional): Dense sampling via TrajectoryAnalyzer ──
     // Only run if explicitly requested (nurbsOnly=false).
     // This is the slow O(samples) step that generates millions of points.
@@ -152,6 +243,9 @@ ProcessResult GCodeProcessor::process(
     }
 
     result.blocks = std::move(blocks);
+    // Retain PlanningSegments and GCode block metadata for analysis queries
+    result.planningSegments = std::move(segments);
+    result.gcodeBlocks = std::move(parseResult.blocks);
     result.success = true;
 
     if (progress) progress(1.0);

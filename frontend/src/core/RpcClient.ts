@@ -209,6 +209,22 @@ export class RpcClient {
     return new Uint8Array(buf);
   }
 
+  /**
+   * Fetch ReNURBS profile binary data (TRNP format) via HTTP.
+   * Returns per-segment NURBS curves for velocity, acceleration, jerk,
+   * and time — a WAY smaller representation than dense sampled data.
+   */
+  async getReNurbsHttp(jobId: string): Promise<Uint8Array> {
+    const url = `${this.httpBaseUrl}/api/trajectory/${jobId}/renurbs`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new ViewerRpcError(`HTTP ${resp.status}: ${text || resp.statusText}`, resp.status);
+    }
+    const buf = await resp.arrayBuffer();
+    return new Uint8Array(buf);
+  }
+
   async getBlocks(jobId: string): Promise<GetBlocksResponse> {
     return this.transport.unary(
       'getBlocks',

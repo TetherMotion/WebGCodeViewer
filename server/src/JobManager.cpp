@@ -1,6 +1,7 @@
 #include "tether/web/JobManager.hpp"
 
 #include "tether/motion_replanner/TrajectorySampleConverter.hpp"
+#include "tether/web/ReNurbsSerializer.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -211,6 +212,28 @@ std::vector<uint8_t> JobManager::getNurbsBinary(const std::string& jobId) const
         }
     } catch (const std::exception& e) {
         // Log and return empty — the REST handler will return 404
+        return {};
+    }
+
+    return {};
+}
+
+std::vector<uint8_t> JobManager::getReNurbsBinary(const std::string& jobId) const
+{
+    auto job = getJob(jobId);
+    if (!job || job->state != JobState::Ready) return {};
+
+    try {
+        if (job->result.renurbsProfile &&
+            !job->result.renurbsProfile->perSegment.empty()) {
+            return serializeReNurbsProfile(
+                *job->result.renurbsProfile,
+                job->result.renurbsMaxVelocity,
+                job->result.renurbsMaxAcceleration,
+                job->result.renurbsMaxJerk,
+                job->result.renurbsMaxTime);
+        }
+    } catch (const std::exception& e) {
         return {};
     }
 

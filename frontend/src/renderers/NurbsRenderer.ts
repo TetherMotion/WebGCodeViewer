@@ -1,20 +1,24 @@
 /**
  * @file NurbsRenderer.ts
- * @brief WebGPU renderer for NURBS path data (NBP format).
+ * @brief WebGPU renderer for NURBS path data (NBP format) with ReNURBS
+ *        velocity/acceleration/jerk curves evaluated in WGSL shaders.
  *
  * Tessellates each NURBS piece on the CPU using De Boor's algorithm
  * and renders the resulting line segments via WebGPU. The tessellation
  * resolution is adaptive: longer pieces get more segments.
  *
- * Future: GPU tessellation via compute shader or vertex shader
- * evaluation for fully adaptive resolution based on zoom level.
+ * When ReNURBS profile data (TRNP format) is available, per-vertex
+ * velocity/acceleration/jerk values are evaluated directly in the vertex
+ * shader using De Boor's algorithm on GPU storage buffers. This provides
+ * smooth, accurate kinematic coloring without dense sampled data.
  */
 
 import { Mat4 } from '../core/MathUtils';
 import { NBPData, NBPPiece, tessellatePiece } from '../core/NurbsParser';
+import { TRNPData } from '../core/ReNurbsParser';
 import { ColorMap } from '../core/ColorMap';
 
-export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'extruderSpeed' | 'motion' | 'solid' | 'feedRate' | 'spindleRpm' | 'toolNumber' | 'coolant' | 'featureType';
+export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'extruderSpeed' | 'motion' | 'solid' | 'feedRate' | 'spindleRpm' | 'toolNumber' | 'coolant' | 'featureType' | 'velocity' | 'acceleration' | 'jerk';
 
 export interface NurbsRenderOptions {
   colorMap: ColorMap;
@@ -66,6 +70,17 @@ export class NurbsRenderer {
   private pieceFeatureTypes: Float32Array | null = null;
   private maxFeatureType: number = 0;
 
+  // ReNURBS storage buffers (group 1) — for GPU-side velocity/accel/jerk evaluation
+  private renurbsCpBuffer: GPUBuffer | null = null;       // all control points (f32)
+  private renurbsKnotBuffer: GPUBuffer | null = null;      // all knots (f32)
+  private renurbsMetaBuffer: GPUBuffer | null = null;      // quantity metadata (u32)
+  private renurbsBindGroup: GPUBindGroup | null = null;     // group 1 bind group
+  private renurbsData: TRNPData | null = null;
+  private hasReNurbs: boolean = false;
+
+  // Per-vertex segment index + normalized arc length (for ReNURBS shader evaluation)
+  private segIndexUBuffer: GPUBuffer | null = null;
+
   options: NurbsRenderOptions = {
     colorMap: new ColorMap('viridis'),
     colorAttribute: 'pieceIndex',
@@ -87,18 +102,70 @@ export class NurbsRenderer {
         struct Uniforms {
           viewProj: mat4x4<f32>,
           progress: f32,
-          _pad0: f32,
-          _pad1: f32,
-          _pad2: f32,
+          colorMode: u32,     // 0=cpuColorValue, 1=velocity, 2=accel, 3=jerk, 4=time
+          maxValue: f32,      // for normalization
+          _pad: f32,
         };
         @group(0) @binding(0) var<uniform> uniforms: Uniforms;
         @group(0) @binding(1) var colorLUT: texture_1d<f32>;
         @group(0) @binding(2) var colorSampler: sampler;
 
+        // ReNURBS storage buffers (group 1)
+        @group(1) @binding(0) var<storage, read> renurbsCPs: array<f32>;
+        @group(1) @binding(1) var<storage, read> renurbsKnots: array<f32>;
+        @group(1) @binding(2) var<storage, read> renurbsMeta: array<u32>;
+
+        const MAX_CP: u32 = 64u;
+
+        /// Evaluate a 1-D B-spline (weights=1) at parameter u using De Boor's algorithm.
+        /// @param cpBase  Index into renurbsCPs of the first control point
+        /// @param cpCount Number of control points
+        /// @param knotBase Index into renurbsKnots of the first knot
+        /// @param degree  B-spline degree
+        /// @param u       Parameter value in [0,1]
+        fn evalBSpline1D(cpBase: u32, cpCount: u32, knotBase: u32, degree: u32, u: f32) -> f32 {
+          if (cpCount == 0u) { return 0.0; }
+          if (degree == 0u) { return renurbsCPs[cpBase]; }
+
+          // Clamp u to knot domain
+          let knotMin = renurbsKnots[knotBase + degree];
+          let knotMax = renurbsKnots[knotBase + cpCount];
+          let uClamped = clamp(u, knotMin, knotMax);
+
+          // Find knot span k
+          var k = degree;
+          for (var i = degree; i < cpCount; i = i + 1u) {
+            if (renurbsKnots[knotBase + i] <= uClamped && uClamped < renurbsKnots[knotBase + i + 1u]) {
+              k = i;
+              break;
+            }
+          }
+          if (uClamped >= knotMax) { k = cpCount - 1u; }
+
+          // De Boor recursion (1-D, weights=1)
+          var d: array<f32, 64>;
+          for (var j = 0u; j <= degree; j = j + 1u) {
+            d[j] = renurbsCPs[cpBase + k - degree + j];
+          }
+
+          for (var r = 1u; r <= degree; r = r + 1u) {
+            for (var j = degree; j >= r; j = j - 1u) {
+              let i = k - degree + j;
+              let kn0 = renurbsKnots[knotBase + i];
+              let b = renurbsKnots[knotBase + j + degree - r + 1u] - kn0;
+              let alpha = select(0.0, (uClamped - kn0) / b, b != 0.0);
+              d[j] = (1.0 - alpha) * d[j - 1u] + alpha * d[j];
+            }
+          }
+
+          return d[degree];
+        }
+
         struct VertexInput {
           @location(0) position: vec3<f32>,
           @location(1) colorValue: f32,
           @location(2) sampleIdx: f32,
+          @location(3) segIndexU: vec2<f32>,  // x=segmentIndex, y=normalized arc length [0,1]
         };
 
         struct VertexOutput {
@@ -111,7 +178,26 @@ export class NurbsRenderer {
         fn vs_main(input: VertexInput) -> VertexOutput {
           var output: VertexOutput;
           output.clipPosition = uniforms.viewProj * vec4<f32>(input.position, 1.0);
-          output.colorValue = input.colorValue;
+
+          // Select color source: CPU-computed or GPU-evaluated ReNURBS
+          var cv = input.colorValue;
+          if (uniforms.colorMode > 0u) {
+            let segIdx = u32(input.segIndexU.x);
+            let localU = input.segIndexU.y;
+            // Quantity index: colorMode 1=velocity(0), 2=accel(1), 3=jerk(2), 4=time(3)
+            let qtyIdx = uniforms.colorMode - 1u;
+            // Quantity metadata: 4 u32 per (segment, quantity): cpOffset, cpCount, knotOffset, degree
+            let metaBase = segIdx * 4u * 4u + qtyIdx * 4u;
+            let cpOffset = renurbsMeta[metaBase + 0u];
+            let cpCount = renurbsMeta[metaBase + 1u];
+            let knotOffset = renurbsMeta[metaBase + 2u];
+            let degree = renurbsMeta[metaBase + 3u];
+            let val = evalBSpline1D(cpOffset, cpCount, knotOffset, degree, localU);
+            // Normalize to [0,1] using maxValue
+            cv = select(0.0, val / uniforms.maxValue, uniforms.maxValue > 0.0);
+          }
+          output.colorValue = cv;
+
           let cutoff = uniforms.progress * f32(1000000.0);
           if (input.sampleIdx > cutoff) {
             output.dimmed = 1.0;
@@ -169,6 +255,10 @@ export class NurbsRenderer {
             arrayStride: 4,
             attributes: [{ shaderLocation: 2, offset: 0, format: 'float32' }],
           },
+          {
+            arrayStride: 8,
+            attributes: [{ shaderLocation: 3, offset: 0, format: 'float32x2' }],
+          },
         ],
       },
       fragment: {
@@ -189,7 +279,7 @@ export class NurbsRenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    // Create bind group once during init (not lazily during render)
+    // Create bind group 0 once during init (not lazily during render)
     this.bindGroup = this.device.createBindGroup({
       layout: this.pipeline.getBindGroupLayout(0),
       entries: [
@@ -198,11 +288,55 @@ export class NurbsRenderer {
         { binding: 2, resource: this.sampler },
       ],
     });
+
+    // Create dummy ReNURBS storage buffers (1 byte each, will be replaced
+    // when updateReNurbsData is called). These are needed because the
+    // pipeline layout requires group 1 bindings.
+    this.createDummyReNurbsBuffers();
+  }
+
+  /**
+   * Create minimal dummy ReNURBS buffers so the pipeline can be bound
+   * even before real ReNURBS data is loaded.
+   */
+  private createDummyReNurbsBuffers(): void {
+    const dummyCp = new Float32Array(1);
+    const dummyKnot = new Float32Array(1);
+    const dummyMeta = new Uint32Array(16);  // 4 quantities × 4 values
+
+    this.renurbsCpBuffer = this.device.createBuffer({
+      size: 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.renurbsCpBuffer, 0, dummyCp);
+
+    this.renurbsKnotBuffer = this.device.createBuffer({
+      size: 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.renurbsKnotBuffer, 0, dummyKnot);
+
+    this.renurbsMetaBuffer = this.device.createBuffer({
+      size: 64,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.renurbsMetaBuffer, 0, dummyMeta);
+
+    this.renurbsBindGroup = this.device.createBindGroup({
+      layout: this.pipeline!.getBindGroupLayout(1),
+      entries: [
+        { binding: 0, resource: { buffer: this.renurbsCpBuffer } },
+        { binding: 1, resource: { buffer: this.renurbsKnotBuffer } },
+        { binding: 2, resource: { buffer: this.renurbsMetaBuffer } },
+      ],
+    });
   }
 
   /**
    * Update the renderer with NURBS path data.
    * Tessellates each piece on CPU and uploads to GPU.
+   * Also computes per-vertex segment index and normalized arc length
+   * for ReNURBS shader evaluation.
    */
   updateData(data: NBPData): void {
     const dim = data.header.dim;
@@ -213,6 +347,7 @@ export class NurbsRenderer {
     const allPositions: number[] = [];
     const allColors: number[] = [];
     const allSampleIndices: number[] = [];
+    const allSegIndexU: number[] = [];  // [segIdx, localU] per vertex
     const allIndices: number[] = [];
 
     // Precompute max extruder speed for normalization
@@ -328,6 +463,9 @@ export class NurbsRenderer {
         allPositions.push(positions[j * 3], positions[j * 3 + 1], positions[j * 3 + 2]);
         allColors.push(colorValue);
         allSampleIndices.push(vertexOffset + j);
+        // Per-vertex segment index + normalized arc length for ReNURBS evaluation.
+        // localU = j/segments gives normalized parameter in [0,1] within the piece.
+        allSegIndexU.push(i, j / segments);
       }
 
       // Line indices: connect consecutive vertices within this piece
@@ -354,6 +492,7 @@ export class NurbsRenderer {
       if (this.colorBuffer) { this.colorBuffer.destroy(); this.colorBuffer = null; }
       if (this.indexBuffer) { this.indexBuffer.destroy(); this.indexBuffer = null; }
       if (this.sampleIdxBuffer) { this.sampleIdxBuffer.destroy(); this.sampleIdxBuffer = null; }
+      if (this.segIndexUBuffer) { this.segIndexUBuffer.destroy(); this.segIndexUBuffer = null; }
       return;
     }
 
@@ -362,6 +501,7 @@ export class NurbsRenderer {
     const colData = new Float32Array(allColors);
     const idxData = new Uint32Array(allIndices);
     const sampleIdxData = new Float32Array(allSampleIndices);
+    const segIdxUData = new Float32Array(allSegIndexU);
 
     if (this.positionBuffer) this.positionBuffer.destroy();
     this.positionBuffer = this.device.createBuffer({
@@ -385,6 +525,14 @@ export class NurbsRenderer {
     this.device.queue.writeBuffer(sampleIdxBuffer, 0, sampleIdxData);
     // Store on this for rendering
     this.sampleIdxBuffer = sampleIdxBuffer;
+
+    // Segment index + normalized arc length buffer (for ReNURBS shader evaluation)
+    if (this.segIndexUBuffer) this.segIndexUBuffer.destroy();
+    this.segIndexUBuffer = this.device.createBuffer({
+      size: segIdxUData.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.segIndexUBuffer, 0, segIdxUData);
 
     if (this.indexBuffer) this.indexBuffer.destroy();
     this.indexBuffer = this.device.createBuffer({
@@ -416,6 +564,94 @@ export class NurbsRenderer {
       { bytesPerRow: 256 * 4 },
       { width: 256 },
     );
+  }
+
+  /**
+   * Update ReNURBS profile data (TRNP format).
+   * Uploads control points, knots, and quantity metadata to GPU storage
+   * buffers for shader-side De Boor evaluation.
+   */
+  updateReNurbsData(data: TRNPData): void {
+    this.renurbsData = data;
+    this.hasReNurbs = data.segments.length > 0;
+
+    // Destroy old dummy/real buffers
+    if (this.renurbsCpBuffer) this.renurbsCpBuffer.destroy();
+    if (this.renurbsKnotBuffer) this.renurbsKnotBuffer.destroy();
+    if (this.renurbsMetaBuffer) this.renurbsMetaBuffer.destroy();
+
+    // Create storage buffers with real data
+    // Align sizes to 4 bytes (Float32Array/Uint32Array already 4-byte aligned)
+    const cpSize = Math.max(4, data.allControlPoints.byteLength);
+    const knotSize = Math.max(4, data.allKnots.byteLength);
+    const metaSize = Math.max(16, data.quantityMeta.byteLength);
+
+    this.renurbsCpBuffer = this.device.createBuffer({
+      size: cpSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.renurbsCpBuffer, 0, data.allControlPoints.buffer as ArrayBuffer);
+
+    this.renurbsKnotBuffer = this.device.createBuffer({
+      size: knotSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.renurbsKnotBuffer, 0, data.allKnots.buffer as ArrayBuffer);
+
+    this.renurbsMetaBuffer = this.device.createBuffer({
+      size: metaSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.renurbsMetaBuffer, 0, data.quantityMeta.buffer as ArrayBuffer);
+
+    // Recreate bind group 1 with real buffers
+    this.renurbsBindGroup = this.device.createBindGroup({
+      layout: this.pipeline!.getBindGroupLayout(1),
+      entries: [
+        { binding: 0, resource: { buffer: this.renurbsCpBuffer } },
+        { binding: 1, resource: { buffer: this.renurbsKnotBuffer } },
+        { binding: 2, resource: { buffer: this.renurbsMetaBuffer } },
+      ],
+    });
+
+    console.info(`ReNURBS: ${data.segments.length} segments, ` +
+      `${data.header.totalControlPoints} CPs, ${data.header.totalKnots} knots, ` +
+      `maxV=${data.header.maxVelocity.toFixed(1)}, ` +
+      `maxA=${data.header.maxAcceleration.toFixed(1)}, ` +
+      `maxJ=${data.header.maxJerk.toFixed(1)}`);
+  }
+
+  /**
+   * Check if ReNURBS data is available for GPU-side velocity/accel/jerk coloring.
+   */
+  hasReNurbsData(): boolean {
+    return this.hasReNurbs;
+  }
+
+  /**
+   * Get the max value for the current color attribute (for normalization).
+   */
+  private getReNurbsMaxValue(): number {
+    if (!this.renurbsData) return 1.0;
+    switch (this.options.colorAttribute) {
+      case 'velocity': return this.renurbsData.header.maxVelocity || 1.0;
+      case 'acceleration': return this.renurbsData.header.maxAcceleration || 1.0;
+      case 'jerk': return this.renurbsData.header.maxJerk || 1.0;
+      default: return 1.0;
+    }
+  }
+
+  /**
+   * Map color attribute to shader colorMode constant.
+   * 0=cpuColorValue, 1=velocity, 2=accel, 3=jerk, 4=time
+   */
+  private getColorMode(): number {
+    switch (this.options.colorAttribute) {
+      case 'velocity': return 1;
+      case 'acceleration': return 2;
+      case 'jerk': return 3;
+      default: return 0;
+    }
   }
 
   setColorMap(map: ColorMap): void {
@@ -524,18 +760,27 @@ export class NurbsRenderer {
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.options.visible || !this.pipeline || !this.positionBuffer || this.indexCount < 2) return;
     if (!this.uniformBuffer || !this.bindGroup || !this.colorBuffer || !this.sampleIdxBuffer || !this.indexBuffer) return;
+    if (!this.segIndexUBuffer || !this.renurbsBindGroup) return;
 
+    // Uniforms: viewProj(16 floats) + progress(1) + colorMode(1) + maxValue(1) + pad(1) = 20 floats = 80 bytes
     const uniformData = new ArrayBuffer(80);
     const view = new Float32Array(uniformData);
     for (let i = 0; i < 16; i++) view[i] = viewProj[i];
     view[16] = this.progress;
+    // colorMode: use ReNURBS GPU evaluation only if data is available
+    const colorMode = this.hasReNurbs ? this.getColorMode() : 0;
+    view[17] = colorMode;  // stored as f32, interpreted as u32 in shader
+    view[18] = this.hasReNurbs ? this.getReNurbsMaxValue() : 1.0;
+    view[19] = 0; // pad
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
+    pass.setBindGroup(1, this.renurbsBindGroup);
     pass.setVertexBuffer(0, this.positionBuffer);
     pass.setVertexBuffer(1, this.colorBuffer);
     pass.setVertexBuffer(2, this.sampleIdxBuffer);
+    pass.setVertexBuffer(3, this.segIndexUBuffer);
     pass.setIndexBuffer(this.indexBuffer, 'uint32');
     pass.drawIndexed(this.indexCount);
   }
@@ -547,6 +792,10 @@ export class NurbsRenderer {
     this.uniformBuffer?.destroy();
     this.colorLUTTexture?.destroy();
     this.sampleIdxBuffer?.destroy();
+    this.segIndexUBuffer?.destroy();
+    this.renurbsCpBuffer?.destroy();
+    this.renurbsKnotBuffer?.destroy();
+    this.renurbsMetaBuffer?.destroy();
     this.cachedPositions = null;
   }
 }

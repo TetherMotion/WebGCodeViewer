@@ -8,6 +8,7 @@ import { RpcClient } from './RpcClient';
 import { ColorMap } from './ColorMap';
 import { parseTTHR, TTHRData, extractZLayer } from './TthrParser';
 import { parseNBP, NBPData } from './NurbsParser';
+import { parseTRNP, TRNPData } from './ReNurbsParser';
 import { ToolpathRenderer, ColorAttribute } from '../renderers/ToolpathRenderer';
 import { GridRenderer } from '../renderers/GridRenderer';
 import { CrossSectionRenderer } from '../renderers/CrossSectionRenderer';
@@ -269,6 +270,7 @@ export class WebGPUApp {
   private currentData: TTHRData | null = null;
   private fullData: TTHRData | null = null;  // unfiltered data (for layer reset)
   private currentNBP: NBPData | null = null;
+  private currentTRNP: TRNPData | null = null;
   private currentFilename: string = '';
   private zLayers: { layerIndex: number; zHeight: number; pieceStart: number; pieceEnd: number; pieceCount: number }[] = [];
   private animationId: number | null = null;
@@ -1791,6 +1793,7 @@ export class WebGPUApp {
     // currentNBP would still point to file A's data, causing wrong bounds,
     // wrong layer filters, and wrong bbox display.
     this.currentNBP = null;
+    this.currentTRNP = null;
     this.currentData = null;
     this.fullData = null;
     this.zLayers = [];
@@ -1819,6 +1822,23 @@ export class WebGPUApp {
         if (this.crossSectionRenderer.visible) {
           this.crossSectionRenderer.updateFromNurbs(this.currentNBP);
         }
+      }
+
+      // Fetch ReNURBS profile data (TRNP format) — per-segment NURBS curves
+      // for velocity, acceleration, jerk, and time. WAY smaller than dense
+      // sampled data. Evaluated directly in WGSL shaders for smooth coloring.
+      try {
+        const trnpBinary = await this.rpcClient.getReNurbsHttp(jobId);
+        this.currentTRNP = parseTRNP(trnpBinary);
+        this.nurbsRenderer?.updateReNurbsData(this.currentTRNP);
+        console.info(`ReNURBS data loaded: ${this.currentTRNP.header.segmentCount} segments, ` +
+                     `${this.currentTRNP.header.totalControlPoints} control points, ` +
+                     `${trnpBinary.byteLength} bytes`);
+      } catch (e) {
+        // ReNURBS is optional — if it fails, continue without it.
+        // The viewer will fall back to piece-level coloring.
+        console.info('ReNURBS data not available, using piece-level coloring');
+        this.currentTRNP = null;
       }
     } catch (e) {
       console.error('Failed to load NURBS data, falling back to TTHR:', e);

@@ -346,6 +346,36 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
             cb(resp);
         }, {drogon::Get});
 
+    // ── GET /api/trajectory/{jobId}/renurbs ──
+    // Get ReNURBS profile binary data (TRNP format) — per-segment NURBS
+    // curves for velocity, acceleration, jerk, and time. WAY smaller than
+    // dense sampled data. Evaluated directly in frontend WGSL shaders.
+    app.registerHandler("/api/trajectory/{jobId}/renurbs",
+        [jobManager, enableCors](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& cb,
+           const std::string& jobId) {
+            if (jobManager->getJobState(jobId) != JobState::Ready) {
+                cb(makeErrorResponse(404, "Job not ready", enableCors));
+                return;
+            }
+
+            auto binary = jobManager->getReNurbsBinary(jobId);
+            if (binary.empty()) {
+                cb(makeErrorResponse(404, "No ReNURBS data available", enableCors));
+                return;
+            }
+
+            auto resp = drogon::HttpResponse::newHttpResponse();
+            resp->setContentTypeString("application/octet-stream");
+            resp->addHeader("Content-Disposition",
+                            "attachment; filename=\"profile.trnp\"");
+            resp->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            resp->setBody(std::string(reinterpret_cast<const char*>(binary.data()),
+                                       binary.size()));
+            if (enableCors) addCorsHeaders(resp);
+            cb(resp);
+        }, {drogon::Get});
+
     // ── GET /api/trajectory/{jobId}/blocks ──
     app.registerHandler("/api/trajectory/{jobId}/blocks",
         [jobManager, enableCors](const drogon::HttpRequestPtr& req,

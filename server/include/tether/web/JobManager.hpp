@@ -98,6 +98,13 @@ public:
     /// @return Binary NBP data, or empty if job not ready
     std::vector<uint8_t> getNurbsBinary(const std::string& jobId) const;
 
+    /// @brief Get serialized ReNURBS profile binary data (TRNP format).
+    /// Returns per-segment NURBS curves for velocity, acceleration, jerk,
+    /// and time — a WAY smaller representation than dense sampled data.
+    /// @param jobId Job ID
+    /// @return Binary TRNP data, or empty if not available
+    std::vector<uint8_t> getReNurbsBinary(const std::string& jobId) const;
+
     /// @brief Get block metadata for a job as JSON.
     std::string getBlocksJson(const std::string& jobId) const;
 
