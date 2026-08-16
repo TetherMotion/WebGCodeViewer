@@ -182,11 +182,30 @@ export function getColorHistogram(pixels: CanvasPixels, minCount = 5): Map<strin
 // WebGPU canvases do not support toDataURL() or getContext('2d'). To capture
 // their pixels, we use Playwright's locator.screenshot() which takes a
 // screenshot of the element via the browser's compositor.
+//
+// LIMITATION: In headless Chromium with SwiftShader, the compositor caches
+// the first WebGPU frame. Subsequent screenshots on the same page return
+// the same pixels even after re-rendering. This means before/after pixel
+// comparison tests (e.g., camera rotation, color map switching) on the
+// SAME page are not possible. Tests that navigate to a new page work
+// correctly because each page load creates a fresh canvas.
+//
+// Attempted fixes that DON'T work:
+//   - transferToImageBitmap(): not implemented in bundled Chromium
+//   - copyTextureToBuffer + mapAsync: SwiftShader GC bug ("A valid external
+//     Instance reference no longer exists")
+//   - drawImage from WebGPU canvas to 2D canvas: reads cached compositor frame
+//   - Canvas resize / display toggle / reflow: don't force recomposite
 
 /**
  * Capture pixel data from a canvas element using Playwright's screenshot
  * mechanism. This works with WebGPU canvases (which don't support
  * toDataURL or getContext('2d')).
+ *
+ * NOTE: In headless Chromium with SwiftShader, the compositor caches the
+ * first WebGPU frame. Subsequent screenshots on the same page will return
+ * the same pixels even after re-rendering. Only use this for single-
+ * screenshot tests or comparisons across different page loads.
  *
  * @param locator Playwright locator for the canvas element
  * @returns Canvas pixel data, or null if the canvas is not visible

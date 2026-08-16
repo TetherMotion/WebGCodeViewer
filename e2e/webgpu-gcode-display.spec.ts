@@ -14,14 +14,19 @@
  *   3. Loaded canvas has more content than empty page (grid only)
  *   4. Different G-code files produce different visual output
  *   5. No WebGPU errors during loading and rendering
- *   6. Layer filtering changes the rendered content
  *
- * Note: Camera rotation/zoom and color map switching pixel-diff tests are
- * not included because locator.screenshot() in headless Chromium with
- * SwiftShader caches the first WebGPU canvas frame and doesn't capture
- * subsequent re-renders on the same page. Tests that navigate to a new
- * page (different G-code files) work correctly because each page load
- * creates a fresh canvas.
+ * Limitation: Camera rotation/zoom, layer filtering, and color map switching
+ * pixel-diff tests are NOT possible in headless Chromium with SwiftShader
+ * because the compositor caches the first WebGPU frame and none of the
+ * available APIs can bypass it:
+ *   - transferToImageBitmap() is not implemented in bundled Chromium
+ *   - copyTextureToBuffer + mapAsync fails with "A valid external Instance
+ *     reference no longer exists" (SwiftShader GC bug)
+ *   - drawImage from WebGPU canvas to 2D canvas reads the cached frame
+ *   - locator.screenshot() and page.screenshot() read the cached frame
+ *
+ * Tests that navigate to a new page (different G-code files) work correctly
+ * because each page load creates a fresh canvas with a new first frame.
  */
 
 import { test, expect, Page, ConsoleMessage, APIRequestContext } from '@playwright/test';
@@ -216,9 +221,8 @@ test.describe('Canvas renders visible 3D content after G-code load', () => {
 // PART 2: 3D Geometry Verification
 // ═══════════════════════════════════════════════════════════════════════
 //
-// Note: Camera rotation/zoom pixel-diff tests are not included because
-// locator.screenshot() in headless Chromium with SwiftShader does not
-// capture WebGPU canvas updates — the compositor caches the first frame.
+// Camera rotation/zoom pixel-diff tests are not possible in headless
+// Chromium with SwiftShader — see the file header comment for details.
 // The "different G-code files produce different renderings" test below
 // proves that the canvas renders actual 3D content (not a static image)
 // by showing that different toolpaths produce different pixel output.
@@ -289,20 +293,10 @@ test.describe('No WebGPU errors during G-code display', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// PART 5: Layer Filtering
+// PART 5: Layer Filtering & Color Map Switching
 // ═══════════════════════════════════════════════════════════════════════
 //
-// Note: Layer filtering pixel-diff tests are not included due to the same
-// WebGPU screenshot caching limitation described above. Layer filtering
-// functionality is verified in the headless test suite (rendering.spec.ts).
-
-// ═══════════════════════════════════════════════════════════════════════
-// PART 6: Color Map Switching
-// ═══════════════════════════════════════════════════════════════════════
-//
-// Note: Color map switching pixel-diff tests are not included because
-// locator.screenshot() in headless Chromium with SwiftShader caches the
-// first WebGPU canvas frame and doesn't capture subsequent re-renders.
-// The color map functionality is verified in the headless test suite
-// (rendering.spec.ts) which checks that the color map dropdown has all
-// expected options and that ColorMap computation produces correct colors.
+// Layer filtering and color map switching pixel-diff tests are not possible
+// in headless Chromium with SwiftShader — see the file header comment for
+// details. These features are verified in the headless test suite
+// (rendering.spec.ts) which checks the UI controls and ColorMap computation.
