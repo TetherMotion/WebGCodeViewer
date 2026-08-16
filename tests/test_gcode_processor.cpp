@@ -321,3 +321,68 @@ TEST(GCodeProcessor, ExtruderSpeedComputed) {
     EXPECT_TRUE(hasPositiveSpeed) << "Should have at least one extruding segment";
     EXPECT_TRUE(hasZeroSpeed) << "Should have at least one non-extruding segment (G0)";
 }
+
+// ── Klipper command filtering tests ─────────────────────────────────────────
+
+TEST(GCodeProcessor, FiltersM117FreeText) {
+    // M117 (LCD message) takes free-text, not numeric parameters.
+    // "M117 Printing..." has "P" as a word letter followed by text,
+    // which the lexer rejects with "Missing value after word letter".
+    // The pre-filter should comment it out.
+    const char* gcode =
+        "G21\n"
+        "G90\n"
+        "G92 E0\n"
+        "G0 X0 Y0 Z5 F3000\n"
+        "M117 Printing...\n"
+        "G1 X10 Y0 Z5 E1 F1800\n"
+        "M117 Hello World\n"
+        "G1 X20 Y0 Z5 E2 F1800\n"
+        "M30\n";
+
+    GCodeProcessor processor;
+    auto result = processor.process(gcode, sampleConfig());
+
+    EXPECT_TRUE(result.success) << result.errorMessage;
+    ASSERT_FALSE(result.samples.empty());
+}
+
+TEST(GCodeProcessor, FiltersKlipperExtendedCommands) {
+    // Klipper extended commands (SET_*, TURN_*, etc.) should be filtered.
+    const char* gcode =
+        "G21\n"
+        "G90\n"
+        "G92 E0\n"
+        "SET_HEATER_TEMPERATURE HEATER=Extruder_T2 TARGET=195.0\n"
+        "SET_PRESSURE_ADVANCE ADVANCE=0.05\n"
+        "TURN_OFF_HEATERS\n"
+        "G0 X0 Y0 Z5 F3000\n"
+        "G1 X10 Y0 Z5 E1 F1800\n"
+        "M30\n";
+
+    GCodeProcessor processor;
+    auto result = processor.process(gcode, sampleConfig());
+
+    EXPECT_TRUE(result.success) << result.errorMessage;
+    ASSERT_FALSE(result.samples.empty());
+}
+
+TEST(GCodeProcessor, FiltersAxisWordsWithoutValues) {
+    // M84 X Y E (disable specific axes) — axis letters without values.
+    // G28 X Y (home specific axes) — axis letters without values.
+    const char* gcode =
+        "G21\n"
+        "G90\n"
+        "G92 E0\n"
+        "G0 X0 Y0 Z5 F3000\n"
+        "G1 X10 Y0 Z5 E1 F1800\n"
+        "G28 X Y\n"
+        "G1 X20 Y0 Z5 E2 F1800\n"
+        "M84 X Y E\n"
+        "M30\n";
+
+    GCodeProcessor processor;
+    auto result = processor.process(gcode, sampleConfig());
+
+    EXPECT_TRUE(result.success) << result.errorMessage;
+}

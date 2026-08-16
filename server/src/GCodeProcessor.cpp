@@ -1,4 +1,5 @@
 #include "tether/web/GCodeProcessor.hpp"
+#include "tether/gcode/GCodeInterpreter.hpp"
 #include "tether/gcode/motion/G64CornerMode.hpp"
 #include "tether/motion_planner/PathAdapter.hpp"
 #include "tether/motion_planner/BasicTOPPRA.hpp"
@@ -7,6 +8,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <format>
+#include <string_view>
 
 namespace tether::web {
 
@@ -23,6 +27,164 @@ using GCodeExport::TrajectoryStatistics;
 GCodeProcessor::GCodeProcessor() = default;
 GCodeProcessor::~GCodeProcessor() = default;
 
+// ── Klipper command pre-filtering ────────────────────────────────────────────
+
+namespace {
+
+/// Check if a line is a Klipper extended G-code command that the Tether
+/// parser doesn't understand. These commands start with an uppercase letter
+/// followed by more uppercase letters/underscores (e.g. SET_PRESSURE_ADVANCE,
+/// TURN_OFF_HEATERS, SET_HEATER_TEMPERATURE) and are not standard G/M/T-words.
+///
+/// Also detects M-codes with axis words that lack numeric values (e.g.
+/// "M84 X Y E" — disable specific axes), which the lexer rejects because
+/// it expects every word letter to be followed by a number.
+bool isKlipperCommand(std::string_view line) {
+    size_t i = 0;
+    while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+    if (i >= line.size()) return false;
+    if (line[i] == ';' || line[i] == '(') return false;
+    char c0 = line[i];
+    if (i + 1 < line.size()) {
+        char c1 = line[i + 1];
+        if (std::isdigit(static_cast<unsigned char>(c1)) ||
+            c1 == ' ' || c1 == '\t' || c1 == '\r' || c1 == '\n') return false;
+    }
+    if (c0 < 'A' || c0 > 'Z') return false;
+    size_t cmdEnd = i;
+    while (cmdEnd < line.size() && ((line[cmdEnd] >= 'A' && line[cmdEnd] <= 'Z') || line[cmdEnd] == '_')) cmdEnd++;
+    if (cmdEnd - i < 2) return false;
+    if (cmdEnd < line.size()) {
+        char after = line[cmdEnd];
+        if (after != ' ' && after != '\t' && after != '\r' && after != '\n' && after != '=') return false;
+    }
+    return true;
+}
+
+/// Check if a line has word letters without numeric values, e.g. "M84 X Y E"
+/// or "M117 Printing..." (where "P" is a word letter followed by text, not a
+/// number).
+/// The Tether lexer expects every word letter to be followed by a number,
+/// so any word letter (X/Y/Z/A/B/C/U/V/W/E/F/S/P/R/T) without a numeric value
+/// causes a parse error. This is common in:
+/// - M84 (disable steppers): "M84 X Y E"
+/// - M117 (LCD message): "M117 Hello World" — free-text, not numeric params
+/// - G28 (home): "G28 X Y" — axis selection without values
+bool hasAxisWordsWithoutValues(std::string_view line) {
+    // Strip comments first
+    size_t commentPos = line.find_first_of(";(");
+    if (commentPos != std::string_view::npos) {
+        line = line.substr(0, commentPos);
+    }
+
+    // Skip leading whitespace
+    size_t i = 0;
+    while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+    if (i >= line.size()) return false;
+
+    // Must start with M or G code (single letter + digits)
+    if (line[i] != 'M' && line[i] != 'G') return false;
+    char codeLetter = line[i];
+    i++;
+    while (i < line.size() && std::isdigit(static_cast<unsigned char>(line[i]))) i++;
+
+    // Extract the M/G code number for special-case handling
+    size_t codeStart = 1;
+    size_t codeEnd = i;
+    int codeNum = 0;
+    if (codeEnd > codeStart) {
+        std::string numStr(line.substr(codeStart, codeEnd - codeStart));
+        try { codeNum = std::stoi(numStr); } catch (...) {}
+    }
+
+    // M117 (LCD message) takes free-text, not numeric parameters.
+    // Any text after M117 that contains letters will break the lexer.
+    if (codeLetter == 'M' && codeNum == 117) {
+        // Check if there's any non-whitespace text after "M117"
+        while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+        if (i < line.size()) return true;  // Has free-text message
+        return false;  // Bare "M117" is fine
+    }
+
+    // All word letters the lexer recognizes (G-code word letters).
+    // If any of these appears without a following numeric value, the lexer
+    // will reject the line with "Missing value after word letter".
+    auto isWordLetter = [](char c) {
+        return c == 'X' || c == 'Y' || c == 'Z' || c == 'A' || c == 'B' ||
+               c == 'C' || c == 'U' || c == 'V' || c == 'W' ||
+               c == 'E' || c == 'F' || c == 'S' || c == 'P' || c == 'R' ||
+               c == 'T' || c == 'I' || c == 'J' || c == 'K' || c == 'D' ||
+               c == 'H' || c == 'L' || c == 'O' || c == 'N' || c == 'Q';
+    };
+
+    // Now scan the rest for word letters without values
+    bool foundWordWithoutValue = false;
+    while (i < line.size()) {
+        // Skip whitespace
+        while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+        if (i >= line.size()) break;
+
+        char c = line[i];
+        if (isWordLetter(c)) {
+            // Check if followed by a number (or sign + number)
+            i++;
+            if (i < line.size() && (std::isdigit(static_cast<unsigned char>(line[i])) ||
+                line[i] == '.' || line[i] == '-' || line[i] == '+')) {
+                // Has a value — skip the number
+                while (i < line.size() && !std::isspace(static_cast<unsigned char>(line[i])) &&
+                       !isWordLetter(line[i])) {
+                    i++;
+                }
+            } else {
+                // Word letter without a value
+                foundWordWithoutValue = true;
+            }
+        } else {
+            i++;
+        }
+    }
+
+    return foundWordWithoutValue;
+}
+
+/// Pre-process G-code text to comment out Klipper-specific extended commands
+/// that the Tether G-code parser doesn't understand. Line numbers are preserved.
+std::string filterKlipperCommands(const std::string& gcodeText) {
+    std::string result;
+    result.reserve(gcodeText.size());
+    size_t pos = 0;
+    while (pos < gcodeText.size()) {
+        size_t lineEnd = gcodeText.find('\n', pos);
+        std::string_view line = (lineEnd == std::string::npos)
+            ? std::string_view(gcodeText.data() + pos)
+            : std::string_view(gcodeText.data() + pos, lineEnd - pos);
+        if (isKlipperCommand(line) || hasAxisWordsWithoutValues(line)) {
+            result += "; [filtered] ";
+            result += line;
+        } else {
+            result += line;
+        }
+        if (lineEnd != std::string::npos) { result += '\n'; pos = lineEnd + 1; }
+        else break;
+    }
+    return result;
+}
+
+/// Extract the Nth line (1-based) from a string, for error reporting.
+std::string extractLine(const std::string& text, uint32_t lineNum) {
+    if (lineNum == 0 || lineNum > 1000000) return "";
+    size_t pos = 0;
+    for (uint32_t i = 1; i < lineNum && pos < text.size(); i++) {
+        size_t nl = text.find('\n', pos);
+        if (nl == std::string::npos) return "";
+        pos = nl + 1;
+    }
+    size_t end = text.find('\n', pos);
+    return text.substr(pos, end - pos);
+}
+
+} // anonymous namespace
+
 // ── Main processing entry point ──────────────────────────────────────────────
 
 ProcessResult GCodeProcessor::process(
@@ -34,12 +196,41 @@ ProcessResult GCodeProcessor::process(
 
     if (progress) progress(0.0);
 
+    // ── Step 0: Pre-filter Klipper extended commands ──
+    // Klipper uses multi-letter uppercase commands (SET_PRESSURE_ADVANCE,
+    // TURN_OFF_HEATERS, etc.) that the Tether G-code lexer can't parse.
+    // We comment them out to preserve line numbers.
+    std::string filteredGcode = filterKlipperCommands(gcodeText);
+
     // ── Step 1: Parse G-code into PlanningSegments + block metadata ──
     // Uses Tether's PlanningSegmentBuilder (GCode::Interpreter under the hood)
     // with emit-arc-segments mode so arcs are preserved as exact segments.
-    auto parseResult = GCode::PlanningSegmentBuilder::fromText(gcodeText);
+    auto parseResult = GCode::PlanningSegmentBuilder::fromText(filteredGcode);
 
+    // If strict parsing fails, retry with stopOnError=false to salvage
+    // as many segments as possible. This handles files with minor syntax
+    // issues (e.g. M84 X Y E — axis words without values) that shouldn't
+    // prevent loading the entire file.
     if (!parseResult.error.ok()) {
+        GCode::InterpreterConfig retryConfig;
+        retryConfig.stopOnError = false;
+        auto retryResult = GCode::PlanningSegmentBuilder::fromText(filteredGcode, retryConfig);
+
+        if (!retryResult.segments.empty()) {
+            // We got segments despite the error — use them and report
+            // the parse error as a warning in the status, not a hard failure.
+            parseResult = std::move(retryResult);
+            // Mark that there was a non-fatal parse warning
+            result.warning = std::format(
+                "G-code had parse errors ({}), but {} segments were recovered. "
+                "Some lines may have been skipped.",
+                parseResult.error.ok() ? "recovered" : "see details",
+                parseResult.segments.size());
+        }
+    }
+
+    // If we still have a hard parse error (no segments recovered), report it
+    if (!parseResult.error.ok() && parseResult.segments.empty()) {
         result.success = false;
         const auto& err = parseResult.error;
         // Build a detailed error message including the error code, line number,
@@ -92,11 +283,23 @@ ProcessResult GCodeProcessor::process(
         // Extract null-terminated strings from fixed-size char arrays
         std::string msg(err.message.data(), strnlen(err.message.data(), err.message.size()));
         std::string ctx(err.context.data(), strnlen(err.context.data(), err.context.size()));
-        result.errorMessage = std::format("G-code parse error [{} {}] at line {}: {}{}{}",
+        // Also extract the actual G-code line at the reported line number
+        // from the original (unfiltered) text, so the user can see exactly
+        // what line caused the failure.
+        std::string sourceLine = extractLine(gcodeText, err.line);
+        if (sourceLine.empty() && err.line > 0) {
+            // The parser's line counter may be inaccurate (known issue:
+            // it sometimes reports line 1 for errors deep in the file).
+            // Try the filtered text as a fallback.
+            sourceLine = extractLine(filteredGcode, err.line);
+        }
+        result.errorMessage = std::format("G-code parse error [{} {}] at line {}: {}{}{}{}{}",
             codeStr, codeName, err.line,
             msg.empty() ? "(no message)" : msg,
             ctx.empty() ? "" : " | context: \"",
-            ctx.empty() ? "" : ctx + "\"");
+            ctx.empty() ? "" : ctx + "\"",
+            sourceLine.empty() ? "" : " | source line: \"",
+            sourceLine.empty() ? "" : sourceLine + "\"");
         if (progress) progress(1.0);
         return result;
     }
