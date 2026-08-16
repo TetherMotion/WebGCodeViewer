@@ -260,7 +260,7 @@ export class GridRenderer {
 
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.visible || !this.pipeline || !this.vertexBuffer) return;
-    this.device.queue.writeBuffer(this.uniformBuffer!, 0, viewProj.buffer as ArrayBuffer);
+    this.device.queue.writeBuffer(this.uniformBuffer!, 0, viewProj as Float32Array<ArrayBuffer>);
 
     // Draw checkerboard first (so grid lines render on top)
     if (this.checkerPipeline && this.checkerVertexBuffer && this.checkerBindGroup) {

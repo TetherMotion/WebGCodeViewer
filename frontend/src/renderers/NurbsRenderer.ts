@@ -87,6 +87,13 @@ export class NurbsRenderer {
   private paMaxOffset: number = 1.0;
   private paMaxVelocity: number = 1.0;
 
+  // Dummy buffer minimum sizes for group 1/2 bind groups when real data is absent.
+  // The meta buffer must be at least 16 u32s = 64 bytes so the shader can read
+  // metadata for a few segments/quantities without out-of-bounds access.
+  private static readonly DUMMY_CP_SIZE = 4;
+  private static readonly DUMMY_KNOT_SIZE = 4;
+  private static readonly DUMMY_META_SIZE = 64;
+
   // Per-vertex segment index + normalized arc length (for ReNURBS shader evaluation)
   private segIndexUBuffer: GPUBuffer | null = null;
 
@@ -363,6 +370,12 @@ export class NurbsRenderer {
     // when updateReNurbsData is called). These are needed because the
     // pipeline layout requires group 1 bindings.
     this.createDummyReNurbsBuffers();
+
+    // Create dummy PA storage buffers for group 2. The pipeline auto layout
+    // always contains group 2 because the shader declares @group(2), so a
+    // bind group must always be available at render time even when no PA data
+    // has been loaded yet.
+    this.createDummyPaBuffers();
   }
 
   /**
@@ -375,19 +388,19 @@ export class NurbsRenderer {
     const dummyMeta = new Uint32Array(16);  // 4 quantities × 4 values
 
     this.renurbsCpBuffer = this.device.createBuffer({
-      size: 4,
+      size: NurbsRenderer.DUMMY_CP_SIZE,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.renurbsCpBuffer, 0, dummyCp);
 
     this.renurbsKnotBuffer = this.device.createBuffer({
-      size: 4,
+      size: NurbsRenderer.DUMMY_KNOT_SIZE,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.renurbsKnotBuffer, 0, dummyKnot);
 
     this.renurbsMetaBuffer = this.device.createBuffer({
-      size: 64,
+      size: NurbsRenderer.DUMMY_META_SIZE,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.renurbsMetaBuffer, 0, dummyMeta);
@@ -400,6 +413,51 @@ export class NurbsRenderer {
         { binding: 2, resource: { buffer: this.renurbsMetaBuffer } },
       ],
     });
+  }
+
+  /**
+   * Create minimal dummy PA buffers for group 2. The pipeline auto layout
+   * always exposes group 2 because the shader declares @group(2), so we must
+   * always have a bind group bound for it even before real PA data arrives.
+   */
+  private createDummyPaBuffers(): void {
+    const dummyCp = new Float32Array(1);
+    const dummyKnot = new Float32Array(1);
+    const dummyMeta = new Uint32Array(16);  // enough for a few PA segments/quantities
+
+    this.paCpBuffer = this.device.createBuffer({
+      size: NurbsRenderer.DUMMY_CP_SIZE,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.paCpBuffer, 0, dummyCp);
+
+    this.paKnotBuffer = this.device.createBuffer({
+      size: NurbsRenderer.DUMMY_KNOT_SIZE,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.paKnotBuffer, 0, dummyKnot);
+
+    this.paMetaBuffer = this.device.createBuffer({
+      size: NurbsRenderer.DUMMY_META_SIZE,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.paMetaBuffer, 0, dummyMeta);
+
+    try {
+      const paLayout = this.pipeline!.getBindGroupLayout(2);
+      this.paBindGroup = this.device.createBindGroup({
+        layout: paLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.paCpBuffer } },
+          { binding: 1, resource: { buffer: this.paKnotBuffer } },
+          { binding: 2, resource: { buffer: this.paMetaBuffer } },
+        ],
+      });
+    } catch {
+      // Pipeline does not require group 2 (should not happen with the current shader)
+      this.paBindGroup = null;
+    }
+    this.hasPaData = false;
   }
 
   /**
@@ -645,44 +703,53 @@ export class NurbsRenderer {
     this.renurbsData = data;
     this.hasReNurbs = data.segments.length > 0;
 
-    // Destroy old dummy/real buffers
+    if (!this.hasReNurbs) return;
+
+    // Create new storage buffers with real data first, then swap.
+    // Passing the typed arrays (not .buffer) to writeBuffer writes exactly
+    // data.byteLength bytes, avoiding overwrites if the source is a view into a
+    // larger ArrayBuffer.
+    const cpSize = Math.max(NurbsRenderer.DUMMY_CP_SIZE, data.allControlPoints.byteLength);
+    const knotSize = Math.max(NurbsRenderer.DUMMY_KNOT_SIZE, data.allKnots.byteLength);
+    const metaSize = Math.max(NurbsRenderer.DUMMY_META_SIZE, data.quantityMeta.byteLength);
+
+    const newCpBuffer = this.device.createBuffer({
+      size: cpSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(newCpBuffer, 0, data.allControlPoints as Float32Array<ArrayBuffer>);
+
+    const newKnotBuffer = this.device.createBuffer({
+      size: knotSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(newKnotBuffer, 0, data.allKnots as Float32Array<ArrayBuffer>);
+
+    const newMetaBuffer = this.device.createBuffer({
+      size: metaSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(newMetaBuffer, 0, data.quantityMeta as Uint32Array<ArrayBuffer>);
+
+    // Recreate bind group 1 with real buffers
+    const newBindGroup = this.device.createBindGroup({
+      layout: this.pipeline!.getBindGroupLayout(1),
+      entries: [
+        { binding: 0, resource: { buffer: newCpBuffer } },
+        { binding: 1, resource: { buffer: newKnotBuffer } },
+        { binding: 2, resource: { buffer: newMetaBuffer } },
+      ],
+    });
+
+    // Swap in the new buffers and destroy the old ones.
     if (this.renurbsCpBuffer) this.renurbsCpBuffer.destroy();
     if (this.renurbsKnotBuffer) this.renurbsKnotBuffer.destroy();
     if (this.renurbsMetaBuffer) this.renurbsMetaBuffer.destroy();
 
-    // Create storage buffers with real data
-    // Align sizes to 4 bytes (Float32Array/Uint32Array already 4-byte aligned)
-    const cpSize = Math.max(4, data.allControlPoints.byteLength);
-    const knotSize = Math.max(4, data.allKnots.byteLength);
-    const metaSize = Math.max(16, data.quantityMeta.byteLength);
-
-    this.renurbsCpBuffer = this.device.createBuffer({
-      size: cpSize,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
-    this.device.queue.writeBuffer(this.renurbsCpBuffer, 0, data.allControlPoints.buffer as ArrayBuffer);
-
-    this.renurbsKnotBuffer = this.device.createBuffer({
-      size: knotSize,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
-    this.device.queue.writeBuffer(this.renurbsKnotBuffer, 0, data.allKnots.buffer as ArrayBuffer);
-
-    this.renurbsMetaBuffer = this.device.createBuffer({
-      size: metaSize,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
-    this.device.queue.writeBuffer(this.renurbsMetaBuffer, 0, data.quantityMeta.buffer as ArrayBuffer);
-
-    // Recreate bind group 1 with real buffers
-    this.renurbsBindGroup = this.device.createBindGroup({
-      layout: this.pipeline!.getBindGroupLayout(1),
-      entries: [
-        { binding: 0, resource: { buffer: this.renurbsCpBuffer } },
-        { binding: 1, resource: { buffer: this.renurbsKnotBuffer } },
-        { binding: 2, resource: { buffer: this.renurbsMetaBuffer } },
-      ],
-    });
+    this.renurbsCpBuffer = newCpBuffer;
+    this.renurbsKnotBuffer = newKnotBuffer;
+    this.renurbsMetaBuffer = newMetaBuffer;
+    this.renurbsBindGroup = newBindGroup;
 
     console.info(`ReNURBS: ${data.segments.length} segments, ` +
       `${data.header.totalControlPoints} CPs, ${data.header.totalKnots} knots, ` +
@@ -703,51 +770,62 @@ export class NurbsRenderer {
     this.paMaxOffset = paEntry.maxOffset || 1.0;
     this.paMaxVelocity = paEntry.maxVelocity || 1.0;
 
-    // Destroy old buffers
-    if (this.paCpBuffer) this.paCpBuffer.destroy();
-    if (this.paKnotBuffer) this.paKnotBuffer.destroy();
-    if (this.paMetaBuffer) this.paMetaBuffer.destroy();
-
     if (!this.hasPaData) return;
 
-    const cpSize = Math.max(4, paEntry.allControlPoints.byteLength);
-    const knotSize = Math.max(4, paEntry.allKnots.byteLength);
-    const metaSize = Math.max(16, paEntry.quantityMeta.byteLength);
+    // Create new storage buffers first, then swap. This keeps the previous
+    // (possibly dummy) bind group valid until the replacement is ready, and
+    // prevents a transient "no bind group at group 2" state during updates.
+    const cpSize = Math.max(NurbsRenderer.DUMMY_CP_SIZE, paEntry.allControlPoints.byteLength);
+    const knotSize = Math.max(NurbsRenderer.DUMMY_KNOT_SIZE, paEntry.allKnots.byteLength);
+    const metaSize = Math.max(NurbsRenderer.DUMMY_META_SIZE, paEntry.quantityMeta.byteLength);
 
-    this.paCpBuffer = this.device.createBuffer({
+    const newCpBuffer = this.device.createBuffer({
       size: cpSize,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.paCpBuffer, 0, paEntry.allControlPoints.buffer as ArrayBuffer);
+    // Pass the typed array (not .buffer) so writeBuffer only uploads the
+    // view's byteLength, never the full underlying ArrayBuffer.
+    this.device.queue.writeBuffer(newCpBuffer, 0, paEntry.allControlPoints as Float32Array<ArrayBuffer>);
 
-    this.paKnotBuffer = this.device.createBuffer({
+    const newKnotBuffer = this.device.createBuffer({
       size: knotSize,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.paKnotBuffer, 0, paEntry.allKnots.buffer as ArrayBuffer);
+    this.device.queue.writeBuffer(newKnotBuffer, 0, paEntry.allKnots as Float32Array<ArrayBuffer>);
 
-    this.paMetaBuffer = this.device.createBuffer({
+    const newMetaBuffer = this.device.createBuffer({
       size: metaSize,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.paMetaBuffer, 0, paEntry.quantityMeta.buffer as ArrayBuffer);
+    this.device.queue.writeBuffer(newMetaBuffer, 0, paEntry.quantityMeta as Uint32Array<ArrayBuffer>);
 
-    // Create bind group 2 for PA data
-    // The pipeline uses 'auto' layout, so group 2 is automatically created
-    // from the @group(2) shader bindings.
     try {
       const paLayout = this.pipeline.getBindGroupLayout(2);
-      this.paBindGroup = this.device.createBindGroup({
+      const newBindGroup = this.device.createBindGroup({
         layout: paLayout,
         entries: [
-          { binding: 0, resource: { buffer: this.paCpBuffer } },
-          { binding: 1, resource: { buffer: this.paKnotBuffer } },
-          { binding: 2, resource: { buffer: this.paMetaBuffer } },
+          { binding: 0, resource: { buffer: newCpBuffer } },
+          { binding: 1, resource: { buffer: newKnotBuffer } },
+          { binding: 2, resource: { buffer: newMetaBuffer } },
         ],
       });
+
+      // Swap in the new buffers and bind group, then destroy the old ones.
+      if (this.paCpBuffer) this.paCpBuffer.destroy();
+      if (this.paKnotBuffer) this.paKnotBuffer.destroy();
+      if (this.paMetaBuffer) this.paMetaBuffer.destroy();
+
+      this.paCpBuffer = newCpBuffer;
+      this.paKnotBuffer = newKnotBuffer;
+      this.paMetaBuffer = newMetaBuffer;
+      this.paBindGroup = newBindGroup;
     } catch {
-      // If bind group 2 doesn't exist in the pipeline, PA coloring won't work
-      // but the renderer will still function with other color modes.
+      // Bind group creation failed (unexpected with the current shader); keep
+      // the previous bind group so group 2 remains bound and destroy the new
+      // buffers that won't be used.
+      newCpBuffer.destroy();
+      newKnotBuffer.destroy();
+      newMetaBuffer.destroy();
       this.hasPaData = false;
     }
   }
@@ -896,28 +974,29 @@ export class NurbsRenderer {
     if (!this.uniformBuffer || !this.bindGroup || !this.colorBuffer || !this.sampleIdxBuffer || !this.indexBuffer) return;
     if (!this.segIndexUBuffer || !this.renurbsBindGroup) return;
 
-    // Uniforms: viewProj(16 floats) + progress(1) + colorMode(1) + maxValue(1) + pad(1) = 20 floats = 80 bytes
+    // Uniforms: viewProj(16 floats) + progress(1) + colorMode(u32) + maxValue(1) + pad(1) = 80 bytes
     const uniformData = new ArrayBuffer(80);
-    const view = new Float32Array(uniformData);
-    for (let i = 0; i < 16; i++) view[i] = viewProj[i];
-    view[16] = this.progress;
-    // colorMode: use GPU evaluation only if data is available
+    const view = new DataView(uniformData);
+    for (let i = 0; i < 16; i++) view.setFloat32(i * 4, viewProj[i], true);
+    view.setFloat32(64, this.progress, true);
+    // colorMode: use GPU evaluation only if data is available (written as u32)
     const cm = this.getColorMode();
     const isPaMode = cm === 5 || cm === 6;
     const colorMode = (isPaMode ? this.hasPaData : this.hasReNurbs) ? cm : 0;
-    view[17] = colorMode;  // stored as f32, interpreted as u32 in shader
+    view.setUint32(68, colorMode, true);
     // maxValue: PA modes use PA max, motion modes use ReNURBS max
-    if (isPaMode) {
-      view[18] = cm === 5 ? this.paMaxOffset : this.paMaxVelocity;
-    } else {
-      view[18] = this.hasReNurbs ? this.getReNurbsMaxValue() : 1.0;
-    }
-    view[19] = 0; // pad
+    const maxValue = isPaMode
+      ? (cm === 5 ? this.paMaxOffset : this.paMaxVelocity)
+      : (this.hasReNurbs ? this.getReNurbsMaxValue() : 1.0);
+    view.setFloat32(72, maxValue, true);
+    view.setFloat32(76, 0, true); // pad
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.setBindGroup(1, this.renurbsBindGroup);
+    // Group 2 is always bound: it points to real PA data after updatePaData() or
+    // to the dummy buffers created in init() before PA data is loaded.
     if (this.paBindGroup) {
       pass.setBindGroup(2, this.paBindGroup);
     }

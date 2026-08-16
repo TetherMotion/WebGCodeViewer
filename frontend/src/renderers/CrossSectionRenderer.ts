@@ -142,7 +142,7 @@ export class CrossSectionRenderer {
 
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.visible || !this.pipeline || !this.vertexBuffer || this.vertexCount === 0) return;
-    this.device.queue.writeBuffer(this.uniformBuffer!, 0, viewProj.buffer as ArrayBuffer);
+    this.device.queue.writeBuffer(this.uniformBuffer!, 0, viewProj as Float32Array<ArrayBuffer>);
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.setVertexBuffer(0, this.vertexBuffer);

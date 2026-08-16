@@ -289,7 +289,7 @@ export class GpuPlot {
         size: points.byteLength,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
       });
-      this.device.queue.writeBuffer(pointBuffer, 0, points.buffer as ArrayBuffer);
+      this.device.queue.writeBuffer(pointBuffer, 0, points as Float32Array<ArrayBuffer>);
 
       // Update uniforms for this series
       const uniformData = new Float32Array(12);
@@ -304,7 +304,7 @@ export class GpuPlot {
       uniformData[8] = s.color[2];
       uniformData[9] = 1.0; // alpha
       uniformData[10] = 0;  // pad
-      this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData.buffer as ArrayBuffer);
+      this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData as Float32Array<ArrayBuffer>);
 
       const bindGroup = this.device.createBindGroup({
         layout: this.lineBindGroupLayout!,

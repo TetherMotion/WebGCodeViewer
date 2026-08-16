@@ -100,11 +100,14 @@ export class PointCloudRenderer {
     const view = new Float32Array(uniformData);
     for (let i = 0; i < 16; i++) view[i] = viewProj[i];
     view[16] = this.pointSize;
-    // view[17] = padding
-    view[18] = this.pointColor[0];
-    view[19] = this.pointColor[1];
-    view[20] = this.pointColor[2];
-    view[21] = 1.0; // alpha padding for vec4
+    // Align `color` vec4 to a 16-byte boundary (offset 80). Offsets 68-79 are padding.
+    view[17] = 0.0;
+    view[18] = 0.0;
+    view[19] = 0.0;
+    view[20] = this.pointColor[0];
+    view[21] = this.pointColor[1];
+    view[22] = this.pointColor[2];
+    view[23] = 1.0; // alpha
     this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
 
     pass.setPipeline(this.pipeline);

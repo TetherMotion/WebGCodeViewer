@@ -22,17 +22,19 @@ const LABEL_COLOR: [number, number, number] = [0.25, 0.25, 0.27];
 const GLYPHS = '0123456789.-';
 const NUM_GLYPHS = GLYPHS.length;
 
-// Atlas dimensions
-const GLYPH_CELL = 32; // pixels per glyph cell (square)
-const ATLAS_COLS = 4;
-const ATLAS_ROWS = Math.ceil(NUM_GLYPHS / ATLAS_COLS);
-const ATLAS_W = ATLAS_COLS * GLYPH_CELL;
-const ATLAS_H = ATLAS_ROWS * GLYPH_CELL;
+// Atlas layout: single row, variable-width cells measured per glyph.
+const GLYPH_PX_H = 32;            // pixel height of each glyph cell
+const GLYPH_PAD = 2;              // px padding around each glyph (anti-bleed)
+// ATLAS_W / ATLAS_H are computed at init after measuring every glyph.
 
-// World-space character dimensions (mm) — 3x enlarged for readability
+// World-space character height (mm). Per-glyph width is derived from the
+// measured pixel width, preserving the font's natural aspect ratio.
 const CHAR_HEIGHT = 7.5;
-const CHAR_WIDTH = 4.5;
-const CHAR_GAP = 0.9;
+
+interface GlyphInfo {
+  u0: number; v0: number; u1: number; v1: number;
+  worldW: number; // world-space width (mm) for this glyph
+}
 
 // Label thinning: show every Nth tick to avoid clutter
 const TICK_STRIDE = 2;
@@ -45,6 +47,7 @@ export class GridLabelRenderer {
   private atlasTexture: GPUTexture | null = null;
   private sampler: GPUSampler | null = null;
   private vertexCount: number = 0;
+  private glyphMap: Map<string, GlyphInfo> = new Map();
 
   private visibleFlag: boolean = true;
 
@@ -55,35 +58,69 @@ export class GridLabelRenderer {
 
   async init(format: GPUTextureFormat): Promise<void> {
     // ── Generate glyph atlas on a 2D canvas ──
+    // Use a serif / math-friendly font stack and measure each glyph's
+    // advance width so the atlas uses variable-width cells (no more
+    // fixed-width look).
+    const measureCanvas = document.createElement('canvas');
+    const mctx = measureCanvas.getContext('2d')!;
+    const fontPx = Math.floor(GLYPH_PX_H * 0.8);
+    const fontStack = '"Cambria Math", "STIX Two Math", "Latin Modern Math", "Times New Roman", Georgia, serif';
+    mctx.font = `${fontPx}px ${fontStack}`;
+    mctx.textAlign = 'center';
+    mctx.textBaseline = 'middle';
+
+    // Measure every glyph and build the cell layout (single row).
+    const cellWidths: number[] = [];
+    let totalW = 0;
+    for (let i = 0; i < NUM_GLYPHS; i++) {
+      const w = Math.ceil(mctx.measureText(GLYPHS[i]).width) + 2 * GLYPH_PAD;
+      cellWidths.push(w);
+      totalW += w;
+    }
+    const atlasW = totalW;
+    const atlasH = GLYPH_PX_H;
+
+    // Draw the atlas.
     const atlasCanvas = document.createElement('canvas');
-    atlasCanvas.width = ATLAS_W;
-    atlasCanvas.height = ATLAS_H;
+    atlasCanvas.width = atlasW;
+    atlasCanvas.height = atlasH;
     const ctx = atlasCanvas.getContext('2d')!;
     ctx.fillStyle = 'rgba(0,0,0,0)';
-    ctx.clearRect(0, 0, ATLAS_W, ATLAS_H);
+    ctx.clearRect(0, 0, atlasW, atlasH);
     ctx.fillStyle = 'white';
-    ctx.font = `bold ${Math.floor(GLYPH_CELL * 0.75)}px sans-serif`;
+    ctx.font = `${fontPx}px ${fontStack}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
+    let xOff = 0;
     for (let i = 0; i < NUM_GLYPHS; i++) {
-      const col = i % ATLAS_COLS;
-      const row = Math.floor(i / ATLAS_COLS);
-      const cx = col * GLYPH_CELL + GLYPH_CELL / 2;
-      const cy = row * GLYPH_CELL + GLYPH_CELL / 2;
+      const cw = cellWidths[i];
+      const cx = xOff + cw / 2;
+      const cy = atlasH / 2;
       ctx.fillText(GLYPHS[i], cx, cy);
+
+      // Record glyph info: UVs + world-space width (proportional to pixel width).
+      const worldW = CHAR_HEIGHT * cw / GLYPH_PX_H;
+      this.glyphMap.set(GLYPHS[i], {
+        u0: xOff / atlasW,
+        v0: 0,
+        u1: (xOff + cw) / atlasW,
+        v1: 1,
+        worldW,
+      });
+      xOff += cw;
     }
 
     // Upload atlas as WebGPU texture
     this.atlasTexture = this.device.createTexture({
-      size: [ATLAS_W, ATLAS_H],
+      size: [atlasW, atlasH],
       format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
     });
     this.device.queue.copyExternalImageToTexture(
       { source: atlasCanvas },
       { texture: this.atlasTexture },
-      [ATLAS_W, ATLAS_H],
+      [atlasW, atlasH],
     );
 
     this.sampler = this.device.createSampler({
@@ -200,57 +237,87 @@ export class GridLabelRenderer {
       // Y-axis ticks are at [tickLen, p, 0] — the grid edge is at X=0,
       //   so labels go at negative X (left of the grid).
       const labelMargin = 2; // mm gap from the grid edge
-      let originX: number, originY: number;
-      if (tick.axis === 0) {
-        // X-axis: center the label below the grid edge (Y = 0)
-        const labelWidth = label.length * (CHAR_WIDTH + CHAR_GAP) - CHAR_GAP;
-        originX = tick.value - labelWidth / 2;
-        originY = -CHAR_HEIGHT - labelMargin; // outside, below Y=0
-      } else {
-        // Y-axis: right-align the label to the left of the grid edge (X = 0)
-        const labelWidth = label.length * (CHAR_WIDTH + CHAR_GAP) - CHAR_GAP;
-        originX = -labelWidth - labelMargin; // outside, left of X=0
-        originY = tick.value - CHAR_HEIGHT / 2;
+
+      // Look up glyph info (UVs + variable world width) from the atlas map.
+      const glyphFor = (ch: string): GlyphInfo | null =>
+        this.glyphMap.get(ch) ?? null;
+
+      // Total label width = sum of per-glyph advance widths.
+      let labelWidth = 0;
+      for (const ch of label) {
+        const g = glyphFor(ch);
+        labelWidth += g ? g.worldW : CHAR_HEIGHT * 0.5;
       }
 
-      // Render each character as a quad
-      let cursorX = originX;
-      for (const ch of label) {
-        const glyphIdx = GLYPHS.indexOf(ch);
-        if (glyphIdx < 0) {
-          cursorX += CHAR_WIDTH + CHAR_GAP;
-          continue;
+      if (tick.axis === 0) {
+        // X-axis (red): rotate the label -90° about Z so the text runs along
+        // Y (normal to the X axis being labeled), while remaining coplanar
+        // with the grid plane (z=0). The label is centered on the tick in X
+        // and placed just below the grid edge (negative Y).
+        const pivotX = tick.value;
+        const pivotY = -labelMargin - labelWidth / 2;
+        const z = 0;
+        let advance = 0; // cumulative unrotated X advance
+        for (const ch of label) {
+          const g = glyphFor(ch);
+          const w = g ? g.worldW : CHAR_HEIGHT * 0.5;
+          // Unrotated center X relative to label center.
+          const cx = advance + w / 2 - labelWidth / 2;
+          // After -90° about Z: (x,y) -> (y,-x), so the center maps to
+          // (0, -cx) relative to the pivot.
+          const yCenter = pivotY - cx;
+          // Post-rotation half-extents: X = CHAR_HEIGHT/2, Y = w/2.
+          const hx = CHAR_HEIGHT / 2;
+          const hy = w / 2;
+          const u0 = g ? g.u0 : 0, u1 = g ? g.u1 : 0;
+          const v0 = g ? g.v0 : 0, v1 = g ? g.v1 : 1;
+          vertices.push(
+            // Triangle 1: BL, BR, TR
+            pivotX - hx, yCenter + hy, z, u0, v1,
+            pivotX - hx, yCenter - hy, z, u1, v1,
+            pivotX + hx, yCenter - hy, z, u1, v0,
+            // Triangle 2: BL, TR, TL
+            pivotX - hx, yCenter + hy, z, u0, v1,
+            pivotX + hx, yCenter - hy, z, u1, v0,
+            pivotX + hx, yCenter + hy, z, u0, v0,
+          );
+          advance += w;
         }
+      } else {
+        // Y-axis: right-align the label to the left of the grid edge (X = 0)
+        const originX = -labelWidth - labelMargin;
+        const originY = tick.value - CHAR_HEIGHT / 2;
 
-        const col = glyphIdx % ATLAS_COLS;
-        const row = Math.floor(glyphIdx / ATLAS_COLS);
-        const u0 = col * GLYPH_CELL / ATLAS_W;
-        const v0 = row * GLYPH_CELL / ATLAS_H;
-        const u1 = (col + 1) * GLYPH_CELL / ATLAS_W;
-        const v1 = (row + 1) * GLYPH_CELL / ATLAS_H;
+        let cursorX = originX;
+        for (const ch of label) {
+          const g = glyphFor(ch);
+          const w = g ? g.worldW : CHAR_HEIGHT * 0.5;
+          const x0 = cursorX;
+          const x1 = cursorX + w;
+          const y0 = originY;
+          const y1 = originY + CHAR_HEIGHT;
+          const z = 0; // coplanar with grid
 
-        const x0 = cursorX;
-        const x1 = cursorX + CHAR_WIDTH;
-        const y0 = originY;
-        const y1 = originY + CHAR_HEIGHT;
-        const z = 0; // coplanar with grid
+          const u0 = g ? g.u0 : 0, u1 = g ? g.u1 : 0;
+          const v0 = g ? g.v0 : 0, v1 = g ? g.v1 : 1;
 
-        // Two triangles: (x0,y0) (x1,y0) (x1,y1) (x0,y1)
-        // UV: top-left=(u0,v0), top-right=(u1,v0), bottom-right=(u1,v1), bottom-left=(u0,v1)
-        // In world space: y1 is "top" (higher Y), y0 is "bottom" (lower Y)
-        // In texture space: v0 is "top", v1 is "bottom"
-        vertices.push(
-          // Triangle 1: bottom-left, bottom-right, top-right
-          x0, y0, z,  u0, v1,
-          x1, y0, z,  u1, v1,
-          x1, y1, z,  u1, v0,
-          // Triangle 2: bottom-left, top-right, top-left
-          x0, y0, z,  u0, v1,
-          x1, y1, z,  u1, v0,
-          x0, y1, z,  u0, v0,
-        );
+          // Two triangles: (x0,y0) (x1,y0) (x1,y1) (x0,y1)
+          // UV: top-left=(u0,v0), top-right=(u1,v0), bottom-right=(u1,v1), bottom-left=(u0,v1)
+          // In world space: y1 is "top" (higher Y), y0 is "bottom" (lower Y)
+          // In texture space: v0 is "top", v1 is "bottom"
+          vertices.push(
+            // Triangle 1: bottom-left, bottom-right, top-right
+            x0, y0, z,  u0, v1,
+            x1, y0, z,  u1, v1,
+            x1, y1, z,  u1, v0,
+            // Triangle 2: bottom-left, top-right, top-left
+            x0, y0, z,  u0, v1,
+            x1, y1, z,  u1, v0,
+            x0, y1, z,  u0, v0,
+          );
 
-        cursorX += CHAR_WIDTH + CHAR_GAP;
+          cursorX += w;
+        }
       }
     }
 
