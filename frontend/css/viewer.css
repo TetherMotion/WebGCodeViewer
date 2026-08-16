@@ -556,7 +556,8 @@ body {
     gap: 4px;
     padding: 6px 12px;
     flex-wrap: nowrap;
-    overflow-x: auto;
+    overflow: visible;
+    position: relative;
     z-index: 1000;
 }
 
