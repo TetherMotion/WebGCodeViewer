@@ -23,7 +23,6 @@
 #include "tether/web/TrajectorySerializer.hpp"
 #include "tether/motion_planner/geometry/PiecewiseNurbsPath.hpp"
 #include "tether/motion_planner/geometry/PlanningSegmentConverter.hpp"
-#include "tether/export/GCodeAnalysis.hpp"
 #include "tether/motion_planner/profile_renurbs/ReNURBSProfile.hpp"
 #include "tether/web/PaProfileBuilder.hpp"
 
