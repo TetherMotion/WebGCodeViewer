@@ -25,6 +25,7 @@
 #include "tether/motion_planner/geometry/PlanningSegmentConverter.hpp"
 #include "tether/export/GCodeAnalysis.hpp"
 #include "tether/motion_planner/profile_renurbs/ReNURBSProfile.hpp"
+#include "tether/web/PaProfileBuilder.hpp"
 
 #include <memory>
 #include <optional>
@@ -112,6 +113,11 @@ struct ProcessResult {
     float renurbsMaxAcceleration = 0.0f;
     float renurbsMaxJerk = 0.0f;
     float renurbsMaxTime = 0.0f;
+
+    /// Pressure advance profiles — one per algorithm (Linear, PowerLaw,
+    /// CrossWLF, LTI-Deconv, LPV-Deconv). Each contains pre-PA velocity
+    /// and post-PA offset as ReNURBS curves. Selectable in the UI.
+    std::vector<PaProfileResult> paProfiles;
 };
 
 /// @brief Processes G-code text into trajectory samples.

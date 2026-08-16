@@ -105,6 +105,13 @@ public:
     /// @return Binary TRNP data, or empty if not available
     std::vector<uint8_t> getReNurbsBinary(const std::string& jobId) const;
 
+    /// @brief Get serialized PA profiles binary data (TRNP-PA format).
+    /// Returns per-algorithm NURBS curves for pressure advance pre/post
+    /// (Linear, PowerLaw, CrossWLF, LTI-Deconv, LPV-Deconv).
+    /// @param jobId Job ID
+    /// @return Binary TRNP-PA data, or empty if not available
+    std::vector<uint8_t> getPaBinary(const std::string& jobId) const;
+
     /// @brief Get block metadata for a job as JSON.
     std::string getBlocksJson(const std::string& jobId) const;
 

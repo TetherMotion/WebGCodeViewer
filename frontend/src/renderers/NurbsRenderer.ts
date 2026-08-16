@@ -18,7 +18,7 @@ import { NBPData, NBPPiece, tessellatePiece } from '../core/NurbsParser';
 import { TRNPData } from '../core/ReNurbsParser';
 import { ColorMap } from '../core/ColorMap';
 
-export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'extruderSpeed' | 'motion' | 'solid' | 'feedRate' | 'spindleRpm' | 'toolNumber' | 'coolant' | 'featureType' | 'velocity' | 'acceleration' | 'jerk';
+export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'extruderSpeed' | 'motion' | 'solid' | 'feedRate' | 'spindleRpm' | 'toolNumber' | 'coolant' | 'featureType' | 'velocity' | 'acceleration' | 'jerk' | 'paOffset' | 'paVelocity';
 
 export interface NurbsRenderOptions {
   colorMap: ColorMap;
@@ -78,6 +78,15 @@ export class NurbsRenderer {
   private renurbsData: TRNPData | null = null;
   private hasReNurbs: boolean = false;
 
+  // PA storage buffers (group 2) — for GPU-side PA offset/velocity evaluation
+  private paCpBuffer: GPUBuffer | null = null;
+  private paKnotBuffer: GPUBuffer | null = null;
+  private paMetaBuffer: GPUBuffer | null = null;
+  private paBindGroup: GPUBindGroup | null = null;
+  private hasPaData: boolean = false;
+  private paMaxOffset: number = 1.0;
+  private paMaxVelocity: number = 1.0;
+
   // Per-vertex segment index + normalized arc length (for ReNURBS shader evaluation)
   private segIndexUBuffer: GPUBuffer | null = null;
 
@@ -114,6 +123,11 @@ export class NurbsRenderer {
         @group(1) @binding(0) var<storage, read> renurbsCPs: array<f32>;
         @group(1) @binding(1) var<storage, read> renurbsKnots: array<f32>;
         @group(1) @binding(2) var<storage, read> renurbsMeta: array<u32>;
+
+        // PA storage buffers (group 2) — same structure as group 1
+        @group(2) @binding(0) var<storage, read> paCPs: array<f32>;
+        @group(2) @binding(1) var<storage, read> paKnots: array<f32>;
+        @group(2) @binding(2) var<storage, read> paMeta: array<u32>;
 
         const MAX_CP: u32 = 64u;
 
@@ -161,6 +175,43 @@ export class NurbsRenderer {
           return d[degree];
         }
 
+        /// Evaluate a 1-D B-spline from PA storage buffers (same algorithm,
+        /// different buffer bindings).
+        fn evalPaBSpline(cpBase: u32, cpCount: u32, knotBase: u32, degree: u32, u: f32) -> f32 {
+          if (cpCount == 0u) { return 0.0; }
+          if (degree == 0u) { return paCPs[cpBase]; }
+
+          let knotMin = paKnots[knotBase + degree];
+          let knotMax = paKnots[knotBase + cpCount];
+          let uClamped = clamp(u, knotMin, knotMax);
+
+          var k = degree;
+          for (var i = degree; i < cpCount; i = i + 1u) {
+            if (paKnots[knotBase + i] <= uClamped && uClamped < paKnots[knotBase + i + 1u]) {
+              k = i;
+              break;
+            }
+          }
+          if (uClamped >= knotMax) { k = cpCount - 1u; }
+
+          var d: array<f32, 64>;
+          for (var j = 0u; j <= degree; j = j + 1u) {
+            d[j] = paCPs[cpBase + k - degree + j];
+          }
+
+          for (var r = 1u; r <= degree; r = r + 1u) {
+            for (var j = degree; j >= r; j = j - 1u) {
+              let i = k - degree + j;
+              let kn0 = paKnots[knotBase + i];
+              let b = paKnots[knotBase + j + degree - r + 1u] - kn0;
+              let alpha = select(0.0, (uClamped - kn0) / b, b != 0.0);
+              d[j] = (1.0 - alpha) * d[j - 1u] + alpha * d[j];
+            }
+          }
+
+          return d[degree];
+        }
+
         struct VertexInput {
           @location(0) position: vec3<f32>,
           @location(1) colorValue: f32,
@@ -181,7 +232,7 @@ export class NurbsRenderer {
 
           // Select color source: CPU-computed or GPU-evaluated ReNURBS
           var cv = input.colorValue;
-          if (uniforms.colorMode > 0u) {
+          if (uniforms.colorMode > 0u && uniforms.colorMode <= 4u) {
             let segIdx = u32(input.segIndexU.x);
             let localU = input.segIndexU.y;
             // Quantity index: colorMode 1=velocity(0), 2=accel(1), 3=jerk(2), 4=time(3)
@@ -195,6 +246,25 @@ export class NurbsRenderer {
             let val = evalBSpline1D(cpOffset, cpCount, knotOffset, degree, localU);
             // Normalize to [0,1] using maxValue
             cv = select(0.0, val / uniforms.maxValue, uniforms.maxValue > 0.0);
+          }
+          // PA color modes: 5=paOffset, 6=paVelocity
+          if (uniforms.colorMode >= 5u && uniforms.colorMode <= 6u) {
+            let segIdx = u32(input.segIndexU.x);
+            let localU = input.segIndexU.y;
+            // PA quantity: 0=pressure_offset (mode 5), 1=extruder_velocity (mode 6)
+            let qtyIdx = uniforms.colorMode - 5u;
+            // PA has 2 quantities per segment
+            let metaBase = segIdx * 2u * 4u + qtyIdx * 4u;
+            let cpOffset = paMeta[metaBase + 0u];
+            let cpCount = paMeta[metaBase + 1u];
+            let knotOffset = paMeta[metaBase + 2u];
+            let degree = paMeta[metaBase + 3u];
+            if (cpCount > 0u) {
+              let val = evalPaBSpline(cpOffset, cpCount, knotOffset, degree, localU);
+              cv = select(0.0, val / uniforms.maxValue, uniforms.maxValue > 0.0);
+            } else {
+              cv = 0.0;
+            }
           }
           output.colorValue = cv;
 
@@ -622,6 +692,67 @@ export class NurbsRenderer {
   }
 
   /**
+   * Update PA (Pressure Advance) data for GPU-side PA coloring.
+   * Uses the first PA algorithm (Linear) by default. The selected algorithm
+   * can be changed via setPaAlgorithm().
+   */
+  updatePaData(paEntry: { allControlPoints: Float32Array; allKnots: Float32Array; quantityMeta: Uint32Array; maxOffset: number; maxVelocity: number }): void {
+    if (!this.pipeline) return;
+
+    this.hasPaData = paEntry.allControlPoints.length > 0;
+    this.paMaxOffset = paEntry.maxOffset || 1.0;
+    this.paMaxVelocity = paEntry.maxVelocity || 1.0;
+
+    // Destroy old buffers
+    if (this.paCpBuffer) this.paCpBuffer.destroy();
+    if (this.paKnotBuffer) this.paKnotBuffer.destroy();
+    if (this.paMetaBuffer) this.paMetaBuffer.destroy();
+
+    if (!this.hasPaData) return;
+
+    const cpSize = Math.max(4, paEntry.allControlPoints.byteLength);
+    const knotSize = Math.max(4, paEntry.allKnots.byteLength);
+    const metaSize = Math.max(16, paEntry.quantityMeta.byteLength);
+
+    this.paCpBuffer = this.device.createBuffer({
+      size: cpSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.paCpBuffer, 0, paEntry.allControlPoints.buffer as ArrayBuffer);
+
+    this.paKnotBuffer = this.device.createBuffer({
+      size: knotSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.paKnotBuffer, 0, paEntry.allKnots.buffer as ArrayBuffer);
+
+    this.paMetaBuffer = this.device.createBuffer({
+      size: metaSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.paMetaBuffer, 0, paEntry.quantityMeta.buffer as ArrayBuffer);
+
+    // Create bind group 2 for PA data
+    // The pipeline uses 'auto' layout, so group 2 is automatically created
+    // from the @group(2) shader bindings.
+    try {
+      const paLayout = this.pipeline.getBindGroupLayout(2);
+      this.paBindGroup = this.device.createBindGroup({
+        layout: paLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.paCpBuffer } },
+          { binding: 1, resource: { buffer: this.paKnotBuffer } },
+          { binding: 2, resource: { buffer: this.paMetaBuffer } },
+        ],
+      });
+    } catch {
+      // If bind group 2 doesn't exist in the pipeline, PA coloring won't work
+      // but the renderer will still function with other color modes.
+      this.hasPaData = false;
+    }
+  }
+
+  /**
    * Check if ReNURBS data is available for GPU-side velocity/accel/jerk coloring.
    */
   hasReNurbsData(): boolean {
@@ -644,12 +775,15 @@ export class NurbsRenderer {
   /**
    * Map color attribute to shader colorMode constant.
    * 0=cpuColorValue, 1=velocity, 2=accel, 3=jerk, 4=time
+   * 5=paOffset, 6=paVelocity
    */
   private getColorMode(): number {
     switch (this.options.colorAttribute) {
       case 'velocity': return 1;
       case 'acceleration': return 2;
       case 'jerk': return 3;
+      case 'paOffset': return 5;
+      case 'paVelocity': return 6;
       default: return 0;
     }
   }
@@ -767,16 +901,26 @@ export class NurbsRenderer {
     const view = new Float32Array(uniformData);
     for (let i = 0; i < 16; i++) view[i] = viewProj[i];
     view[16] = this.progress;
-    // colorMode: use ReNURBS GPU evaluation only if data is available
-    const colorMode = this.hasReNurbs ? this.getColorMode() : 0;
+    // colorMode: use GPU evaluation only if data is available
+    const cm = this.getColorMode();
+    const isPaMode = cm === 5 || cm === 6;
+    const colorMode = (isPaMode ? this.hasPaData : this.hasReNurbs) ? cm : 0;
     view[17] = colorMode;  // stored as f32, interpreted as u32 in shader
-    view[18] = this.hasReNurbs ? this.getReNurbsMaxValue() : 1.0;
+    // maxValue: PA modes use PA max, motion modes use ReNURBS max
+    if (isPaMode) {
+      view[18] = cm === 5 ? this.paMaxOffset : this.paMaxVelocity;
+    } else {
+      view[18] = this.hasReNurbs ? this.getReNurbsMaxValue() : 1.0;
+    }
     view[19] = 0; // pad
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.setBindGroup(1, this.renurbsBindGroup);
+    if (this.paBindGroup) {
+      pass.setBindGroup(2, this.paBindGroup);
+    }
     pass.setVertexBuffer(0, this.positionBuffer);
     pass.setVertexBuffer(1, this.colorBuffer);
     pass.setVertexBuffer(2, this.sampleIdxBuffer);

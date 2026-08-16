@@ -3,6 +3,7 @@
 #include "tether/motion_planner/PathAdapter.hpp"
 #include "tether/motion_planner/BasicTOPPRA.hpp"
 #include "tether/motion_planner/profile_renurbs/ReNURBSProfileBuilder.hpp"
+#include "tether/web/PaProfileBuilder.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -207,6 +208,38 @@ ProcessResult GCodeProcessor::process(
             result.renurbsMaxAcceleration = maxAccel;
             result.renurbsMaxJerk = maxJerk;
             result.renurbsMaxTime = maxTime;
+
+            // ── Step 3c: Compute pressure advance profiles ──
+            // For each PA algorithm (Linear, PowerLaw, CrossWLF, LTI, LPV),
+            // compute pre-PA velocity and post-PA offset, fitted to ReNURBS.
+            // Selectable in the UI for visualization in the plot and color modes.
+            try {
+                // Build extrusion ratios from segment data
+                // ratio = |E_delta| / segmentLength (0 for non-extruding moves)
+                std::vector<double> extrusionRatios;
+                extrusionRatios.reserve(parseResult.segments.size());
+                for (const auto& seg : parseResult.segments) {
+                    if (seg.isRapid || seg.segmentLength < 1e-12) {
+                        extrusionRatios.push_back(0.0);
+                    } else {
+                        // exitVelocity was repurposed for extruder speed (mm/s)
+                        // ratio = extruderSpeed * time / segmentLength
+                        // = extruderSpeed / (segmentLength / segmentTime)
+                        // = extruderSpeed / pathVelocity
+                        // But we don't have pathVelocity here directly.
+                        // Use a simpler approximation: if extruderSpeed > 0,
+                        // ratio = 1.0 (full extrusion), else 0.0
+                        extrusionRatios.push_back(seg.exitVelocity > 1e-9 ? 1.0 : 0.0);
+                    }
+                }
+
+                PaConfig paConfig;
+                paConfig.sampleInterval = 0.001;  // 1ms sampling
+                result.paProfiles = computeAllPaProfiles(
+                    velocityProfile, extrusionRatios, paConfig);
+            } catch (const std::exception& e) {
+                // PA is optional — if it fails, continue without it.
+            }
         }
     } catch (const std::exception& e) {
         // ReNURBS is optional — if it fails, continue without it.

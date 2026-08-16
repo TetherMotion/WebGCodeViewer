@@ -8,7 +8,7 @@ import { RpcClient } from './RpcClient';
 import { ColorMap } from './ColorMap';
 import { parseTTHR, TTHRData, extractZLayer } from './TthrParser';
 import { parseNBP, NBPData } from './NurbsParser';
-import { parseTRNP, TRNPData } from './ReNurbsParser';
+import { parseTRNP, TRNPData, parseTRNPPa, TRNPPaData, PaAlgorithmEntry } from './ReNurbsParser';
 import { ToolpathRenderer, ColorAttribute } from '../renderers/ToolpathRenderer';
 import { GridRenderer } from '../renderers/GridRenderer';
 import { CrossSectionRenderer } from '../renderers/CrossSectionRenderer';
@@ -19,6 +19,8 @@ import { PrintHeadMarker } from '../renderers/PrintHeadMarker';
 import { PrinterFrameRenderer } from '../renderers/PrinterFrameRenderer';
 import { DirectionCubeRenderer } from '../renderers/DirectionCubeRenderer';
 import { NurbsRenderer, NurbsColorAttribute } from '../renderers/NurbsRenderer';
+import { GpuPlot, PlotSeries } from '../ui/GpuPlot';
+import { PaControls, PaAlgorithmId } from '../ui/PaControls';
 import { MiniplotRenderer, MiniplotAxis, MiniplotData } from '../renderers/MiniplotRenderer';
 import { GridLabels } from '../ui/GridLabels';
 import { GridLabelRenderer } from '../renderers/GridLabelRenderer';
@@ -271,6 +273,12 @@ export class WebGPUApp {
   private fullData: TTHRData | null = null;  // unfiltered data (for layer reset)
   private currentNBP: NBPData | null = null;
   private currentTRNP: TRNPData | null = null;
+  private currentPaData: TRNPPaData | null = null;
+  private gpuPlot: GpuPlot | null = null;
+  private paControls: PaControls | null = null;
+  private plotCanvas: HTMLCanvasElement | null = null;
+  private plotOverlayCanvas: HTMLCanvasElement | null = null;
+  private plotContainer: HTMLDivElement | null = null;
   private currentFilename: string = '';
   private zLayers: { layerIndex: number; zHeight: number; pieceStart: number; pieceEnd: number; pieceCount: number }[] = [];
   private animationId: number | null = null;
@@ -1721,6 +1729,167 @@ export class WebGPUApp {
     this.miniplotLabel.textContent = `${label}  |  t: ${view.tMin.toFixed(3)}s – ${view.tMax.toFixed(3)}s  |  scroll=zoom, drag=pan, dblclick=reset`;
   }
 
+  // ── Pressure Advance Plot ────────────────────────────────────────────────
+
+  /**
+   * Set up the PA plot panel with WebGPU canvas, overlay canvas, and controls.
+   * Called after PA data is loaded.
+   */
+  private setupPaPlot(): void {
+    if (!this.currentPaData || !this.device) return;
+
+    // Create plot container if not already created
+    if (!this.plotContainer) {
+      this.plotContainer = document.createElement('div');
+      this.plotContainer.style.cssText = `
+        position: absolute; bottom: 0; left: 0; right: 0;
+        height: 220px; background: rgba(10, 10, 15, 0.95);
+        border-top: 1px solid rgba(100, 100, 120, 0.3);
+        display: none; z-index: 50;
+      `;
+      this.canvas.parentElement?.appendChild(this.plotContainer);
+
+      // Create WebGPU canvas for the plot
+      this.plotCanvas = document.createElement('canvas');
+      this.plotCanvas.width = 800;
+      this.plotCanvas.height = 200;
+      this.plotCanvas.style.cssText = 'display: block; width: 100%; height: 100%;';
+      this.plotContainer.appendChild(this.plotCanvas);
+
+      // Create 2D overlay canvas for grid/axes/text
+      this.plotOverlayCanvas = document.createElement('canvas');
+      this.plotOverlayCanvas.width = 800;
+      this.plotOverlayCanvas.height = 200;
+      this.plotOverlayCanvas.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;';
+      this.plotContainer.appendChild(this.plotOverlayCanvas);
+
+      // Create PA controls panel
+      this.paControls = new PaControls(this.plotContainer, (state) => {
+        this.updatePaPlotSeries();
+      });
+    }
+
+    // Initialize the GpuPlot
+    if (!this.gpuPlot && this.plotCanvas) {
+      this.gpuPlot = new GpuPlot(this.device, this.plotCanvas, {
+        width: 800, height: 200,
+        xLabel: 'Time (s)', yLabel: 'Value',
+        title: 'Motion Profile & Pressure Advance',
+      });
+      this.gpuPlot.init(this.format).then(() => {
+        this.updatePaPlotSeries();
+        this.renderPaPlot();
+      });
+    } else if (this.gpuPlot) {
+      this.updatePaPlotSeries();
+      this.renderPaPlot();
+    }
+
+    // Show the plot container
+    if (this.plotContainer) {
+      this.plotContainer.style.display = 'block';
+    }
+
+    // Send PA data to NurbsRenderer for PA color modes
+    if (this.nurbsRenderer && this.currentPaData) {
+      // Default to first algorithm (Linear) for coloring
+      const paEntry = this.currentPaData.paEntries[0];
+      if (paEntry) {
+        this.nurbsRenderer.updatePaData(paEntry);
+      }
+    }
+  }
+
+  /**
+   * Update the plot series based on current PA controls state and TRNP data.
+   */
+  private updatePaPlotSeries(): void {
+    if (!this.gpuPlot || !this.paControls) return;
+
+    const state = this.paControls.getState();
+    const series: PlotSeries[] = [];
+
+    // Motion profile series (from TRNP)
+    if (this.currentTRNP) {
+      if (state.showVelocity) {
+        series.push({
+          name: 'Velocity (mm/s)',
+          color: [0.2, 0.8, 1.0],
+          visible: true,
+          segments: this.currentTRNP.segments,
+          quantityIndex: 0,
+          yLabel: 'mm/s',
+          normalizeMax: this.currentTRNP.header.maxVelocity || 1,
+        });
+      }
+      if (state.showAcceleration) {
+        series.push({
+          name: 'Acceleration (mm/s²)',
+          color: [1.0, 0.6, 0.2],
+          visible: true,
+          segments: this.currentTRNP.segments,
+          quantityIndex: 1,
+          yLabel: 'mm/s²',
+          normalizeMax: this.currentTRNP.header.maxAcceleration || 1,
+        });
+      }
+      if (state.showJerk) {
+        series.push({
+          name: 'Jerk (mm/s³)',
+          color: [1.0, 0.3, 0.5],
+          visible: true,
+          segments: this.currentTRNP.segments,
+          quantityIndex: 2,
+          yLabel: 'mm/s³',
+          normalizeMax: this.currentTRNP.header.maxJerk || 1,
+        });
+      }
+    }
+
+    // PA series (from TRNP-PA)
+    if (this.currentPaData) {
+      const paEntry = this.currentPaData.paEntries.find(
+        e => e.algorithmId === state.selectedAlgorithm);
+      if (paEntry) {
+        if (state.showPostPa) {
+          series.push({
+            name: `PA Offset - ${paEntry.algorithmName} (mm)`,
+            color: [0.4, 1.0, 0.4],
+            visible: true,
+            segments: paEntry.segments,
+            quantityIndex: 0,  // 0 = pressure_offset
+            yLabel: 'mm',
+            normalizeMax: paEntry.maxOffset || 1,
+          });
+        }
+        if (state.showPrePa) {
+          series.push({
+            name: `Pre-PA Velocity - ${paEntry.algorithmName} (mm/s)`,
+            color: [1.0, 0.8, 0.2],
+            visible: true,
+            segments: paEntry.segments,
+            quantityIndex: 1,  // 1 = extruder_velocity
+            yLabel: 'mm/s',
+            normalizeMax: paEntry.maxVelocity || 1,
+          });
+        }
+      }
+    }
+
+    this.gpuPlot.setSeries(series);
+    this.renderPaPlot();
+  }
+
+  /**
+   * Render the PA plot (GPU + overlay).
+   */
+  private renderPaPlot(): void {
+    if (!this.gpuPlot || !this.plotOverlayCanvas) return;
+    this.gpuPlot.render();
+    const ctx = this.plotOverlayCanvas.getContext('2d');
+    if (ctx) this.gpuPlot.renderOverlay(ctx);
+  }
+
   /**
    * Set the camera to a standard view direction.
    * The camera is re-framed on the loaded object's bounding box so the
@@ -1794,10 +1963,16 @@ export class WebGPUApp {
     // wrong layer filters, and wrong bbox display.
     this.currentNBP = null;
     this.currentTRNP = null;
+    this.currentPaData = null;
     this.currentData = null;
     this.fullData = null;
     this.zLayers = [];
     this.miniplotData = null;
+
+    // Hide PA plot panel
+    if (this.plotContainer) {
+      this.plotContainer.style.display = 'none';
+    }
 
     // Fetch NURBS path data — compact curve representation (typically <1MB
     // even for huge G-code files, vs 2GB+ for sampled trajectory data)
@@ -1839,6 +2014,21 @@ export class WebGPUApp {
         // The viewer will fall back to piece-level coloring.
         console.info('ReNURBS data not available, using piece-level coloring');
         this.currentTRNP = null;
+      }
+
+      // Fetch pressure advance profiles (TRNP-PA format) — per-algorithm
+      // NURBS curves for PA pre/post (Linear, PowerLaw, CrossWLF, LTI, LPV).
+      // Selectable in the UI for visualization in the plot and color modes.
+      try {
+        const paBinary = await this.rpcClient.getPaHttp(jobId);
+        this.currentPaData = parseTRNPPa(paBinary);
+        console.info(`PA data loaded: ${this.currentPaData.paEntries.length} algorithms, ` +
+                     `${paBinary.byteLength} bytes`);
+        this.setupPaPlot();
+      } catch (e) {
+        // PA is optional — if it fails, continue without it.
+        console.info('PA data not available');
+        this.currentPaData = null;
       }
     } catch (e) {
       console.error('Failed to load NURBS data, falling back to TTHR:', e);

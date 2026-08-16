@@ -225,6 +225,22 @@ export class RpcClient {
     return new Uint8Array(buf);
   }
 
+  /**
+   * Fetch pressure advance profiles binary data (TRNP-PA format) via HTTP.
+   * Returns per-algorithm NURBS curves for PA pre/post (Linear, PowerLaw,
+   * CrossWLF, LTI-Deconv, LPV-Deconv).
+   */
+  async getPaHttp(jobId: string): Promise<Uint8Array> {
+    const url = `${this.httpBaseUrl}/api/trajectory/${jobId}/pa`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new ViewerRpcError(`HTTP ${resp.status}: ${text || resp.statusText}`, resp.status);
+    }
+    const buf = await resp.arrayBuffer();
+    return new Uint8Array(buf);
+  }
+
   async getBlocks(jobId: string): Promise<GetBlocksResponse> {
     return this.transport.unary(
       'getBlocks',

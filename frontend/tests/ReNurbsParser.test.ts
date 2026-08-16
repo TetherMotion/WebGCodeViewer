@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseTRNP, evalBSpline1D, TRNP_MAGIC, TRNP_VERSION } from '../src/core/ReNurbsParser';
-import type { TRNPHeader, TRNPData } from '../src/core/ReNurbsParser';
+import { parseTRNP, parseTRNPPa, evalBSpline1D, TRNP_MAGIC, TRNP_VERSION } from '../src/core/ReNurbsParser';
+import type { TRNPHeader, TRNPData, TRNPPaData } from '../src/core/ReNurbsParser';
 
 /**
  * Build a minimal TRNP binary for testing.
@@ -202,5 +202,159 @@ describe('evalBSpline1D', () => {
     expect(evalBSpline1D(cps, knots, 1, 2.0)).toBeCloseTo(100.0);
     // u < 0 should clamp to 0 → 0
     expect(evalBSpline1D(cps, knots, 1, -1.0)).toBeCloseTo(0.0);
+  });
+});
+
+// ── TRNP-PA parser tests ────────────────────────────────────────────────────
+
+describe('parseTRNPPa', () => {
+  /**
+   * Build a minimal TRNP-PA binary for testing.
+   * Format: header(32) + paTable(paCount×40) + per-PA data
+   */
+  function buildTestTRNPPa(): Uint8Array {
+    const paCount = 2;  // Linear + PowerLaw
+    const segCount = 1;
+    const qtyCount = 2;  // pressure_offset + extruder_velocity
+    const cpCountPerQty = 3;
+    const degree = 2;
+    const knotCountPerQty = cpCountPerQty + degree + 1; // 6
+
+    // Header: 32 bytes
+    // PA table: paCount × 44 bytes (1+3+32+4+4 = 44 per entry)
+    // Per PA: segCount(4) + segTable(segCount×16) + qtyMeta(segCount×qtyCount×16) + CPs + knots
+    const perPaDataSize = 4 + segCount * 16 + segCount * qtyCount * 16 +
+                          segCount * qtyCount * cpCountPerQty * 4 +
+                          segCount * qtyCount * knotCountPerQty * 4;
+    const totalSize = 32 + paCount * 44 + paCount * perPaDataSize;
+    const buf = new ArrayBuffer(totalSize);
+    const view = new DataView(buf);
+    const u8 = new Uint8Array(buf);
+    let offset = 0;
+
+    // Header (32 bytes)
+    u8[0] = 'T'.charCodeAt(0); u8[1] = 'P'.charCodeAt(0);
+    u8[2] = 'A'.charCodeAt(0); u8[3] = 0;
+    offset = 4;
+    view.setUint16(offset, 1, true); offset += 2; // version
+    view.setUint8(offset, paCount); offset += 1;
+    view.setUint8(offset, 0); offset += 1; // reserved
+    view.setUint32(offset, paCount * segCount, true); offset += 4; // totalSegments
+    view.setUint32(offset, paCount * segCount * qtyCount * cpCountPerQty, true); offset += 4; // totalCPs
+    view.setUint32(offset, paCount * segCount * qtyCount * knotCountPerQty, true); offset += 4; // totalKnots
+    offset += 12; // reserved
+
+    // PA algorithm table (paCount × 40 bytes)
+    const names = ['Linear', 'PowerLaw'];
+    for (let i = 0; i < paCount; i++) {
+      view.setUint8(offset, i); offset += 1; // algorithmId
+      offset += 3; // reserved
+      // Name (32 bytes, null-padded)
+      for (let j = 0; j < 32; j++) {
+        u8[offset + j] = j < names[i].length ? names[i].charCodeAt(j) : 0;
+      }
+      offset += 32;
+      view.setFloat32(offset, 0.3, true); offset += 4; // maxOffset
+      view.setFloat32(offset, 50.0, true); offset += 4; // maxVelocity
+    }
+
+    // Per-PA data
+    for (let i = 0; i < paCount; i++) {
+      view.setUint32(offset, segCount, true); offset += 4; // segCount
+
+      // Segment table
+      view.setFloat32(offset, 0.0, true); offset += 4; // sStart
+      view.setFloat32(offset, 0.1, true); offset += 4; // sEnd
+      view.setUint32(offset, 0, true); offset += 4; // quantityMetaOffset
+      view.setUint32(offset, 0, true); offset += 4; // pad
+
+      // Quantity metadata
+      let cpCursor = 0, knotCursor = 0;
+      for (let q = 0; q < qtyCount; q++) {
+        view.setUint32(offset, cpCursor, true); offset += 4;
+        view.setUint32(offset, cpCountPerQty, true); offset += 4;
+        view.setUint32(offset, knotCursor, true); offset += 4;
+        view.setUint32(offset, degree, true); offset += 4;
+        cpCursor += cpCountPerQty;
+        knotCursor += knotCountPerQty;
+      }
+
+      // Control points
+      for (let q = 0; q < qtyCount; q++) {
+        for (let c = 0; c < cpCountPerQty; c++) {
+          view.setFloat32(offset, c * 0.1 * (i + 1), true); offset += 4;
+        }
+      }
+
+      // Knots
+      for (let q = 0; q < qtyCount; q++) {
+        for (let k = 0; k < knotCountPerQty; k++) {
+          view.setFloat32(offset, k / (knotCountPerQty - 1), true); offset += 4;
+        }
+      }
+    }
+
+    return u8;
+  }
+
+  it('parses valid TRNP-PA data', () => {
+    const data = buildTestTRNPPa();
+    const parsed = parseTRNPPa(data);
+    expect(parsed.paEntries.length).toBe(2);
+    expect(parsed.paEntries[0].algorithmId).toBe(0);
+    expect(parsed.paEntries[0].algorithmName).toBe('Linear');
+    expect(parsed.paEntries[1].algorithmId).toBe(1);
+    expect(parsed.paEntries[1].algorithmName).toBe('PowerLaw');
+  });
+
+  it('parses max values correctly', () => {
+    const data = buildTestTRNPPa();
+    const parsed = parseTRNPPa(data);
+    expect(parsed.paEntries[0].maxOffset).toBeCloseTo(0.3);
+    expect(parsed.paEntries[0].maxVelocity).toBeCloseTo(50.0);
+  });
+
+  it('parses segments with correct boundaries', () => {
+    const data = buildTestTRNPPa();
+    const parsed = parseTRNPPa(data);
+    expect(parsed.paEntries[0].segments.length).toBe(1);
+    expect(parsed.paEntries[0].segments[0].sStart).toBeCloseTo(0.0);
+    expect(parsed.paEntries[0].segments[0].sEnd).toBeCloseTo(0.1);
+  });
+
+  it('parses quantities with correct control points', () => {
+    const data = buildTestTRNPPa();
+    const parsed = parseTRNPPa(data);
+    const seg = parsed.paEntries[0].segments[0];
+    expect(seg.quantities.length).toBe(2);
+    expect(seg.quantities[0].controlPoints.length).toBe(3);
+    expect(seg.quantities[0].degree).toBe(2);
+    expect(seg.quantities[0].knots.length).toBe(6);
+  });
+
+  it('throws on invalid magic', () => {
+    const bad = new Uint8Array(32);
+    bad[0] = 'X'; bad[1] = 'X'; bad[2] = 'X'; bad[3] = 0;
+    expect(() => parseTRNPPa(bad)).toThrow();
+  });
+
+  it('throws on too-small data', () => {
+    const small = new Uint8Array(10);
+    expect(() => parseTRNPPa(small)).toThrow();
+  });
+
+  it('handles empty PA entries', () => {
+    // Build TRNP-PA with 0 algorithms
+    const buf = new ArrayBuffer(32);
+    const view = new DataView(buf);
+    const u8 = new Uint8Array(buf);
+    u8[0] = 0x54; // 'T'
+    u8[1] = 0x50; // 'P'
+    u8[2] = 0x41; // 'A'
+    u8[3] = 0x00;
+    view.setUint16(4, 1, true); // version
+    view.setUint8(6, 0); // paCount = 0
+    const parsed = parseTRNPPa(u8);
+    expect(parsed.paEntries.length).toBe(0);
   });
 });

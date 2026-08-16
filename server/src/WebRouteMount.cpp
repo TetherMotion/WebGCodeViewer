@@ -376,6 +376,36 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
             cb(resp);
         }, {drogon::Get});
 
+    // ── GET /api/trajectory/{jobId}/pa ──
+    // Get pressure advance profiles binary data (TRNP-PA format) —
+    // per-algorithm NURBS curves for PA pre/post (Linear, PowerLaw, CrossWLF,
+    // LTI-Deconv, LPV-Deconv). Selectable in the UI.
+    app.registerHandler("/api/trajectory/{jobId}/pa",
+        [jobManager, enableCors](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& cb,
+           const std::string& jobId) {
+            if (jobManager->getJobState(jobId) != JobState::Ready) {
+                cb(makeErrorResponse(404, "Job not ready", enableCors));
+                return;
+            }
+
+            auto binary = jobManager->getPaBinary(jobId);
+            if (binary.empty()) {
+                cb(makeErrorResponse(404, "No PA data available", enableCors));
+                return;
+            }
+
+            auto resp = drogon::HttpResponse::newHttpResponse();
+            resp->setContentTypeString("application/octet-stream");
+            resp->addHeader("Content-Disposition",
+                            "attachment; filename=\"pa_profiles.tpa\"");
+            resp->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            resp->setBody(std::string(reinterpret_cast<const char*>(binary.data()),
+                                       binary.size()));
+            if (enableCors) addCorsHeaders(resp);
+            cb(resp);
+        }, {drogon::Get});
+
     // ── GET /api/trajectory/{jobId}/blocks ──
     app.registerHandler("/api/trajectory/{jobId}/blocks",
         [jobManager, enableCors](const drogon::HttpRequestPtr& req,

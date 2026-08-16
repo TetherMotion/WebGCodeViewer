@@ -240,6 +240,22 @@ std::vector<uint8_t> JobManager::getReNurbsBinary(const std::string& jobId) cons
     return {};
 }
 
+std::vector<uint8_t> JobManager::getPaBinary(const std::string& jobId) const
+{
+    auto job = getJob(jobId);
+    if (!job || job->state != JobState::Ready) return {};
+
+    try {
+        if (!job->result.paProfiles.empty()) {
+            return serializePaProfiles(job->result.paProfiles);
+        }
+    } catch (const std::exception& e) {
+        return {};
+    }
+
+    return {};
+}
+
 std::string JobManager::getBlocksJson(const std::string& jobId) const {
     auto job = getJob(jobId);
     if (!job || job->state != JobState::Ready) return "{\"error\":\"job not ready\"}";

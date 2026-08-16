@@ -330,4 +330,254 @@ ParsedTRNP parseReNurbsProfile(std::span<const uint8_t> data) {
     return result;
 }
 
+// ── PA (Pressure Advance) TRNP extension ─────────────────────────────────────
+
+namespace {
+
+/// Extract curve data from a GenericReNURBSProfile quantity.
+struct PaCurveData {
+    std::vector<float> controlPoints;
+    std::vector<float> knots;
+    uint32_t degree = 0;
+    bool hasCurve = false;
+};
+
+PaCurveData extractGenericCurve(
+    const tether::motion::profile_renurbs::GenericReNURBSProfile& profile,
+    size_t segIdx, size_t qtyIdx)
+{
+    PaCurveData cd;
+    if (segIdx >= profile.perSegment.size()) return cd;
+    const auto& seg = profile.perSegment[segIdx];
+    if (qtyIdx >= seg.quantities.size() || !seg.quantities[qtyIdx].curve) return cd;
+
+    const auto& curve = *seg.quantities[qtyIdx].curve;
+    const auto& cps = curve.controlPoints();
+    const auto& knots = curve.knots();
+    cd.degree = static_cast<uint32_t>(curve.degree());
+    cd.hasCurve = true;
+
+    cd.controlPoints.reserve(cps.size());
+    for (const auto& cp : cps) {
+        cd.controlPoints.push_back(cp.dim() > 0 ? static_cast<float>(cp[0]) : 0.0f);
+    }
+
+    cd.knots.reserve(knots.size());
+    for (const auto& k : knots) {
+        cd.knots.push_back(static_cast<float>(k));
+    }
+
+    return cd;
+}
+
+} // anonymous namespace
+
+std::vector<uint8_t> serializePaProfiles(
+    const std::vector<PaProfileResult>& paProfiles)
+{
+    std::vector<uint8_t> buf;
+
+    // Count totals
+    uint8_t paCount = static_cast<uint8_t>(paProfiles.size());
+    uint32_t totalSegments = 0;
+    uint32_t totalControlPoints = 0;
+    uint32_t totalKnots = 0;
+
+    for (const auto& pa : paProfiles) {
+        if (!pa.profile) continue;
+        const auto& prof = *pa.profile;
+        totalSegments += static_cast<uint32_t>(prof.perSegment.size());
+        for (const auto& seg : prof.perSegment) {
+            for (const auto& qty : seg.quantities) {
+                if (qty.curve) {
+                    totalControlPoints += static_cast<uint32_t>(qty.curve->controlPoints().size());
+                    totalKnots += static_cast<uint32_t>(qty.curve->knots().size());
+                }
+            }
+        }
+    }
+
+    // ── Header (32 bytes) ──
+    buf.push_back('T'); buf.push_back('P'); buf.push_back('A'); buf.push_back(0);
+    writeU16(buf, 1);  // version
+    writeU8(buf, paCount);
+    writeU8(buf, 0);  // reserved
+    writeU32(buf, totalSegments);
+    writeU32(buf, totalControlPoints);
+    writeU32(buf, totalKnots);
+    for (int i = 0; i < 12; i++) buf.push_back(0);  // reserved
+
+    // ── PA algorithm table (paCount × 40 bytes) ──
+    for (const auto& pa : paProfiles) {
+        writeU8(buf, static_cast<uint8_t>(pa.algorithm));
+        buf.push_back(0); buf.push_back(0); buf.push_back(0);  // reserved
+        // Algorithm name (32 bytes, null-padded)
+        char nameBuf[32] = {};
+        std::strncpy(nameBuf, pa.algorithmName.c_str(), 31);
+        buf.insert(buf.end(), nameBuf, nameBuf + 32);
+        writeF32(buf, pa.maxOffset);
+        writeF32(buf, pa.maxVelocity);
+    }
+
+    // ── Per-PA profile data ──
+    // For each PA algorithm: segment table + quantity metadata + CPs + knots
+    // Each PA profile has 2 quantities: pressure_offset (0) and extruder_velocity (1)
+    const uint8_t paQtyCount = 2;
+
+    for (const auto& pa : paProfiles) {
+        if (!pa.profile) {
+            // Write empty segment table
+            writeU32(buf, 0);  // segment count for this PA
+            continue;
+        }
+        const auto& prof = *pa.profile;
+        uint32_t segCount = static_cast<uint32_t>(prof.perSegment.size());
+
+        // Segment count for this PA
+        writeU32(buf, segCount);
+
+        // Segment table (segCount × 16 bytes)
+        for (uint32_t s = 0; s < segCount; ++s) {
+            const auto& seg = prof.perSegment[s];
+            writeF32(buf, static_cast<float>(seg.paramStart));
+            writeF32(buf, static_cast<float>(seg.paramEnd));
+            writeU32(buf, s * paQtyCount);  // quantityMetaOffset
+            writeU32(buf, 0);  // pad
+        }
+
+        // Quantity metadata (segCount × paQtyCount × 16 bytes)
+        uint32_t cpCursor = 0;
+        uint32_t knotCursor = 0;
+        for (uint32_t s = 0; s < segCount; ++s) {
+            for (uint8_t q = 0; q < paQtyCount; ++q) {
+                auto cd = extractGenericCurve(prof, s, q);
+                writeU32(buf, cd.hasCurve ? cpCursor : 0);
+                writeU32(buf, static_cast<uint32_t>(cd.controlPoints.size()));
+                writeU32(buf, cd.hasCurve ? knotCursor : 0);
+                writeU32(buf, cd.degree);
+                cpCursor += static_cast<uint32_t>(cd.controlPoints.size());
+                knotCursor += static_cast<uint32_t>(cd.knots.size());
+            }
+        }
+
+        // Control points
+        for (uint32_t s = 0; s < segCount; ++s) {
+            for (uint8_t q = 0; q < paQtyCount; ++q) {
+                auto cd = extractGenericCurve(prof, s, q);
+                for (float cp : cd.controlPoints) writeF32(buf, cp);
+            }
+        }
+
+        // Knots
+        for (uint32_t s = 0; s < segCount; ++s) {
+            for (uint8_t q = 0; q < paQtyCount; ++q) {
+                auto cd = extractGenericCurve(prof, s, q);
+                for (float k : cd.knots) writeF32(buf, k);
+            }
+        }
+    }
+
+    return buf;
+}
+
+ParsedTRNPPa parsePaProfiles(std::span<const uint8_t> data) {
+    ParsedTRNPPa result;
+    if (data.size() < 32) throw std::runtime_error("TRNP-PA data too small");
+
+    const uint8_t* ptr = data.data();
+    if (std::memcmp(ptr, "TPA\0", 4) != 0) {
+        throw std::runtime_error("Invalid TRNP-PA magic");
+    }
+    ptr += 4;
+
+    uint16_t version = readVal<uint16_t>(ptr);
+    if (version != 1) throw std::runtime_error("Unsupported TRNP-PA version");
+    uint8_t paCount = readVal<uint8_t>(ptr);
+    ptr += 1; // reserved
+    ptr += 4; // totalSegments
+    ptr += 4; // totalControlPoints
+    ptr += 4; // totalKnots
+    ptr += 12; // reserved
+
+    result.paEntries.resize(paCount);
+
+    // PA algorithm table
+    for (uint8_t i = 0; i < paCount; ++i) {
+        auto& entry = result.paEntries[i];
+        entry.algorithmId = readVal<uint8_t>(ptr);
+        ptr += 3; // reserved
+        char nameBuf[33] = {};
+        std::memcpy(nameBuf, ptr, 32);
+        ptr += 32;
+        entry.algorithmName = std::string(nameBuf);
+        entry.maxOffset = readVal<float>(ptr);
+        entry.maxVelocity = readVal<float>(ptr);
+    }
+
+    // Per-PA profile data
+    const uint8_t paQtyCount = 2;
+    for (uint8_t i = 0; i < paCount; ++i) {
+        auto& entry = result.paEntries[i];
+        uint32_t segCount = readVal<uint32_t>(ptr);
+        entry.segments.resize(segCount);
+
+        // Segment table
+        std::vector<float> sStart(segCount), sEnd(segCount);
+        for (uint32_t s = 0; s < segCount; ++s) {
+            sStart[s] = readVal<float>(ptr);
+            sEnd[s] = readVal<float>(ptr);
+            ptr += 4; // quantityMetaOffset
+            ptr += 4; // pad
+            entry.segments[s].sStart = sStart[s];
+            entry.segments[s].sEnd = sEnd[s];
+            entry.segments[s].quantities.resize(paQtyCount);
+        }
+
+        // Quantity metadata
+        std::vector<std::array<uint32_t, 4>> meta(segCount * paQtyCount);
+        for (uint32_t s = 0; s < segCount; ++s) {
+            for (uint8_t q = 0; q < paQtyCount; ++q) {
+                meta[s * paQtyCount + q][0] = readVal<uint32_t>(ptr); // cpOffset
+                meta[s * paQtyCount + q][1] = readVal<uint32_t>(ptr); // cpCount
+                meta[s * paQtyCount + q][2] = readVal<uint32_t>(ptr); // knotOffset
+                meta[s * paQtyCount + q][3] = readVal<uint32_t>(ptr); // degree
+            }
+        }
+
+        // Read all CPs and knots
+        // First count totals for this PA
+        uint32_t paTotalCPs = 0, paTotalKnots = 0;
+        for (uint32_t s = 0; s < segCount; ++s) {
+            for (uint8_t q = 0; q < paQtyCount; ++q) {
+                paTotalCPs += meta[s * paQtyCount + q][1];
+                if (meta[s * paQtyCount + q][1] > 0) {
+                    paTotalKnots += meta[s * paQtyCount + q][1] + meta[s * paQtyCount + q][3] + 1;
+                }
+            }
+        }
+        std::vector<float> allCPs(paTotalCPs);
+        for (uint32_t j = 0; j < paTotalCPs; ++j) allCPs[j] = readVal<float>(ptr);
+        std::vector<float> allKnots(paTotalKnots);
+        for (uint32_t j = 0; j < paTotalKnots; ++j) allKnots[j] = readVal<float>(ptr);
+
+        // Distribute
+        for (uint32_t s = 0; s < segCount; ++s) {
+            for (uint8_t q = 0; q < paQtyCount; ++q) {
+                const auto& m = meta[s * paQtyCount + q];
+                auto& qty = entry.segments[s].quantities[q];
+                qty.degree = m[3];
+                if (m[1] > 0) {
+                    qty.controlPoints.assign(
+                        allCPs.begin() + m[0], allCPs.begin() + m[0] + m[1]);
+                    uint32_t knotCount = m[1] + m[3] + 1;
+                    qty.knots.assign(
+                        allKnots.begin() + m[2], allKnots.begin() + m[2] + knotCount);
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
 } // namespace tether::web

@@ -28,7 +28,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${WGV_BIN_DIR})
 # We only need: gcode, export, motion_planner (and their deps, resolved
 # automatically). Using TETHER_COMPONENTS disables everything else including
 # tools (extract_esi), tests, examples, benchmarks, and python bindings.
-set(TETHER_COMPONENTS "gcode;export;motion_planner" CACHE STRING "" FORCE)
+set(TETHER_COMPONENTS "gcode;export;motion_planner;controls" CACHE STRING "" FORCE)
 set(TETHER_BUILD_WEB OFF CACHE BOOL "" FORCE)
 set(TETHER_BUILD_KLIPPER OFF CACHE BOOL "" FORCE)
 set(TETHER_ENABLE_KLIPPER_HTTP OFF CACHE BOOL "" FORCE)
@@ -111,11 +111,11 @@ foreach(_tgt ${WGV_SERVER_TARGETS})
     target_include_directories(${_tgt}
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/server/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Tether/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Tether/dependencies/eigen>
         PRIVATE
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/server/src/proto>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Tether/include>
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Tether/dependencies/magic_enum/include>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Tether/dependencies/eigen>
     )
 
     target_compile_features(${_tgt} PRIVATE cxx_std_23)
@@ -137,6 +137,11 @@ foreach(_tgt ${WGV_SERVER_TARGETS})
         target_link_libraries(${_tgt} PUBLIC tether_motion_planner_shared)
     elseif(TARGET tether_motion_planner_static)
         target_link_libraries(${_tgt} PUBLIC tether_motion_planner_static)
+    endif()
+    if(TARGET tether_controls_shared)
+        target_link_libraries(${_tgt} PUBLIC tether_controls_shared)
+    elseif(TARGET tether_controls_static)
+        target_link_libraries(${_tgt} PUBLIC tether_controls_static)
     endif()
 
     # Link against Drogon + Protobuf
