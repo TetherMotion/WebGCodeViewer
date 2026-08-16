@@ -15,6 +15,7 @@
 #include "tether/motion_planner/VelocityProfile.hpp"
 #include "tether/motion_planner/profile_renurbs/GenericReNURBSProfile.hpp"
 #include "tether/motion_planner/profile_renurbs/GenericReNURBSBuilder.hpp"
+#include "tether/motion_planner/analytical/extrusion/AnalyticalExtrusionTypes.hpp"
 
 #include <string>
 #include <vector>
@@ -79,21 +80,27 @@ struct PaProfileResult {
 /// @param velocityProfile The velocity profile from the motion planner
 /// @param extrusionRatio E_delta / path_length per segment (0 for non-extruding moves)
 /// @param config PA configuration
+/// @param trajectory Optional ExtrusionTrajectory (from WSS) for analytical PA.
+///                   If provided, analytical PA algorithms are used instead of
+///                   control-level sampled-space classes.
 /// @return Vector of PA profile results, one per algorithm
 std::vector<PaProfileResult> computeAllPaProfiles(
     const MotionPlanner::VelocityProfile<double>& velocityProfile,
     const std::vector<double>& extrusionRatios,
-    const PaConfig& config = {});
+    const PaConfig& config = {},
+    const MotionPlanner::analytical::extrusion::ExtrusionTrajectory<3, double>* trajectory = nullptr);
 
 /// Compute a single PA profile for the specified algorithm.
 /// @param velocityProfile The velocity profile from the motion planner
 /// @param extrusionRatio E_delta / path_length per segment (0 for non-extruding moves)
 /// @param config PA configuration (algorithm field selects which to compute)
+/// @param trajectory Optional ExtrusionTrajectory (from WSS) for analytical PA.
 /// @return PA profile result
 PaProfileResult computePaProfile(
     const MotionPlanner::VelocityProfile<double>& velocityProfile,
     const std::vector<double>& extrusionRatios,
-    const PaConfig& config);
+    const PaConfig& config,
+    const MotionPlanner::analytical::extrusion::ExtrusionTrajectory<3, double>* trajectory = nullptr);
 
 /// Get the algorithm name as a string.
 std::string paAlgorithmName(PaAlgorithm algo);

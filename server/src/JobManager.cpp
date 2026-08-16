@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <format>
 #include <iomanip>
+#include <iostream>
 #include <random>
 #include <sstream>
 
@@ -504,6 +506,9 @@ void JobManager::processWorker(std::shared_ptr<Job> job) {
     GCodeProcessor processor;
     ProcessResult result;
 
+    std::cerr << std::format("[JobManager] processWorker start — job={}, file=\"{}\", {} bytes\n",
+        job->id, job->filename, job->gcodeText.size());
+
     try {
         result = processor.process(
             job->gcodeText, job->config,
@@ -524,11 +529,15 @@ void JobManager::processWorker(std::shared_ptr<Job> job) {
         result.errorMessage = std::format(
             "Processing exception: {} (G-code: {} bytes, first line: \"{}\")",
             e.what(), gcodeSize, firstLine);
+        std::cerr << std::format("[JobManager] processWorker EXCEPTION — job={}: {}\n",
+            job->id, result.errorMessage);
     } catch (...) {
         result.success = false;
         result.errorMessage = std::format(
             "Processing exception: unknown error (non-std::exception thrown, "
             "G-code: {} bytes)", job->gcodeText.size());
+        std::cerr << std::format("[JobManager] processWorker UNKNOWN EXCEPTION — job={}\n",
+            job->id);
     }
 
     {

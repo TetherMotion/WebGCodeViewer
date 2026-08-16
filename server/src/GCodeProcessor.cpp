@@ -2,14 +2,17 @@
 #include "tether/gcode/GCodeInterpreter.hpp"
 #include "tether/gcode/motion/G64CornerMode.hpp"
 #include "tether/motion_planner/PathAdapter.hpp"
-#include "tether/motion_planner/BasicTOPPRA.hpp"
+#include "tether/motion_planner/analytical/ParetoTimeEnergyOptimalVelocityPlanner.hpp"
+#include "tether/motion_planner/analytical/extrusion/AnalyticalExtrusionTypes.hpp"
 #include "tether/motion_planner/profile_renurbs/ReNURBSProfileBuilder.hpp"
 #include "tether/web/PaProfileBuilder.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <format>
+#include <iostream>
 #include <string_view>
 
 namespace tether::web {
@@ -187,24 +190,50 @@ std::string extractLine(const std::string& text, uint32_t lineNum) {
 
 // ── Main processing entry point ──────────────────────────────────────────────
 
+namespace {
+class Timer {
+public:
+    Timer() : start_(std::chrono::steady_clock::now()) {}
+    double elapsedMs() const {
+        auto now = std::chrono::steady_clock::now();
+        return std::chrono::duration<double, std::milli>(now - start_).count();
+    }
+    double elapsedSec() const { return elapsedMs() / 1000.0; }
+private:
+    std::chrono::steady_clock::time_point start_;
+};
+
+#define WGV_LOG(stage) \
+    std::cerr << "[GCodeProcessor] " << stage << std::endl
+
+#define WGV_LOG_TIME(stage, timer) \
+    std::cerr << "[GCodeProcessor] " << stage << " — " \
+              << std::fixed << std::setprecision(2) << timer.elapsedMs() << " ms" << std::endl
+} // anonymous namespace
+
 ProcessResult GCodeProcessor::process(
     const std::string& gcodeText,
     const ProcessConfig& config,
     std::function<void(double)> progress)
 {
     ProcessResult result;
+    Timer totalTimer;
+
+    WGV_LOG(std::format("process() start — {} bytes, nurbsOnly={}",
+        gcodeText.size(), config.nurbsOnly));
 
     if (progress) progress(0.0);
 
     // ── Step 0: Pre-filter Klipper extended commands ──
-    // Klipper uses multi-letter uppercase commands (SET_PRESSURE_ADVANCE,
-    // TURN_OFF_HEATERS, etc.) that the Tether G-code lexer can't parse.
-    // We comment them out to preserve line numbers.
+    Timer step0;
     std::string filteredGcode = filterKlipperCommands(gcodeText);
+    WGV_LOG_TIME(std::format("Step 0: filterKlipperCommands — {} → {} bytes",
+        gcodeText.size(), filteredGcode.size()), step0);
 
     // ── Step 1: Parse G-code into PlanningSegments + block metadata ──
     // Uses Tether's PlanningSegmentBuilder (GCode::Interpreter under the hood)
     // with emit-arc-segments mode so arcs are preserved as exact segments.
+    Timer step1;
     auto parseResult = GCode::PlanningSegmentBuilder::fromText(filteredGcode);
 
     // If strict parsing fails, retry with stopOnError=false to salvage
@@ -212,6 +241,8 @@ ProcessResult GCodeProcessor::process(
     // issues (e.g. M84 X Y E — axis words without values) that shouldn't
     // prevent loading the entire file.
     if (!parseResult.error.ok()) {
+        WGV_LOG(std::format("Step 1: strict parse failed ({}), retrying with stopOnError=false",
+            parseResult.error.ok() ? "ok" : "error"));
         GCode::InterpreterConfig retryConfig;
         retryConfig.stopOnError = false;
         auto retryResult = GCode::PlanningSegmentBuilder::fromText(filteredGcode, retryConfig);
@@ -228,6 +259,8 @@ ProcessResult GCodeProcessor::process(
                 parseResult.segments.size());
         }
     }
+    WGV_LOG_TIME(std::format("Step 1: parse G-code — {} segments, {} blocks",
+        parseResult.segments.size(), parseResult.blocks.size()), step1);
 
     // If we still have a hard parse error (no segments recovered), report it
     if (!parseResult.error.ok() && parseResult.segments.empty()) {
@@ -337,6 +370,7 @@ ProcessResult GCodeProcessor::process(
     // ── Step 2: Compute per-segment corner deviation (%) ──
     // Uses Tether's CornerAnalyzer::analyze() which computes the
     // deviationPercentage field (cos(halfAngle) × 100).
+    Timer step2;
     computeCornerDeviation(segments);
 
     // ── Step 2b: Compute per-segment extruder speed (mm/s) from E axis ──
@@ -347,6 +381,7 @@ ProcessResult GCodeProcessor::process(
     // for now — the viewer's extruder speed feature requires E-axis tracking
     // which is not yet available in the Tether pipeline.
     computeExtruderSpeed(segments);
+    WGV_LOG_TIME("Step 2: corner deviation + extruder speed", step2);
 
     // ── Step 2c: Build per-segment speed data for miniplot ──
     {
@@ -377,12 +412,15 @@ ProcessResult GCodeProcessor::process(
     // ── Step 3: Build NURBS path from segments (FAST) ──
     // Uses Tether's tether::motion::piecewiseNurbsFromSegments().
     // This is O(segments) — typically milliseconds, not minutes.
+    Timer step3;
     try {
         auto nurbsResult = tether::motion::piecewiseNurbsFromSegments(segments);
         result.nurbsPath = std::move(nurbsResult.path);
         result.deviations = std::move(nurbsResult.deviations);
         result.extruderSpeeds = std::move(nurbsResult.extruderSpeeds);
         result.pathLength = result.nurbsPath->totalLength();
+        WGV_LOG_TIME(std::format("Step 3: NURBS path — {} pieces, path length {:.1} mm",
+            result.nurbsPath->numPieces(), result.pathLength), step3);
     } catch (const std::exception& e) {
         result.success = false;
         // Sum segment lengths for total path length context
@@ -391,6 +429,7 @@ ProcessResult GCodeProcessor::process(
         result.errorMessage = std::format(
             "NURBS construction failed: {} ({} segments, total path length: {:.1} mm)",
             e.what(), segments.size(), totalLen);
+        WGV_LOG(std::format("Step 3 FAILED: {}", result.errorMessage));
         if (progress) progress(1.0);
         return result;
     }
@@ -403,8 +442,16 @@ ProcessResult GCodeProcessor::process(
     // via buildReNURBSProfile(). This produces a WAY smaller representation
     // than dense sampling: O(segments × controlPoints) vs O(samples).
     // The resulting curves are evaluated in the frontend shader directly.
+    //
+    // PERF: BasicTOPPRA's evaluateAtArcLength is O(segments) per sample, making
+    // the overall complexity O(segments × numSamples). For large files (>5K
+    // segments) this is too slow for interactive use. Skip ReNURBS for large
+    // files — the viewer falls back to piece-level coloring which works fine.
+    Timer step3b;
+    constexpr std::size_t kMaxSegmentsForReNurbs = 5000;
     try {
-        if (result.nurbsPath && !result.nurbsPath->pieces().empty()) {
+        if (result.nurbsPath && !result.nurbsPath->pieces().empty() &&
+            result.nurbsPath->numPieces() <= kMaxSegmentsForReNurbs) {
             // Build PathAdapter from the NURBS path
             MotionPlanner::PathAdapter<3, double> pathAdapter(*result.nurbsPath);
 
@@ -421,12 +468,12 @@ ProcessResult GCodeProcessor::process(
             }
             limits.axis.jerkLimitEnabled = limits.path.jerkLimitEnabled;
 
-            // Run BasicTOPPRA to get a sampled velocity profile
-            MotionPlanner::BasicTOPPRA<3, double> profiler(limits);
+            // Run ParetoTimeEnergyOptimalVelocityPlanner to get a sampled
+            // velocity profile AND the analytical WSS (Weighted Switching
+            // Structure) needed by the analytical PA algorithms.
+            MotionPlanner::analytical::ParetoTimeEnergyOptimalVelocityPlanner<3, double> profiler(limits);
             // Use the first segment's feed rate as the global feed rate.
             // Feed rate in G-code is mm/min; convert to mm/s.
-            // For a more accurate profile, per-segment feed rates would be
-            // used, but BasicTOPPRA takes a single feed rate.
             double feedRate = config.maxVelocity;
             for (const auto& seg : parseResult.segments) {
                 if (seg.feedRate > 0.0) {
@@ -436,10 +483,22 @@ ProcessResult GCodeProcessor::process(
             }
             // Number of samples for the velocity profile — enough resolution
             // for the ReNURBS fitter to capture the profile shape.
-            std::size_t numSamples = std::max<std::size_t>(
-                200, pathAdapter.numSegments() * 20);
+            // Cap at 20000 to avoid O(n²) blowup on large files (69K segments
+            // × 20 = 1.4M samples would take minutes; 20K is sufficient for
+            // smooth profile fitting and completes in <1s).
+            std::size_t numSamples = std::min<std::size_t>(
+                20000, std::max<std::size_t>(
+                    200, pathAdapter.numSegments() * 20));
+            WGV_LOG(std::format("Step 3b: ParetoPlanner — {} segments, feedRate={:.1} mm/s, numSamples={}",
+                pathAdapter.numSegments(), feedRate, numSamples));
+            Timer toppraTimer;
             auto velocityProfile = profiler.computeProfile(
                 pathAdapter, feedRate, 0.0, 0.0, numSamples);
+            WGV_LOG_TIME(std::format("Step 3b: ParetoPlanner computeProfile — {} samples",
+                velocityProfile.points().size()), toppraTimer);
+
+            // Extract the WSS (analytical trajectory source) for PA computation
+            auto wss = profiler.weightedSource();
 
             // Build ReNURBS profile from the velocity profile
             tether::motion::profile_renurbs::ReNURBSConfig renurbsConfig;
@@ -448,8 +507,11 @@ ProcessResult GCodeProcessor::process(
             renurbsConfig.certifyThrowOnFailure = false;
             // Use default tolerances and degrees
 
+            Timer renurbsTimer;
             auto renurbsProfile = tether::motion::profile_renurbs::buildReNURBSProfile(
                 velocityProfile, pathAdapter, limits, renurbsConfig);
+            WGV_LOG_TIME(std::format("Step 3b: buildReNURBSProfile — {} segments",
+                renurbsProfile.perSegment.size()), renurbsTimer);
 
             // Compute max values for normalization from control point convex hull
             float maxVel = 0.0f, maxAccel = 0.0f, maxJerk = 0.0f, maxTime = 0.0f;
@@ -479,9 +541,12 @@ ProcessResult GCodeProcessor::process(
             result.renurbsMaxTime = maxTime;
 
             // ── Step 3c: Compute pressure advance profiles ──
+            // Uses analytical PA algorithms (closed-form computation on WSS
+            // arcs) instead of sampled-space control-level classes.
             // For each PA algorithm (Linear, PowerLaw, CrossWLF, LTI, LPV),
             // compute pre-PA velocity and post-PA offset, fitted to ReNURBS.
             // Selectable in the UI for visualization in the plot and color modes.
+            Timer paTimer;
             try {
                 // Build extrusion ratios from segment data
                 // ratio = |E_delta| / segmentLength (0 for non-extruding moves)
@@ -502,17 +567,33 @@ ProcessResult GCodeProcessor::process(
                     }
                 }
 
+                // Build ExtrusionTrajectory from the WSS for analytical PA
+                std::unique_ptr<MotionPlanner::analytical::extrusion::ExtrusionTrajectory<3, double>> extrusionTraj;
+                if (wss) {
+                    extrusionTraj = std::make_unique<
+                        MotionPlanner::analytical::extrusion::ExtrusionTrajectory<3, double>>(
+                        *wss, extrusionRatios);
+                    WGV_LOG(std::format("Step 3c: ExtrusionTrajectory — {} arcs, total time={:.3}s",
+                        extrusionTraj->numArcs(), extrusionTraj->totalTime()));
+                }
+
                 PaConfig paConfig;
                 paConfig.sampleInterval = 0.001;  // 1ms sampling
                 result.paProfiles = computeAllPaProfiles(
-                    velocityProfile, extrusionRatios, paConfig);
+                    velocityProfile, extrusionRatios, paConfig,
+                    extrusionTraj.get());
+                WGV_LOG_TIME(std::format("Step 3c: PA profiles (analytical) — {} algorithms",
+                    result.paProfiles.size()), paTimer);
             } catch (const std::exception& e) {
-                // PA is optional — if it fails, continue without it.
+                WGV_LOG(std::format("Step 3c: PA profiles FAILED (optional, continuing): {}", e.what()));
             }
+        WGV_LOG_TIME("Step 3b total: ReNURBS + PA", step3b);
+        } else if (result.nurbsPath) {
+            WGV_LOG(std::format("Step 3b: SKIPPED — {} pieces exceeds limit {} (too slow for TOPPRA)",
+                result.nurbsPath->numPieces(), kMaxSegmentsForReNurbs));
         }
     } catch (const std::exception& e) {
-        // ReNURBS is optional — if it fails, continue without it.
-        // The viewer will fall back to piece-level coloring.
+        WGV_LOG(std::format("Step 3b FAILED (optional, continuing): {}", e.what()));
     }
 
     if (progress) progress(0.7);
@@ -521,6 +602,8 @@ ProcessResult GCodeProcessor::process(
     // Only run if explicitly requested (nurbsOnly=false).
     // This is the slow O(samples) step that generates millions of points.
     if (!config.nurbsOnly) {
+        WGV_LOG("Step 4: dense sampling (nurbsOnly=false)");
+        Timer step4;
         AnalysisConfig analysisConfig;
         analysisConfig.timeStep = config.sampleRate;
         analysisConfig.derivativeOrder = config.derivativeOrder;
@@ -531,6 +614,7 @@ ProcessResult GCodeProcessor::process(
 
         TrajectoryAnalyzer analyzer(analysisConfig);
         result.samples = analyzer.analyze(segments, nullptr);
+        WGV_LOG_TIME(std::format("Step 4: dense sampling — {} samples", result.samples.size()), step4);
 
         if (progress) progress(0.9);
 
@@ -551,6 +635,8 @@ ProcessResult GCodeProcessor::process(
     result.success = true;
 
     if (progress) progress(1.0);
+    WGV_LOG_TIME(std::format("process() complete — {} samples, duration {:.2}s, path {:.1} mm",
+        result.sampleCount, result.duration, result.pathLength), totalTimer);
     return result;
 }
 
