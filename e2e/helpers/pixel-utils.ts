@@ -6,6 +6,10 @@
  * browser, count non-transparent/non-background pixels, sample colors
  * at specific locations, and verify that canvases are actually rendering
  * content (not just blank/transparent).
+ *
+ * NOTE: WebGPU canvases do not support toDataURL() or getContext('2d').
+ * Use captureCanvasPixels() (Playwright screenshot-based) for WebGPU
+ * canvases, and getCanvasPixels() (toDataURL-based) for 2D canvases.
  */
 
 import { PNG } from 'pngjs';
@@ -171,4 +175,32 @@ export function getColorHistogram(pixels: CanvasPixels, minCount = 5): Map<strin
     if (v >= minCount) filtered.set(k, v);
   }
   return filtered;
+}
+
+// ─── WebGPU canvas support ─────────────────────────────────────────────
+//
+// WebGPU canvases do not support toDataURL() or getContext('2d'). To capture
+// their pixels, we use Playwright's locator.screenshot() which takes a
+// screenshot of the element via the browser's compositor.
+
+/**
+ * Capture pixel data from a canvas element using Playwright's screenshot
+ * mechanism. This works with WebGPU canvases (which don't support
+ * toDataURL or getContext('2d')).
+ *
+ * @param locator Playwright locator for the canvas element
+ * @returns Canvas pixel data, or null if the canvas is not visible
+ */
+export async function captureCanvasPixels(locator: Locator): Promise<CanvasPixels | null> {
+  try {
+    const screenshotBuffer = await locator.screenshot({ type: 'png' });
+    const png = PNG.sync.read(screenshotBuffer);
+    return {
+      width: png.width,
+      height: png.height,
+      data: new Uint8Array(png.data),
+    };
+  } catch (e) {
+    return null;
+  }
 }
