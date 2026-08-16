@@ -1933,16 +1933,24 @@ export class WebGPUApp {
     const text = await file.text();
     this.gcodeViewer.loadGcodeText(text, file.name);
 
-    // Upload via HTTP (bypasses protobuf 2GB limit for large G-code files)
-    const uploadResp = await this.rpcClient.uploadGcodeHttp(file);
-    this.currentJobId = uploadResp.jobId;
-    await this.rpcClient.processJob(uploadResp.jobId);
-    await this.pollJobStatus(uploadResp.jobId);
+    try {
+      // Upload via HTTP (bypasses protobuf 2GB limit for large G-code files)
+      const uploadResp = await this.rpcClient.uploadGcodeHttp(file);
+      this.currentJobId = uploadResp.jobId;
+      console.info(`Uploaded "${file.name}" → job ${uploadResp.jobId}`);
+      await this.rpcClient.processJob(uploadResp.jobId);
+      console.info(`Processing started for job ${uploadResp.jobId}`);
+      await this.pollJobStatus(uploadResp.jobId);
+    } catch (e) {
+      console.error('Upload/processing failed:', e);
+      this.controlPanel.setStatus(`Upload failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
   }
 
   private async pollJobStatus(jobId: string): Promise<void> {
     const poll = async (): Promise<void> => {
       const status = await this.rpcClient.getJobStatus(jobId);
+      console.info(`Job ${jobId} status: ${status.state}`);
       this.controlPanel.updateJobStatus(status);
       if (status.state === 'ready') {
         await this.loadJobData(jobId);
@@ -1963,6 +1971,7 @@ export class WebGPUApp {
   }
 
   private async loadJobData(jobId: string): Promise<void> {
+    console.info(`Loading job data for ${jobId}...`);
     // BUG 2 FIX: Clear all stale data from previous job before loading new data.
     // Without this, if file A loaded as NBP and file B falls back to TTHR,
     // currentNBP would still point to file A's data, causing wrong bounds,
