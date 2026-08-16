@@ -38,10 +38,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  const bottomPanel = document.getElementById('bottom-panel') as HTMLElement | null;
+  const topPanel = document.getElementById('top-panel') as HTMLElement | null;
   const gcodePanel = document.getElementById('gcode-panel') as HTMLElement | null;
   const navCubeContainer = document.getElementById('nav-cube-container') as HTMLElement | null;
-  if (!bottomPanel || !gcodePanel || !navCubeContainer) {
+  if (!topPanel || !gcodePanel || !navCubeContainer) {
     console.error('UI containers not found');
     return;
   }
@@ -51,7 +51,7 @@ async function main(): Promise<void> {
   const rpcClient = new RpcClient(transport);
 
   // Create and init the WebGPU app
-  const app = new WebGPUApp(canvas, rpcClient, bottomPanel, gcodePanel, navCubeContainer);
+  const app = new WebGPUApp(canvas, rpcClient, topPanel, gcodePanel, navCubeContainer);
   // Expose for E2E testing (BUG 6 regression tests use this to call destroy())
   (window as any).__wgvApp = app;
   try {

@@ -297,6 +297,9 @@ std::string ViewerRpcHandler::handleGetJobStatus(const std::string& requestBytes
         if (!result->success) {
             resp.set_error_message(result->errorMessage);
         }
+        if (!result->warning.empty()) {
+            resp.set_warning(result->warning);
+        }
     }
     return resp.SerializeAsString();
 }

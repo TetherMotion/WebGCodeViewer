@@ -100,6 +100,11 @@ async function uploadAndProcess(request: APIRequestContext, gcode: string, filen
   return { jobId, status };
 }
 
+/** Open a dropdown menu by clicking its trigger button. */
+async function openMenu(page: Page, label: string) {
+  await page.locator('#top-panel .menu-trigger', { hasText: label }).click();
+}
+
 // ─── Helper: console message collector ─────────────────────────────────
 
 function setupMessageCollector(page: Page) {
@@ -331,7 +336,8 @@ test.describe('Canvas pixel verification', () => {
     await page.waitForTimeout(2000);
 
     // Toggle miniplot
-    const miniplotBtn = page.locator('#bottom-panel button', { hasText: 'Miniplot' });
+    await openMenu(page, 'Plot');
+    const miniplotBtn = page.locator('#top-panel button', { hasText: 'Miniplot' });
     await miniplotBtn.click();
     await page.waitForTimeout(1000);
 
@@ -403,7 +409,7 @@ test.describe('ColorMap computation verification', () => {
     await page.waitForTimeout(1000);
 
     // The first select in the control panel should be the color attribute selector
-    const selects = page.locator('#bottom-panel select');
+    const selects = page.locator('#top-panel select');
     const count = await selects.count();
     expect(count).toBeGreaterThan(0);
 
@@ -1037,7 +1043,8 @@ test.describe('Miniplot rendering verification', () => {
     await page.waitForTimeout(3000);
 
     // Toggle miniplot
-    const miniplotBtn = page.locator('#bottom-panel button', { hasText: 'Miniplot' });
+    await openMenu(page, 'Plot');
+    const miniplotBtn = page.locator('#top-panel button', { hasText: 'Miniplot' });
     await miniplotBtn.click();
     await page.waitForTimeout(2000);
 
@@ -1075,7 +1082,8 @@ test.describe('Miniplot rendering verification', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    await page.locator('#bottom-panel button', { hasText: 'Miniplot' }).click();
+    await openMenu(page, 'Plot');
+    await page.locator('#top-panel button', { hasText: 'Miniplot' }).click();
     await page.waitForTimeout(1000);
 
     const canvas = page.locator('#miniplot-canvas');
@@ -1307,7 +1315,7 @@ test.describe('Travel move visualization (Feature #1)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+    const travelsBtn = page.locator('#top-panel button', { hasText: 'Travels' });
     await expect(travelsBtn).toBeVisible();
     await expect(travelsBtn).toHaveClass(/active/);
   });
@@ -1317,9 +1325,10 @@ test.describe('Travel move visualization (Feature #1)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+    const travelsBtn = page.locator('#top-panel button', { hasText: 'Travels' });
     await expect(travelsBtn).toHaveClass(/active/);
 
+    await openMenu(page, 'View');
     await travelsBtn.click();
     await expect(travelsBtn).not.toHaveClass(/active/);
 
@@ -1337,9 +1346,10 @@ test.describe('Travel move visualization (Feature #1)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
-    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+    const travelsBtn = page.locator('#top-panel button', { hasText: 'Travels' });
 
     // Toggle off (hide travels)
+    await openMenu(page, 'View');
     await travelsBtn.click();
     await page.waitForTimeout(500);
     expect(await travelsBtn.getAttribute('class')).not.toContain('active');
@@ -1362,9 +1372,10 @@ test.describe('Travel move visualization (Feature #1)', () => {
     await page.waitForTimeout(2000);
 
     // Toggle grid + travels together
-    const gridBtn = page.locator('#bottom-panel button', { hasText: 'Grid' });
-    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+    const gridBtn = page.locator('#top-panel button', { hasText: 'Grid' });
+    const travelsBtn = page.locator('#top-panel button', { hasText: 'Travels' });
 
+    await openMenu(page, 'View');
     await gridBtn.click();
     await travelsBtn.click();
     await page.waitForTimeout(300);
@@ -1456,7 +1467,7 @@ test.describe('Retraction markers (Feature #3)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Retractions' });
+    const btn = page.locator('#top-panel button', { hasText: 'Retractions' });
     await expect(btn).toBeVisible();
     // Should not be active by default
     await expect(btn).not.toHaveClass(/active/);
@@ -1467,7 +1478,8 @@ test.describe('Retraction markers (Feature #3)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Retractions' });
+    const btn = page.locator('#top-panel button', { hasText: 'Retractions' });
+    await openMenu(page, 'View');
     await btn.click();
     await expect(btn).toHaveClass(/active/);
 
@@ -1484,9 +1496,10 @@ test.describe('Retraction markers (Feature #3)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Retractions' });
+    const btn = page.locator('#top-panel button', { hasText: 'Retractions' });
 
     // Toggle on (highlight retractions)
+    await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(500);
 
@@ -1506,10 +1519,11 @@ test.describe('Retraction markers (Feature #3)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
-    const retractionBtn = page.locator('#bottom-panel button', { hasText: 'Retractions' });
+    const travelsBtn = page.locator('#top-panel button', { hasText: 'Travels' });
+    const retractionBtn = page.locator('#top-panel button', { hasText: 'Retractions' });
 
     // Toggle both
+    await openMenu(page, 'View');
     await retractionBtn.click();
     await travelsBtn.click();
     await page.waitForTimeout(300);
@@ -1531,7 +1545,7 @@ test.describe('Dark/Light theme toggle (Feature #66)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+    const themeBtn = page.locator('#top-panel button', { hasText: 'Theme' });
     await expect(themeBtn).toBeVisible();
   });
 
@@ -1549,9 +1563,10 @@ test.describe('Dark/Light theme toggle (Feature #66)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+    const themeBtn = page.locator('#top-panel button', { hasText: 'Theme' });
 
     // Toggle to light
+    await openMenu(page, '⋯');
     await themeBtn.click();
     await page.waitForTimeout(300);
     let htmlClass = await page.locator('html').getAttribute('class');
@@ -1575,7 +1590,8 @@ test.describe('Dark/Light theme toggle (Feature #66)', () => {
     });
 
     // Toggle to light
-    const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+    const themeBtn = page.locator('#top-panel button', { hasText: 'Theme' });
+    await openMenu(page, '⋯');
     await themeBtn.click();
     await page.waitForTimeout(300);
 
@@ -1596,9 +1612,10 @@ test.describe('Dark/Light theme toggle (Feature #66)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+    const themeBtn = page.locator('#top-panel button', { hasText: 'Theme' });
 
     // Toggle multiple times
+    await openMenu(page, '⋯');
     await themeBtn.click();
     await page.waitForTimeout(500);
     await themeBtn.click();
@@ -1685,7 +1702,7 @@ test.describe('Keyboard shortcuts overlay (Feature #68)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const gridBtn = page.locator('#bottom-panel button', { hasText: 'Grid' });
+    const gridBtn = page.locator('#top-panel button', { hasText: 'Grid' });
     const initialClass = await gridBtn.getAttribute('class');
 
     // Press G
@@ -1701,7 +1718,7 @@ test.describe('Keyboard shortcuts overlay (Feature #68)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+    const travelsBtn = page.locator('#top-panel button', { hasText: 'Travels' });
     const initialActive = await travelsBtn.getAttribute('class');
 
     await page.keyboard.press('t');
@@ -1750,7 +1767,7 @@ test.describe('Screenshot export (Feature #72)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const exportBtn = page.locator('#bottom-panel button', { hasText: 'Export' });
+    const exportBtn = page.locator('#top-panel button', { hasText: 'Export' });
     await expect(exportBtn).toBeVisible();
   });
 
@@ -1767,7 +1784,8 @@ test.describe('Screenshot export (Feature #72)', () => {
     const downloadPromise = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
 
     // Click export
-    await page.locator('#bottom-panel button', { hasText: 'Export' }).click();
+    await openMenu(page, 'File');
+    await page.locator('#top-panel button', { hasText: 'Export' }).click();
 
     const download = await downloadPromise;
     // Download may or may not trigger in headless mode, but no errors should occur
@@ -1904,7 +1922,7 @@ test.describe('Fullscreen mode (Feature #73)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Fullscreen' });
+    const btn = page.locator('#top-panel button', { hasText: 'Fullscreen' });
     await expect(btn).toBeVisible();
   });
 
@@ -1914,7 +1932,8 @@ test.describe('Fullscreen mode (Feature #73)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Fullscreen' });
+    const btn = page.locator('#top-panel button', { hasText: 'Fullscreen' });
+    await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(500);
 
@@ -1931,7 +1950,8 @@ test.describe('Fullscreen mode (Feature #73)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Fullscreen' });
+    const btn = page.locator('#top-panel button', { hasText: 'Fullscreen' });
+    await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(500);
     await btn.click();
@@ -1951,7 +1971,7 @@ test.describe('Render statistics (Feature #120)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+    const btn = page.locator('#top-panel button', { hasText: 'Stats' });
     await expect(btn).toBeVisible();
     expect(await btn.getAttribute('class')).not.toContain('active');
   });
@@ -1961,7 +1981,8 @@ test.describe('Render statistics (Feature #120)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+    const btn = page.locator('#top-panel button', { hasText: 'Stats' });
+    await openMenu(page, '⋯');
     await btn.click();
     await page.waitForTimeout(1000); // Wait for FPS calculation
 
@@ -1981,7 +2002,8 @@ test.describe('Render statistics (Feature #120)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+    const btn = page.locator('#top-panel button', { hasText: 'Stats' });
+    await openMenu(page, '⋯');
     await btn.click();
     await page.waitForTimeout(1000);
 
@@ -1999,7 +2021,8 @@ test.describe('Render statistics (Feature #120)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+    const btn = page.locator('#top-panel button', { hasText: 'Stats' });
+    await openMenu(page, '⋯');
     await btn.click();
     await page.waitForTimeout(500);
     await expect(page.locator('.stats-overlay')).toBeVisible();
@@ -2018,7 +2041,8 @@ test.describe('Render statistics (Feature #120)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+    const btn = page.locator('#top-panel button', { hasText: 'Stats' });
+    await openMenu(page, '⋯');
     await btn.click();
     await page.waitForTimeout(2000); // Let it render with stats for a while
 
@@ -2036,7 +2060,7 @@ test.describe('Bounding box dimensions (Feature #48)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+    const btn = page.locator('#top-panel button', { hasText: 'BBox' });
     await expect(btn).toBeVisible();
     expect(await btn.getAttribute('class') || '').not.toContain('active');
   });
@@ -2046,7 +2070,8 @@ test.describe('Bounding box dimensions (Feature #48)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+    const btn = page.locator('#top-panel button', { hasText: 'BBox' });
+    await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(300);
 
@@ -2064,7 +2089,8 @@ test.describe('Bounding box dimensions (Feature #48)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+    const btn = page.locator('#top-panel button', { hasText: 'BBox' });
+    await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(500);
 
@@ -2086,7 +2112,8 @@ test.describe('Bounding box dimensions (Feature #48)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+    const btn = page.locator('#top-panel button', { hasText: 'BBox' });
+    await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(500);
 
@@ -2102,7 +2129,8 @@ test.describe('Bounding box dimensions (Feature #48)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+    const btn = page.locator('#top-panel button', { hasText: 'BBox' });
+    await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(300);
     await expect(page.locator('.bbox-overlay')).toBeVisible();
@@ -2121,7 +2149,8 @@ test.describe('Bounding box dimensions (Feature #48)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+    const btn = page.locator('#top-panel button', { hasText: 'BBox' });
+    await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(500);
     await btn.click();
@@ -2534,7 +2563,7 @@ test.describe('Copy view URL to clipboard (Feature #92)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+    const btn = page.locator('#top-panel button', { hasText: 'Copy View URL' });
     await expect(btn).toBeVisible();
   });
 
@@ -2547,7 +2576,8 @@ test.describe('Copy view URL to clipboard (Feature #92)', () => {
     // Grant clipboard permission
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+    const btn = page.locator('#top-panel button', { hasText: 'Copy View URL' });
+    await openMenu(page, 'File');
     await btn.click();
     await page.waitForTimeout(500);
 
@@ -2561,7 +2591,8 @@ test.describe('Copy view URL to clipboard (Feature #92)', () => {
 
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+    const btn = page.locator('#top-panel button', { hasText: 'Copy View URL' });
+    await openMenu(page, 'File');
     await btn.click();
     await page.waitForTimeout(500);
 
@@ -2581,7 +2612,8 @@ test.describe('Copy view URL to clipboard (Feature #92)', () => {
 
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+    const btn = page.locator('#top-panel button', { hasText: 'Copy View URL' });
+    await openMenu(page, 'File');
     await btn.click();
     await page.waitForTimeout(500);
 
@@ -2597,7 +2629,8 @@ test.describe('Copy view URL to clipboard (Feature #92)', () => {
 
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+    const btn = page.locator('#top-panel button', { hasText: 'Copy View URL' });
+    await openMenu(page, 'File');
     await btn.click();
     await page.waitForTimeout(300);
 
@@ -2617,7 +2650,7 @@ test.describe('Layer count display (Feature #128)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+    const btn = page.locator('#top-panel button', { hasText: 'Layers' });
     await expect(btn).toBeVisible();
     expect(await btn.getAttribute('class') || '').not.toContain('active');
   });
@@ -2627,7 +2660,8 @@ test.describe('Layer count display (Feature #128)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+    const btn = page.locator('#top-panel button', { hasText: 'Layers' });
+    await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(300);
 
@@ -2645,7 +2679,8 @@ test.describe('Layer count display (Feature #128)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+    const btn = page.locator('#top-panel button', { hasText: 'Layers' });
+    await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(500);
 
@@ -2663,7 +2698,8 @@ test.describe('Layer count display (Feature #128)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+    const btn = page.locator('#top-panel button', { hasText: 'Layers' });
+    await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(300);
     await expect(page.locator('.layer-count-overlay')).toBeVisible();
@@ -2682,7 +2718,8 @@ test.describe('Layer count display (Feature #128)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    const btn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+    const btn = page.locator('#top-panel button', { hasText: 'Layers' });
+    await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(500);
     await btn.click();
@@ -2718,7 +2755,8 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(2000);
 
-      const resetBtn = page.locator('#bottom-panel button', { hasText: 'Reset View' });
+      const resetBtn = page.locator('#top-panel button', { hasText: 'Reset View' });
+      await openMenu(page, 'View');
       await resetBtn.click();
       await page.waitForTimeout(500);
 
@@ -2730,8 +2768,9 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(1000);
 
-      const resetBtn = page.locator('#bottom-panel button', { hasText: 'Reset View' });
+      const resetBtn = page.locator('#top-panel button', { hasText: 'Reset View' });
       await expect(resetBtn).toBeVisible();
+      await openMenu(page, 'View');
       await resetBtn.click();
       // No error means success — the button is wired up
     });
@@ -2767,7 +2806,8 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(2000);
 
       // Enable BBox
-      const bboxBtn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+      const bboxBtn = page.locator('#top-panel button', { hasText: 'BBox' });
+      await openMenu(page, 'View');
       await bboxBtn.click();
       await page.waitForTimeout(500);
 
@@ -2782,6 +2822,7 @@ test.describe('Bug fix regression tests', () => {
       // BBox should still be visible (toggle state persists in new page load? No,
       // page reloads, so we need to re-enable). But the key test is that the
       // overlay shows new data, not stale data from job1.
+      await openMenu(page, 'View');
       await bboxBtn.click();
       await page.waitForTimeout(500);
 
@@ -2823,7 +2864,8 @@ test.describe('Bug fix regression tests', () => {
       // camera state from the page. We verify via the "Copy URL" button
       // which reads current camera state.
       await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-      const copyBtn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+      const copyBtn = page.locator('#top-panel button', { hasText: 'Copy View URL' });
+      await openMenu(page, 'File');
       await copyBtn.click();
       await page.waitForTimeout(500);
 
@@ -2850,7 +2892,8 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(1000);
 
       await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-      const copyBtn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+      const copyBtn = page.locator('#top-panel button', { hasText: 'Copy View URL' });
+      await openMenu(page, 'File');
       await copyBtn.click();
       await page.waitForTimeout(500);
 
@@ -2879,7 +2922,8 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(2000);
 
       // Toggle Travels off — all pieces are travel moves, so this filters everything
-      const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+      const travelsBtn = page.locator('#top-panel button', { hasText: 'Travels' });
+      await openMenu(page, 'View');
       await travelsBtn.click();
       await page.waitForTimeout(500);
 
@@ -2903,12 +2947,13 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(2000);
 
       // Click on the layer slider to change layer
+      await openMenu(page, 'Playback');
       const layerSlider = page.locator('.layer-slider');
       await layerSlider.fill('0');
       await page.waitForTimeout(500);
 
       // Click "All" button to reset
-      const allBtn = page.locator('#bottom-panel button', { hasText: 'All' });
+      const allBtn = page.locator('#top-panel button', { hasText: 'All' });
       await allBtn.click();
       await page.waitForTimeout(500);
 
@@ -2924,7 +2969,8 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(1000);
 
       // Enable stats
-      const statsBtn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+      const statsBtn = page.locator('#top-panel button', { hasText: 'Stats' });
+      await openMenu(page, '⋯');
       await statsBtn.click();
       await page.waitForTimeout(300);
 
@@ -2947,7 +2993,8 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(1000);
 
-      const bboxBtn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+      const bboxBtn = page.locator('#top-panel button', { hasText: 'BBox' });
+      await openMenu(page, 'View');
       await bboxBtn.click();
       await page.waitForTimeout(300);
 
@@ -2991,11 +3038,12 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(1000);
 
       // Enable both overlays
-      const layersBtn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+      const layersBtn = page.locator('#top-panel button', { hasText: 'Layers' });
+      await openMenu(page, 'View');
       await layersBtn.click();
       await page.waitForTimeout(300);
 
-      const bboxBtn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+      const bboxBtn = page.locator('#top-panel button', { hasText: 'BBox' });
       await bboxBtn.click();
       await page.waitForTimeout(300);
 
@@ -3074,7 +3122,8 @@ test.describe('Bug fix regression tests', () => {
 
       await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
 
-      const copyBtn = page.locator('#bottom-panel button', { hasText: 'Copy URL' });
+      const copyBtn = page.locator('#top-panel button', { hasText: 'Copy View URL' });
+      await openMenu(page, 'File');
       await copyBtn.click();
       await page.waitForTimeout(300);
 
@@ -3118,7 +3167,8 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(2000);
 
-      const allBtn = page.locator('#bottom-panel button', { hasText: 'All' });
+      await openMenu(page, 'Playback');
+      const allBtn = page.locator('#top-panel button', { hasText: 'All' });
       await allBtn.click();
       await page.waitForTimeout(300);
 
@@ -3145,7 +3195,8 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(2000);
 
       // Click "All" first to dim
-      const allBtn = page.locator('#bottom-panel button', { hasText: 'All' });
+      await openMenu(page, 'Playback');
+      const allBtn = page.locator('#top-panel button', { hasText: 'All' });
       await allBtn.click();
       await page.waitForTimeout(200);
 
@@ -3167,12 +3218,13 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(1000);
 
       // Enable light theme
-      const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+      const themeBtn = page.locator('#top-panel button', { hasText: 'Theme' });
+      await openMenu(page, '⋯');
       await themeBtn.click();
       await page.waitForTimeout(200);
 
       // Enable stats
-      const statsBtn = page.locator('#bottom-panel button', { hasText: 'Stats' });
+      const statsBtn = page.locator('#top-panel button', { hasText: 'Stats' });
       await statsBtn.click();
       await page.waitForTimeout(500);
 
@@ -3189,12 +3241,14 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(1000);
 
       // Enable light theme
-      const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+      const themeBtn = page.locator('#top-panel button', { hasText: 'Theme' });
+      await openMenu(page, '⋯');
       await themeBtn.click();
       await page.waitForTimeout(200);
 
       // Enable BBox
-      const bboxBtn = page.locator('#bottom-panel button', { hasText: 'BBox' });
+      const bboxBtn = page.locator('#top-panel button', { hasText: 'BBox' });
+      await openMenu(page, 'View');
       await bboxBtn.click();
       await page.waitForTimeout(300);
 
@@ -3209,12 +3263,14 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(1000);
 
       // Enable light theme
-      const themeBtn = page.locator('#bottom-panel button', { hasText: 'Theme' });
+      const themeBtn = page.locator('#top-panel button', { hasText: 'Theme' });
+      await openMenu(page, '⋯');
       await themeBtn.click();
       await page.waitForTimeout(200);
 
       // Enable Layers
-      const layersBtn = page.locator('#bottom-panel button', { hasText: 'Layers' });
+      const layersBtn = page.locator('#top-panel button', { hasText: 'Layers' });
+      await openMenu(page, 'View');
       await layersBtn.click();
       await page.waitForTimeout(300);
 

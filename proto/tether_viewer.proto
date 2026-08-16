@@ -134,6 +134,7 @@ message GetJobStatusResponse {
   double duration = 5;
   double path_length = 6;
   string error_message = 7;
+  string warning = 8;
 }
 
 message BinaryDataRequest {

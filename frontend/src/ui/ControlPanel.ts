@@ -1,7 +1,7 @@
 /**
  * @file ControlPanel.ts
- * @brief Bottom control panel for file operations, view settings, status,
- * layer navigation, and time playback.
+ * @brief Top menu bar with thematic dropdown menus for file operations,
+ * view settings, analysis, playback, and status.
  */
 
 import { EventDispatcher } from '../core/EventDispatcher';
@@ -94,23 +94,109 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
   constructor(container: HTMLElement) {
     super();
     this.element = document.createElement('div');
-    this.element.className = 'control-panel';
-    this.element.style.display = 'flex';
-    this.element.style.width = '100%';
-    this.element.style.alignItems = 'center';
-    this.element.style.gap = '12px';
+    this.element.className = 'control-panel top-menu-bar';
     container.appendChild(this.element);
     this.build();
   }
 
   private build(): void {
-    // File group
-    const fileGroup = document.createElement('div');
-    fileGroup.className = 'control-group';
+    // ── Helper: create a dropdown menu group ──
+    const openMenus: HTMLElement[] = [];
+    const createMenu = (label: string): { trigger: HTMLButtonElement; dropdown: HTMLElement } => {
+      const group = document.createElement('div');
+      group.className = 'menu-group';
 
-    const openBtn = document.createElement('button');
-    openBtn.textContent = 'Open G-code';
-    openBtn.onclick = () => {
+      const trigger = document.createElement('button');
+      trigger.className = 'menu-trigger';
+      trigger.innerHTML = `${label} <span class="chevron">▾</span>`;
+
+      const dropdown = document.createElement('div');
+      dropdown.className = 'menu-dropdown';
+
+      trigger.onclick = (e) => {
+        e.stopPropagation();
+        const wasOpen = dropdown.classList.contains('open');
+        // Close all other menus
+        for (const m of openMenus) m.classList.remove('open');
+        if (!wasOpen) {
+          dropdown.classList.add('open');
+        }
+      };
+
+      group.appendChild(trigger);
+      group.appendChild(dropdown);
+      this.element.appendChild(group);
+      openMenus.push(dropdown);
+      return { trigger, dropdown };
+    };
+
+    // Helper to add a toggle button to a dropdown
+    const addToggle = (dropdown: HTMLElement, label: string, active: boolean, handler: () => void, title?: string): HTMLButtonElement => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      if (title) btn.title = title;
+      if (active) btn.classList.add('active');
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        btn.classList.toggle('active');
+        handler();
+      };
+      const row = document.createElement('div');
+      row.className = 'menu-row';
+      row.appendChild(btn);
+      dropdown.appendChild(row);
+      return btn;
+    };
+
+    // Helper to add a non-toggle button to a dropdown
+    const addButton = (dropdown: HTMLElement, label: string, handler: () => void, title?: string): HTMLButtonElement => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      if (title) btn.title = title;
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        handler();
+      };
+      const row = document.createElement('div');
+      row.className = 'menu-row';
+      row.appendChild(btn);
+      dropdown.appendChild(row);
+      return btn;
+    };
+
+    // Helper to add a labeled control row to a dropdown
+    const addRow = (dropdown: HTMLElement, ...elements: HTMLElement[]): void => {
+      const row = document.createElement('div');
+      row.className = 'menu-row';
+      for (const el of elements) row.appendChild(el);
+      dropdown.appendChild(row);
+    };
+
+    // Helper to add a section label
+    const addSection = (dropdown: HTMLElement, label: string): void => {
+      const sec = document.createElement('div');
+      sec.className = 'menu-section-label';
+      sec.textContent = label;
+      dropdown.appendChild(sec);
+    };
+
+    // Helper to add a divider
+    const addDivider = (dropdown: HTMLElement): void => {
+      const div = document.createElement('div');
+      div.className = 'menu-divider';
+      dropdown.appendChild(div);
+    };
+
+    // Close menus on outside click
+    document.addEventListener('click', () => {
+      for (const m of openMenus) m.classList.remove('open');
+    });
+
+    // ── File menu ──
+    const fileMenu = createMenu('File');
+    const fileDropdown = fileMenu.dropdown;
+
+    addButton(fileDropdown, 'Open…', () => {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = '.gcode,.g,.nc,.ngc';
@@ -120,16 +206,19 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
         }
       };
       input.click();
-    };
-    fileGroup.appendChild(openBtn);
-    this.element.appendChild(fileGroup);
+    }, 'Open a G-code file');
 
-    // Color group
-    const colorGroup = document.createElement('div');
-    colorGroup.className = 'control-group';
+    addDivider(fileDropdown);
+    addButton(fileDropdown, 'Export Image', () => this.emit('exportImage', undefined), 'Export current view as PNG');
+    addButton(fileDropdown, 'Copy View URL', () => this.emit('copyViewUrl', undefined), 'Copy current view URL to clipboard');
 
+    // ── Color menu ──
+    const colorMenu = createMenu('Color');
+    const colorDropdown = colorMenu.dropdown;
+
+    addSection(colorDropdown, 'Attribute');
     const attrLabel = document.createElement('label');
-    attrLabel.textContent = 'Color:';
+    attrLabel.textContent = 'Color: ';
     const attrSelect = document.createElement('select');
     for (const attr of ['velocity', 'acceleration', 'jerk', 'paOffset', 'paVelocity', 'curvature', 'deviation', 'zHeight', 'extruderSpeed', 'motion', 'solid', 'feedRate', 'spindleRpm', 'toolNumber', 'coolant', 'featureType']) {
       const opt = document.createElement('option');
@@ -139,10 +228,12 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     }
     attrSelect.onchange = () => this.emit('colorAttributeChanged', attrSelect.value);
     attrLabel.appendChild(attrSelect);
-    colorGroup.appendChild(attrLabel);
+    addRow(colorDropdown, attrLabel);
 
+    addDivider(colorDropdown);
+    addSection(colorDropdown, 'Color Map');
     const mapLabel = document.createElement('label');
-    mapLabel.textContent = 'Map:';
+    mapLabel.textContent = 'Map: ';
     const mapSelect = document.createElement('select');
     for (const map of ['viridis', 'plasma', 'jet', 'turbo', 'grayscale', 'rainbow', 'cividis', 'coolwarm']) {
       const opt = document.createElement('option');
@@ -152,11 +243,47 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     }
     mapSelect.onchange = () => this.emit('colorMapChanged', mapSelect.value);
     mapLabel.appendChild(mapSelect);
-    colorGroup.appendChild(mapLabel);
+    addRow(colorDropdown, mapLabel);
 
-    // Feature #2: Line width slider
-    const widthLabel = document.createElement('label');
-    widthLabel.textContent = 'Width:';
+    // ── View menu ──
+    const viewMenu = createMenu('View');
+    const viewDropdown = viewMenu.dropdown;
+
+    this.gridBtn = addToggle(viewDropdown, 'Grid', false, () => this.emit('toggleGrid', undefined), 'Toggle ground grid');
+    this.gridActive = false;
+    // Override onclick to track state
+    this.gridBtn.onclick = (e) => {
+      e.stopPropagation();
+      this.gridActive = !this.gridActive;
+      this.gridBtn.classList.toggle('active', this.gridActive);
+      this.emit('toggleGrid', undefined);
+    };
+
+    this.crossBtn = addToggle(viewDropdown, 'Cross-Section', false, () => {}, 'Toggle cross-section plane');
+    this.crossActive = false;
+    this.crossBtn.onclick = (e) => {
+      e.stopPropagation();
+      this.crossActive = !this.crossActive;
+      this.crossBtn.classList.toggle('active', this.crossActive);
+      this.crossSectionGroup.style.display = this.crossActive ? 'flex' : 'none';
+      this.emit('toggleCrossSection', undefined);
+    };
+
+    addButton(viewDropdown, 'Reset View', () => this.emit('resetView', undefined), 'Reset camera to default position');
+
+    addDivider(viewDropdown);
+    addSection(viewDropdown, 'Display');
+
+    const travelsBtn = addToggle(viewDropdown, 'Travels', true, () => this.emit('toggleTravels', undefined), 'Show/hide travel moves');
+    const retractionBtn = addToggle(viewDropdown, 'Retractions', false, () => this.emit('toggleRetractions', undefined), 'Highlight retraction moves');
+    const bboxBtn = addToggle(viewDropdown, 'BBox', false, () => this.emit('toggleBoundingBox', undefined), 'Show bounding box dimensions');
+    const layerCountBtn = addToggle(viewDropdown, 'Layer Count', false, () => this.emit('toggleLayerCount', undefined), 'Show layer count display');
+    const fullscreenBtn = addButton(viewDropdown, 'Fullscreen', () => this.emit('toggleFullscreen', undefined), 'Toggle fullscreen mode');
+
+    addDivider(viewDropdown);
+    addSection(viewDropdown, 'Line Width');
+
+    // Line width slider inside the view dropdown
     const widthSlider = document.createElement('input');
     widthSlider.type = 'range';
     widthSlider.min = '1';
@@ -164,7 +291,7 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     widthSlider.value = '2';
     widthSlider.step = '0.5';
     widthSlider.className = 'width-slider';
-    widthSlider.style.width = '60px';
+    widthSlider.style.width = '80px';
     const widthValue = document.createElement('span');
     widthValue.className = 'slider-value';
     widthValue.textContent = '2';
@@ -172,44 +299,14 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
       widthValue.textContent = widthSlider.value;
       this.emit('lineWidthChanged', parseFloat(widthSlider.value));
     };
-    widthLabel.appendChild(widthSlider);
-    widthLabel.appendChild(widthValue);
-    colorGroup.appendChild(widthLabel);
-
-    this.element.appendChild(colorGroup);
-
-    // View group
-    const viewGroup = document.createElement('div');
-    viewGroup.className = 'control-group';
-
-    this.gridBtn = document.createElement('button');
-    this.gridBtn.textContent = 'Grid';
-    this.gridBtn.onclick = () => {
-      this.gridActive = !this.gridActive;
-      this.gridBtn.classList.toggle('active', this.gridActive);
-      this.emit('toggleGrid', undefined);
-    };
-    viewGroup.appendChild(this.gridBtn);
-
-    this.crossBtn = document.createElement('button');
-    this.crossBtn.textContent = 'Cross-Section';
-    this.crossBtn.onclick = () => {
-      this.crossActive = !this.crossActive;
-      this.crossBtn.classList.toggle('active', this.crossActive);
-      this.crossSectionGroup.style.display = this.crossActive ? 'flex' : 'none';
-      this.emit('toggleCrossSection', undefined);
-    };
-    viewGroup.appendChild(this.crossBtn);
+    addRow(viewDropdown, widthSlider, widthValue);
 
     // Cross-section Z-plane slider (hidden until cross-section is activated)
+    addDivider(viewDropdown);
+    addSection(viewDropdown, 'Cross-Section Z-Plane');
     this.crossSectionGroup = document.createElement('div');
-    this.crossSectionGroup.className = 'control-group cross-section-group';
+    this.crossSectionGroup.className = 'menu-row cross-section-group';
     this.crossSectionGroup.style.display = 'none';
-
-    const crossTitle = document.createElement('div');
-    crossTitle.className = 'slider-label';
-    crossTitle.textContent = 'Z-Plane:';
-    this.crossSectionGroup.appendChild(crossTitle);
 
     this.crossSlider = document.createElement('input');
     this.crossSlider.type = 'range';
@@ -218,6 +315,7 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     this.crossSlider.value = '50';
     this.crossSlider.step = '0.1';
     this.crossSlider.className = 'cross-slider';
+    this.crossSlider.style.flex = '1';
     this.crossSlider.oninput = () => {
       const frac = parseFloat(this.crossSlider.value) / 100;
       this.crossLabel.textContent = this.crossSlider.value + '%';
@@ -229,185 +327,58 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     this.crossLabel.className = 'slider-value';
     this.crossLabel.textContent = '50%';
     this.crossSectionGroup.appendChild(this.crossLabel);
-    this.element.appendChild(this.crossSectionGroup);
+    viewDropdown.appendChild(this.crossSectionGroup);
 
-    const resetBtn = document.createElement('button');
-    resetBtn.textContent = 'Reset View';
-    resetBtn.onclick = () => this.emit('resetView', undefined);
-    viewGroup.appendChild(resetBtn);
+    // ── Analysis menu ──
+    const analysisMenu = createMenu('Analysis');
+    const analysisDropdown = analysisMenu.dropdown;
 
-    const exportBtn = document.createElement('button');
-    exportBtn.textContent = 'Export';
-    exportBtn.onclick = () => this.emit('exportImage', undefined);
-    viewGroup.appendChild(exportBtn);
+    addSection(analysisDropdown, 'Reports');
+    const infoBtn = addToggle(analysisDropdown, 'Info Panel', false, () => this.emit('toggleInfoPanel', undefined), 'Toggle analysis info panel');
+    addButton(analysisDropdown, 'Export Report', () => this.emit('exportReport', undefined), 'Export analysis report as JSON');
 
-    // Feature #1: Travel moves toggle
-    const travelsBtn = document.createElement('button');
-    travelsBtn.textContent = 'Travels';
-    travelsBtn.className = 'active';
-    travelsBtn.onclick = () => {
-      travelsBtn.classList.toggle('active');
-      this.emit('toggleTravels', undefined);
-    };
-    viewGroup.appendChild(travelsBtn);
+    addDivider(analysisDropdown);
+    addSection(analysisDropdown, 'Compare');
+    const compareBtn = addToggle(analysisDropdown, 'Compare', false, () => this.emit('toggleComparison', undefined), 'Toggle comparison panel');
+    const diffBtn = addToggle(analysisDropdown, 'G-code Diff', false, () => this.emit('toggleDiff', undefined), 'Compare two G-code files');
 
-    // Feature #3: Retraction highlight toggle
-    const retractionBtn = document.createElement('button');
-    retractionBtn.textContent = 'Retractions';
-    retractionBtn.onclick = () => {
-      retractionBtn.classList.toggle('active');
-      this.emit('toggleRetractions', undefined);
-    };
-    viewGroup.appendChild(retractionBtn);
+    addDivider(analysisDropdown);
+    addSection(analysisDropdown, '3DP Features');
+    const overhangBtn = addToggle(analysisDropdown, 'Overhang', false, () => this.emit('toggleOverhang', undefined), 'Highlight overhang regions');
+    const seamBtn = addToggle(analysisDropdown, 'Z-Seam', false, () => this.emit('toggleZSeam', undefined), 'Visualize Z-seam positions');
+    const bridgeBtn = addToggle(analysisDropdown, 'Bridges', false, () => this.emit('toggleBridges', undefined), 'Highlight bridge regions');
+    const supportBtn = addToggle(analysisDropdown, 'Support', false, () => this.emit('toggleSupport', undefined), 'Highlight support structure');
 
-    // Feature #73: Fullscreen toggle
-    const fullscreenBtn = document.createElement('button');
-    fullscreenBtn.textContent = 'Fullscreen';
-    fullscreenBtn.onclick = () => this.emit('toggleFullscreen', undefined);
-    viewGroup.appendChild(fullscreenBtn);
+    addDivider(analysisDropdown);
+    addSection(analysisDropdown, 'CNC Features');
+    const probeBtn = addToggle(analysisDropdown, 'Probe Markers', false, () => this.emit('toggleProbeMarkers', undefined), 'Show probe point markers');
+    const drillBtn = addToggle(analysisDropdown, 'Drill Markers', false, () => this.emit('toggleDrillMarkers', undefined), 'Show drilling cycle positions');
 
-    // Feature #48: Bounding box dimensions display
-    const bboxBtn = document.createElement('button');
-    bboxBtn.textContent = 'BBox';
-    bboxBtn.onclick = () => {
-      bboxBtn.classList.toggle('active');
-      this.emit('toggleBoundingBox', undefined);
-    };
-    viewGroup.appendChild(bboxBtn);
+    addDivider(analysisDropdown);
+    addSection(analysisDropdown, 'Tools');
+    const hackBtn = addToggle(analysisDropdown, 'G-code Hack', false, () => this.emit('toggleHackPanel', undefined), 'Transform G-code (translate, rotate, mirror, scale)');
 
-    // Feature #128: Layer count display
-    const layerCountBtn = document.createElement('button');
-    layerCountBtn.textContent = 'Layers';
-    layerCountBtn.onclick = () => {
-      layerCountBtn.classList.toggle('active');
-      this.emit('toggleLayerCount', undefined);
-    };
-    viewGroup.appendChild(layerCountBtn);
+    // ── Plot menu ──
+    const plotMenu = createMenu('Plot');
+    const plotDropdown = plotMenu.dropdown;
 
-    // Analysis: Info panel toggle
-    const infoBtn = document.createElement('button');
-    infoBtn.textContent = 'Info';
-    infoBtn.title = 'Toggle analysis info panel';
-    infoBtn.onclick = () => {
-      infoBtn.classList.toggle('active');
-      this.emit('toggleInfoPanel', undefined);
-    };
-    viewGroup.appendChild(infoBtn);
-
-    // Analysis: Export report
-    const reportBtn = document.createElement('button');
-    reportBtn.textContent = 'Report';
-    reportBtn.title = 'Export analysis report as JSON';
-    reportBtn.onclick = () => this.emit('exportReport', undefined);
-    viewGroup.appendChild(reportBtn);
-
-    // Analysis: Comparison panel toggle
-    const compareBtn = document.createElement('button');
-    compareBtn.textContent = 'Compare';
-    compareBtn.title = 'Toggle comparison panel';
-    compareBtn.onclick = () => {
-      compareBtn.classList.toggle('active');
-      this.emit('toggleComparison', undefined);
-    };
-    viewGroup.appendChild(compareBtn);
-
-    // Analysis: G-code diff
-    const diffBtn = document.createElement('button');
-    diffBtn.textContent = 'Diff';
-    diffBtn.title = 'Compare two G-code files';
-    diffBtn.onclick = () => {
-      diffBtn.classList.toggle('active');
-      this.emit('toggleDiff', undefined);
-    };
-    viewGroup.appendChild(diffBtn);
-
-    // Analysis: Overhang highlighting (3DP)
-    const overhangBtn = document.createElement('button');
-    overhangBtn.textContent = 'Overhang';
-    overhangBtn.title = 'Highlight overhang regions';
-    overhangBtn.onclick = () => {
-      overhangBtn.classList.toggle('active');
-      this.emit('toggleOverhang', undefined);
-    };
-    viewGroup.appendChild(overhangBtn);
-
-    // Analysis: Z-seam visualization (3DP)
-    const seamBtn = document.createElement('button');
-    seamBtn.textContent = 'Seam';
-    seamBtn.title = 'Visualize Z-seam positions';
-    seamBtn.onclick = () => {
-      seamBtn.classList.toggle('active');
-      this.emit('toggleZSeam', undefined);
-    };
-    viewGroup.appendChild(seamBtn);
-
-    // Analysis: Probe markers (CNC)
-    const probeBtn = document.createElement('button');
-    probeBtn.textContent = 'Probe';
-    probeBtn.title = 'Show probe point markers';
-    probeBtn.onclick = () => {
-      probeBtn.classList.toggle('active');
-      this.emit('toggleProbeMarkers', undefined);
-    };
-    viewGroup.appendChild(probeBtn);
-
-    // Analysis: Drilling cycle markers (CNC)
-    const drillBtn = document.createElement('button');
-    drillBtn.textContent = 'Drill';
-    drillBtn.title = 'Show drilling cycle positions';
-    drillBtn.onclick = () => {
-      drillBtn.classList.toggle('active');
-      this.emit('toggleDrillMarkers', undefined);
-    };
-    viewGroup.appendChild(drillBtn);
-
-    // Analysis: G-code hack/transform panel
-    const hackBtn = document.createElement('button');
-    hackBtn.textContent = 'Hack';
-    hackBtn.title = 'Transform G-code (translate, rotate, mirror, scale)';
-    hackBtn.onclick = () => {
-      hackBtn.classList.toggle('active');
-      this.emit('toggleHackPanel', undefined);
-    };
-    viewGroup.appendChild(hackBtn);
-
-    // Analysis: Bridge highlighting (3DP)
-    const bridgeBtn = document.createElement('button');
-    bridgeBtn.textContent = 'Bridges';
-    bridgeBtn.title = 'Highlight bridge regions';
-    bridgeBtn.onclick = () => {
-      bridgeBtn.classList.toggle('active');
-      this.emit('toggleBridges', undefined);
-    };
-    viewGroup.appendChild(bridgeBtn);
-
-    // Analysis: Support structure highlighting (3DP)
-    const supportBtn = document.createElement('button');
-    supportBtn.textContent = 'Support';
-    supportBtn.title = 'Highlight support structure';
-    supportBtn.onclick = () => {
-      supportBtn.classList.toggle('active');
-      this.emit('toggleSupport', undefined);
-    };
-    viewGroup.appendChild(supportBtn);
-
-    this.element.appendChild(viewGroup);
-
-    // Miniplot group
-    const miniplotGroup = document.createElement('div');
-    miniplotGroup.className = 'control-group miniplot-group';
-
-    const miniplotBtn = document.createElement('button');
-    miniplotBtn.textContent = 'Miniplot';
-    miniplotBtn.onclick = () => {
+    const miniplotBtn = addToggle(plotDropdown, 'Miniplot', false, () => {
+      this.miniplotActive = !this.miniplotActive;
+      miniplotBtn.classList.toggle('active', this.miniplotActive);
+      this.emit('toggleMiniplot', undefined);
+    }, 'Toggle per-segment miniplot');
+    // Override to track state properly
+    this.miniplotActive = false;
+    miniplotBtn.onclick = (e) => {
+      e.stopPropagation();
       this.miniplotActive = !this.miniplotActive;
       miniplotBtn.classList.toggle('active', this.miniplotActive);
       this.emit('toggleMiniplot', undefined);
     };
-    miniplotGroup.appendChild(miniplotBtn);
 
+    addSection(plotDropdown, 'Miniplot Axis');
     const miniplotAxisLabel = document.createElement('label');
-    miniplotAxisLabel.textContent = 'Axis:';
+    miniplotAxisLabel.textContent = 'Axis: ';
     const miniplotAxisSelect = document.createElement('select');
     for (const ax of ['Extruder', 'X', 'Y', 'Z', 'Linear']) {
       const opt = document.createElement('option');
@@ -418,81 +389,16 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     miniplotAxisSelect.value = 'Extruder';
     miniplotAxisSelect.onchange = () => this.emit('miniplotAxisChanged', miniplotAxisSelect.value);
     miniplotAxisLabel.appendChild(miniplotAxisSelect);
-    miniplotGroup.appendChild(miniplotAxisLabel);
-    this.element.appendChild(miniplotGroup);
+    addRow(plotDropdown, miniplotAxisLabel);
 
-    // Layer slider group
-    this.layerGroup = document.createElement('div');
-    this.layerGroup.className = 'control-group layer-group';
-    this.layerGroup.style.display = 'none'; // hidden until layers are loaded
+    // ── Playback menu ──
+    const playbackMenu = createMenu('Playback');
+    const playbackDropdown = playbackMenu.dropdown;
 
-    const layerTitle = document.createElement('span');
-    layerTitle.className = 'slider-label';
-    layerTitle.textContent = 'Layer:';
-    this.layerGroup.appendChild(layerTitle);
-
-    this.layerSlider = document.createElement('input');
-    this.layerSlider.type = 'range';
-    this.layerSlider.min = '0';
-    this.layerSlider.max = '0';
-    this.layerSlider.value = '0';
-    this.layerSlider.className = 'layer-slider';
-    this.layerSlider.oninput = () => {
-      const val = parseInt(this.layerSlider.value, 10);
-      // BUG 11 FIX: Restore slider opacity when user selects a specific layer
-      this.layerSlider.style.opacity = '1';
-      this.layerLabel.textContent = `${val}`;
-      this.emit('layerChanged', val);
-    };
-    this.layerGroup.appendChild(this.layerSlider);
-
-    this.layerLabel = document.createElement('span');
-    this.layerLabel.className = 'slider-value';
-    this.layerLabel.textContent = 'All';
-    this.layerGroup.appendChild(this.layerLabel);
-
-    // "All layers" button
-    const allLayersBtn = document.createElement('button');
-    allLayersBtn.textContent = 'All';
-    allLayersBtn.className = 'small-btn';
-    allLayersBtn.onclick = () => {
-      // BUG 11 FIX: Don't set slider value to -1 (below min=0).
-      // Instead, visually deselect the slider and set label to "All".
-      this.layerSlider.removeAttribute('data-selected');
-      this.layerSlider.style.opacity = '0.5';
-      this.layerLabel.textContent = 'All';
-      this.emit('layerChanged', -1);
-    };
-    this.layerGroup.appendChild(allLayersBtn);
-
-    this.element.appendChild(this.layerGroup);
-
-    // Tool filter group (CNC: isolate toolpath by tool number)
-    this.toolGroup = document.createElement('div');
-    this.toolGroup.className = 'control-group tool-group';
-    this.toolGroup.style.display = 'none'; // hidden until tools are detected
-
-    const toolTitle = document.createElement('span');
-    toolTitle.className = 'group-title';
-    toolTitle.textContent = 'Tool';
-    this.toolGroup.appendChild(toolTitle);
-
-    this.toolSelect = document.createElement('select');
-    const allToolsOpt = document.createElement('option');
-    allToolsOpt.value = '-1';
-    allToolsOpt.textContent = 'All Tools';
-    this.toolSelect.appendChild(allToolsOpt);
-    this.toolSelect.onchange = () => {
-      this.emit('toolFilterChanged', parseInt(this.toolSelect.value));
-    };
-    this.toolGroup.appendChild(this.toolSelect);
-
-    this.element.appendChild(this.toolGroup);
-
-    // Time slider group
+    addSection(playbackDropdown, 'Time');
     this.timeGroup = document.createElement('div');
-    this.timeGroup.className = 'control-group time-group';
-    this.timeGroup.style.display = 'none'; // hidden until data is loaded
+    this.timeGroup.className = 'menu-row time-group';
+    this.timeGroup.style.display = 'none';
 
     this.playBtn = document.createElement('button');
     this.playBtn.textContent = '▶';
@@ -504,17 +410,13 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     };
     this.timeGroup.appendChild(this.playBtn);
 
-    const timeTitle = document.createElement('span');
-    timeTitle.className = 'slider-label';
-    timeTitle.textContent = 'Time:';
-    this.timeGroup.appendChild(timeTitle);
-
     this.timeSlider = document.createElement('input');
     this.timeSlider.type = 'range';
     this.timeSlider.min = '0';
     this.timeSlider.max = '1000';
     this.timeSlider.value = '1000';
     this.timeSlider.className = 'time-slider';
+    this.timeSlider.style.flex = '1';
     this.timeSlider.oninput = () => {
       const frac = parseInt(this.timeSlider.value, 10) / 1000;
       this.timeLabel.textContent = `${(frac * 100).toFixed(1)}%`;
@@ -526,15 +428,74 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     this.timeLabel.className = 'slider-value';
     this.timeLabel.textContent = '100%';
     this.timeGroup.appendChild(this.timeLabel);
+    playbackDropdown.appendChild(this.timeGroup);
 
-    this.element.appendChild(this.timeGroup);
+    // Layer slider (hidden until layers are loaded)
+    addDivider(playbackDropdown);
+    addSection(playbackDropdown, 'Layer');
+    this.layerGroup = document.createElement('div');
+    this.layerGroup.className = 'menu-row layer-group';
+    this.layerGroup.style.display = 'none';
 
-    // Printer simulation group
+    this.layerSlider = document.createElement('input');
+    this.layerSlider.type = 'range';
+    this.layerSlider.min = '0';
+    this.layerSlider.max = '0';
+    this.layerSlider.value = '0';
+    this.layerSlider.className = 'layer-slider';
+    this.layerSlider.style.flex = '1';
+    this.layerSlider.oninput = () => {
+      const val = parseInt(this.layerSlider.value, 10);
+      this.layerSlider.style.opacity = '1';
+      this.layerLabel.textContent = `${val}`;
+      this.emit('layerChanged', val);
+    };
+    this.layerGroup.appendChild(this.layerSlider);
+
+    this.layerLabel = document.createElement('span');
+    this.layerLabel.className = 'slider-value';
+    this.layerLabel.textContent = 'All';
+    this.layerGroup.appendChild(this.layerLabel);
+
+    const allLayersBtn = document.createElement('button');
+    allLayersBtn.textContent = 'All';
+    allLayersBtn.className = 'small-btn';
+    allLayersBtn.onclick = () => {
+      this.layerSlider.removeAttribute('data-selected');
+      this.layerSlider.style.opacity = '0.5';
+      this.layerLabel.textContent = 'All';
+      this.emit('layerChanged', -1);
+    };
+    this.layerGroup.appendChild(allLayersBtn);
+    playbackDropdown.appendChild(this.layerGroup);
+
+    // Tool filter (hidden until tools are detected)
+    addDivider(playbackDropdown);
+    addSection(playbackDropdown, 'Tool Filter');
+    this.toolGroup = document.createElement('div');
+    this.toolGroup.className = 'menu-row tool-group';
+    this.toolGroup.style.display = 'none';
+
+    this.toolSelect = document.createElement('select');
+    const allToolsOpt = document.createElement('option');
+    allToolsOpt.value = '-1';
+    allToolsOpt.textContent = 'All Tools';
+    this.toolSelect.appendChild(allToolsOpt);
+    this.toolSelect.onchange = () => {
+      this.emit('toolFilterChanged', parseInt(this.toolSelect.value));
+    };
+    this.toolGroup.appendChild(this.toolSelect);
+    playbackDropdown.appendChild(this.toolGroup);
+
+    // Printer simulation controls (hidden until data is loaded)
+    addDivider(playbackDropdown);
+    addSection(playbackDropdown, 'Printer Simulation');
     this.printerGroup = document.createElement('div');
-    this.printerGroup.className = 'control-group printer-group';
-    this.printerGroup.style.display = 'none'; // hidden until data is loaded
+    this.printerGroup.className = 'menu-row printer-group';
+    this.printerGroup.style.display = 'none';
+    this.printerGroup.style.flexWrap = 'wrap';
+    this.printerGroup.style.gap = '4px';
 
-    // Mode toggle: Realtime / Simulation
     this.modeBtn = document.createElement('button');
     this.modeBtn.textContent = 'Realtime';
     this.modeBtn.className = 'printer-btn printer-mode-btn active';
@@ -543,7 +504,6 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
       this.printerMode = this.printerMode === 'realtime' ? 'simulation' : 'realtime';
       this.modeBtn.textContent = this.printerMode === 'realtime' ? 'Realtime' : 'Simulation';
       this.modeBtn.classList.toggle('active', this.printerMode === 'realtime');
-      // Show/hide simulation-only controls
       this.speedBtn.style.display = this.printerMode === 'simulation' ? '' : 'none';
       this.directionBtn.style.display = this.printerMode === 'simulation' ? '' : 'none';
       this.realtimeBtn.style.display = this.printerMode === 'simulation' ? '' : 'none';
@@ -551,7 +511,6 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     };
     this.printerGroup.appendChild(this.modeBtn);
 
-    // Speed step button (simulation only)
     this.speedBtn = document.createElement('button');
     this.speedBtn.textContent = '1x';
     this.speedBtn.className = 'printer-btn printer-speed-btn';
@@ -566,7 +525,6 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     };
     this.printerGroup.appendChild(this.speedBtn);
 
-    // Direction button (simulation only)
     this.directionBtn = document.createElement('button');
     this.directionBtn.textContent = '▶';
     this.directionBtn.className = 'printer-btn printer-direction-btn';
@@ -579,7 +537,6 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     };
     this.printerGroup.appendChild(this.directionBtn);
 
-    // Return to realtime button (simulation only)
     this.realtimeBtn = document.createElement('button');
     this.realtimeBtn.textContent = '↻ Realtime';
     this.realtimeBtn.className = 'printer-btn printer-realtime-btn';
@@ -589,36 +546,20 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
       this.emit('returnToRealtime', undefined);
     };
     this.printerGroup.appendChild(this.realtimeBtn);
+    playbackDropdown.appendChild(this.printerGroup);
 
-    this.element.appendChild(this.printerGroup);
+    // ── Settings menu (⋯) ──
+    const settingsMenu = createMenu('⋯');
+    const settingsDropdown = settingsMenu.dropdown;
+    settingsMenu.trigger.style.padding = '4px 8px';
 
-    // Status group (right-aligned)
+    addSection(settingsDropdown, 'Appearance');
+    const themeBtn = addButton(settingsDropdown, 'Theme', () => this.emit('toggleTheme', undefined), 'Toggle dark/light theme');
+    const statsBtn = addToggle(settingsDropdown, 'Stats', false, () => this.emit('toggleStats', undefined), 'Toggle render statistics');
+
+    // ── Status (right-aligned, always visible) ──
     const statusGroup = document.createElement('div');
     statusGroup.className = 'control-group status';
-
-    // Feature #66: Theme toggle button
-    const themeBtn = document.createElement('button');
-    themeBtn.textContent = 'Theme';
-    themeBtn.className = 'theme-btn';
-    themeBtn.onclick = () => this.emit('toggleTheme', undefined);
-    statusGroup.appendChild(themeBtn);
-
-    // Feature #120: Stats toggle button
-    const statsBtn = document.createElement('button');
-    statsBtn.textContent = 'Stats';
-    statsBtn.className = 'stats-btn';
-    statsBtn.onclick = () => {
-      statsBtn.classList.toggle('active');
-      this.emit('toggleStats', undefined);
-    };
-    statusGroup.appendChild(statsBtn);
-
-    // Feature #92: Copy current view URL to clipboard
-    const copyUrlBtn = document.createElement('button');
-    copyUrlBtn.textContent = 'Copy URL';
-    copyUrlBtn.className = 'copy-url-btn';
-    copyUrlBtn.onclick = () => this.emit('copyViewUrl', undefined);
-    statusGroup.appendChild(copyUrlBtn);
 
     this.statusEl = document.createElement('span');
     this.statusEl.className = 'status-text';
@@ -643,10 +584,23 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
         // Show time slider and printer controls when data is ready
         this.timeGroup.style.display = 'flex';
         this.showPrinterControls();
+        // Show warning if present (non-fatal parse errors, etc.)
+        if (status.warning) {
+          console.warn('%c[G-code Warning]', 'color: #ffaa00; font-weight: bold', status.warning);
+          this.statusEl.textContent += ` ⚠ ${status.warning}`;
+        }
         break;
       }
       case 'failed':
         this.statusEl.textContent = `Failed: ${status.errorMessage || 'unknown error'}`;
+        this.statusEl.classList.add('error');
+        this.statusEl.title = status.errorMessage || 'unknown error';
+        // Also log full error to console with structured detail
+        console.group('%c[G-code Error]', 'color: #ff4444; font-weight: bold');
+        console.error('State: FAILED');
+        console.error('Error message:', status.errorMessage || '(none)');
+        console.error('Full status object:', status);
+        console.groupEnd();
         break;
       default:
         this.statusEl.textContent = status.state;
@@ -663,8 +617,16 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     }
   }
 
-  setStatus(text: string): void {
+  setStatus(text: string, type?: 'error' | 'warning'): void {
     this.statusEl.textContent = text;
+    this.statusEl.classList.remove('error', 'warning');
+    if (type) {
+      this.statusEl.classList.add(type);
+      // Set title tooltip with the full message so it's readable even if truncated
+      this.statusEl.title = text;
+    } else {
+      this.statusEl.title = '';
+    }
   }
 
   /**

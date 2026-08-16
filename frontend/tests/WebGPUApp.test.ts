@@ -120,7 +120,7 @@ function makeKeyEvent(key: string, opts: {
 
 describe('WebGPUApp', () => {
   let canvas: HTMLCanvasElement;
-  let bottomPanel: HTMLElement;
+  let topPanel: HTMLElement;
   let gcodePanel: HTMLElement;
   let navCubeContainer: HTMLElement;
   let rpcClient: any;
@@ -134,9 +134,9 @@ describe('WebGPUApp', () => {
     canvas.height = 600;
     document.body.appendChild(canvas);
 
-    bottomPanel = document.createElement('div');
-    bottomPanel.id = 'bottom-panel';
-    document.body.appendChild(bottomPanel);
+    topPanel = document.createElement('div');
+    topPanel.id = 'top-panel';
+    document.body.appendChild(topPanel);
 
     gcodePanel = document.createElement('div');
     gcodePanel.id = 'gcode-panel';
@@ -147,7 +147,7 @@ describe('WebGPUApp', () => {
     document.body.appendChild(navCubeContainer);
 
     rpcClient = createMockRpcClient();
-    app = new WebGPUApp(canvas, rpcClient, bottomPanel, gcodePanel, navCubeContainer);
+    app = new WebGPUApp(canvas, rpcClient, topPanel, gcodePanel, navCubeContainer);
   });
 
   afterEach(() => {
@@ -166,7 +166,7 @@ describe('WebGPUApp', () => {
     it('registers a keydown listener on window', () => {
       const addSpy = vi.spyOn(window, 'addEventListener');
       // Re-create to observe the spy
-      const app2 = new WebGPUApp(canvas, rpcClient, bottomPanel, gcodePanel, navCubeContainer);
+      const app2 = new WebGPUApp(canvas, rpcClient, topPanel, gcodePanel, navCubeContainer);
       expect(addSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
       (app2 as any).destroy();
     });
@@ -371,7 +371,7 @@ describe('WebGPUApp', () => {
       const gridBtn = document.createElement('button');
       gridBtn.textContent = 'Grid';
       gridBtn.id = 'btn-grid';
-      bottomPanel.appendChild(gridBtn);
+      topPanel.appendChild(gridBtn);
       const clickSpy = vi.spyOn(gridBtn, 'click');
       (app as any).handleKeyDown(makeKeyEvent('g'));
       expect(clickSpy).toHaveBeenCalled();
@@ -380,7 +380,7 @@ describe('WebGPUApp', () => {
     it('clicks Travels button on lowercase t', () => {
       const travelsBtn = document.createElement('button');
       travelsBtn.textContent = 'Travels';
-      bottomPanel.appendChild(travelsBtn);
+      topPanel.appendChild(travelsBtn);
       const clickSpy = vi.spyOn(travelsBtn, 'click');
       (app as any).handleKeyDown(makeKeyEvent('t'));
       expect(clickSpy).toHaveBeenCalled();

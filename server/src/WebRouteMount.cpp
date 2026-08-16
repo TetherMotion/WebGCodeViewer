@@ -263,6 +263,14 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
                 }
             }
 
+            // Include warning for jobs that succeeded with non-fatal issues
+            if (state == JobState::Ready) {
+                const auto* result = jobManager->getResult(jobId);
+                if (result && !result->warning.empty()) {
+                    json += ",\"warning\":\"" + jsonEscape(result->warning) + "\"";
+                }
+            }
+
             json += "}";
             cb(makeJsonResponse(json, enableCors));
         }, {drogon::Get});

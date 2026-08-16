@@ -21,6 +21,12 @@ import { test, expect, Page, ConsoleMessage } from '@playwright/test';
  * (e.g. WebGPU adapter warnings, deprecated API usage, shader
  * compilation warnings).
  */
+
+/** Open a dropdown menu by clicking its trigger button. */
+async function openMenu(page: Page, label: string) {
+  await page.locator('#top-panel .menu-trigger', { hasText: label }).click();
+}
+
 function setupErrorCollector(page: Page) {
   const errors: string[] = [];
   const consoleErrors: string[] = [];
@@ -152,7 +158,7 @@ test.describe('Page load', () => {
     await expect(page.locator('#canvas-container')).toBeVisible();
     await expect(page.locator('#webgpu-canvas')).toBeVisible();
     await expect(page.locator('#gcode-panel')).toBeVisible();
-    await expect(page.locator('#bottom-panel')).toBeVisible();
+    await expect(page.locator('#top-panel')).toBeVisible();
     await expect(page.locator('#nav-cube-container')).toBeVisible();
   });
 
@@ -197,16 +203,23 @@ test.describe('UI components', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    const openBtn = page.locator('#bottom-panel button', { hasText: 'Open G-code' });
-    await expect(openBtn).toBeVisible();
+    // Menu triggers (always visible)
+    await expect(page.locator('#top-panel .menu-trigger', { hasText: 'File' })).toBeVisible();
+    await expect(page.locator('#top-panel .menu-trigger', { hasText: 'Color' })).toBeVisible();
+    await expect(page.locator('#top-panel .menu-trigger', { hasText: 'View' })).toBeVisible();
+    await expect(page.locator('#top-panel .menu-trigger', { hasText: 'Analysis' })).toBeVisible();
+    await expect(page.locator('#top-panel .menu-trigger', { hasText: 'Playback' })).toBeVisible();
+    await expect(page.locator('#top-panel .status-text')).toBeVisible();
 
-    const colorSelect = page.locator('#bottom-panel select').first();
-    await expect(colorSelect).toBeVisible();
+    // Open File menu and check buttons inside
+    await page.locator('#top-panel .menu-trigger', { hasText: 'File' }).click();
+    await expect(page.locator('#top-panel button', { hasText: 'Open…' })).toBeVisible();
+    await expect(page.locator('#top-panel button', { hasText: 'Export Image' })).toBeVisible();
 
-    await expect(page.locator('#bottom-panel button', { hasText: 'Grid' })).toBeVisible();
-    await expect(page.locator('#bottom-panel button', { hasText: 'Reset View' })).toBeVisible();
-    await expect(page.locator('#bottom-panel button', { hasText: 'Export' })).toBeVisible();
-    await expect(page.locator('#bottom-panel .status-text')).toBeVisible();
+    // Open View menu and check buttons inside
+    await page.locator('#top-panel .menu-trigger', { hasText: 'View' }).click();
+    await expect(page.locator('#top-panel button', { hasText: 'Grid' })).toBeVisible();
+    await expect(page.locator('#top-panel button', { hasText: 'Reset View' })).toBeVisible();
   });
 
   test('G-code panel renders with header', async ({ page }) => {
@@ -519,7 +532,8 @@ test.describe('WebGPU renderer initialization', () => {
     await page.waitForTimeout(1000);
 
     // Toggle grid on/off multiple times
-    const gridBtn = page.locator('#bottom-panel button', { hasText: 'Grid' });
+    await openMenu(page, 'View');
+    const gridBtn = page.locator('#top-panel button', { hasText: 'Grid' });
     for (let i = 0; i < 3; i++) {
       await gridBtn.click();
       await page.waitForTimeout(300);
@@ -536,7 +550,8 @@ test.describe('WebGPU renderer initialization', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const resetBtn = page.locator('#bottom-panel button', { hasText: 'Reset View' });
+    const resetBtn = page.locator('#top-panel button', { hasText: 'Reset View' });
+    await openMenu(page, 'View');
     for (let i = 0; i < 3; i++) {
       await resetBtn.click();
       await page.waitForTimeout(300);
@@ -754,7 +769,8 @@ test.describe('G-code upload and render', () => {
     await page.waitForTimeout(3000);
 
     // Click the Miniplot toggle button
-    const miniplotBtn = page.locator('#bottom-panel button', { hasText: 'Miniplot' });
+    await openMenu(page, 'Plot');
+    const miniplotBtn = page.locator('#top-panel button', { hasText: 'Miniplot' });
     await miniplotBtn.click();
     await page.waitForTimeout(1000);
 

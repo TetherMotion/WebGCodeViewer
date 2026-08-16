@@ -345,7 +345,7 @@ export class WebGPUApp {
   constructor(
     canvas: HTMLCanvasElement,
     rpcClient: RpcClient,
-    bottomPanel: HTMLElement,
+    topPanel: HTMLElement,
     gcodePanel: HTMLElement,
     navCubeContainer: HTMLElement,
   ) {
@@ -353,8 +353,8 @@ export class WebGPUApp {
     this.rpcClient = rpcClient;
     this.camera = new Camera();
 
-    // Build UI — control panel at bottom, gcode viewer on right, nav cube overlay
-    this.controlPanel = new ControlPanel(bottomPanel);
+    // Build UI — control panel at top, gcode viewer on right, nav cube overlay
+    this.controlPanel = new ControlPanel(topPanel);
     this.gcodeViewer = new GcodeViewer(gcodePanel);
     this.navCube = new NavigationCube(navCubeContainer);
 
@@ -1121,12 +1121,12 @@ export class WebGPUApp {
     // Feature #68: Keyboard shortcuts
     switch (e.key.toLowerCase()) {
       case 'g': {
-        const buttons = document.querySelectorAll('#bottom-panel button');
+        const buttons = document.querySelectorAll('#top-panel button');
         buttons.forEach(b => { if (b.textContent === 'Grid') (b as HTMLButtonElement).click(); });
         break;
       }
       case 't': {
-        const buttons = document.querySelectorAll('#bottom-panel button');
+        const buttons = document.querySelectorAll('#top-panel button');
         buttons.forEach(b => { if (b.textContent === 'Travels') (b as HTMLButtonElement).click(); });
         break;
       }
@@ -1137,22 +1137,22 @@ export class WebGPUApp {
         this.controlPanel.emit('exportImage', undefined);
         break;
       case 'i': {
-        const buttons = document.querySelectorAll('#bottom-panel button');
+        const buttons = document.querySelectorAll('#top-panel button');
         buttons.forEach(b => { if (b.textContent === 'Info') (b as HTMLButtonElement).click(); });
         break;
       }
       case 'b': {
-        const buttons = document.querySelectorAll('#bottom-panel button');
+        const buttons = document.querySelectorAll('#top-panel button');
         buttons.forEach(b => { if (b.textContent === 'BBox') (b as HTMLButtonElement).click(); });
         break;
       }
       case 'l': {
-        const buttons = document.querySelectorAll('#bottom-panel button');
+        const buttons = document.querySelectorAll('#top-panel button');
         buttons.forEach(b => { if (b.textContent === 'Layers') (b as HTMLButtonElement).click(); });
         break;
       }
       case 'm': {
-        const buttons = document.querySelectorAll('#bottom-panel button');
+        const buttons = document.querySelectorAll('#top-panel button');
         buttons.forEach(b => { if (b.textContent === 'Miniplot') (b as HTMLButtonElement).click(); });
         break;
       }
@@ -1950,10 +1950,13 @@ export class WebGPUApp {
         setTimeout(poll, 500);
       } else if (status.state === 'failed') {
         const errMsg = status.errorMessage || 'Unknown error';
-        console.error('Job failed:', errMsg);
-        // Show the full error message — it now includes error code, line number,
-        // context snippet, and G-code details from the server.
-        this.controlPanel.setStatus(`Failed: ${errMsg}`);
+        // Log full structured error to console for debugging
+        console.group('%c[Job Failed]', 'color: #ff4444; font-weight: bold; font-size: 13px');
+        console.error('Error:', errMsg);
+        console.error('Job ID:', jobId);
+        console.error('Full status:', status);
+        console.groupEnd();
+        this.controlPanel.setStatus(`Failed: ${errMsg}`, 'error');
       }
     };
     await poll();
@@ -2964,8 +2967,12 @@ export class WebGPUApp {
           setTimeout(poll, 500);
         } else if (status.state === 'failed') {
           const errMsg = status.errorMessage || 'Unknown error';
-          console.error('Job failed:', errMsg);
-          this.controlPanel.setStatus(`Failed: ${errMsg}`);
+          console.group('%c[Job Failed]', 'color: #ff4444; font-weight: bold; font-size: 13px');
+          console.error('Error:', errMsg);
+          console.error('Job ID:', jobId);
+          console.error('Full status:', status);
+          console.groupEnd();
+          this.controlPanel.setStatus(`Failed: ${errMsg}`, 'error');
         }
       };
       await poll();

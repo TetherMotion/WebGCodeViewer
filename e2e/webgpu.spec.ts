@@ -61,6 +61,11 @@ async function uploadAndProcess(request: APIRequestContext, gcode: string, filen
   return { jobId, status };
 }
 
+/** Open a dropdown menu by clicking its trigger button. */
+async function openMenu(page: Page, label: string) {
+  await page.locator('#top-panel .menu-trigger', { hasText: label }).click();
+}
+
 function setupMessageCollector(page: Page) {
   const messages: { type: string; text: string }[] = [];
   const pageErrors: string[] = [];
@@ -400,7 +405,8 @@ test.describe('WebGPU feature interactions', () => {
     await page.locator('canvas[data-ready="true"]').waitFor({ timeout: 10000 });
     await page.waitForTimeout(2000);
 
-    const travelsBtn = page.locator('#bottom-panel button', { hasText: 'Travels' });
+    const travelsBtn = page.locator('#top-panel button', { hasText: 'Travels' });
+    await openMenu(page, 'View');
     await travelsBtn.click();
     await page.waitForTimeout(1000);
     await travelsBtn.click();
@@ -421,7 +427,8 @@ test.describe('WebGPU feature interactions', () => {
     await page.waitForTimeout(2000);
 
     // Enable retraction highlighting
-    const retractionBtn = page.locator('#bottom-panel button', { hasText: 'Retractions' });
+    const retractionBtn = page.locator('#top-panel button', { hasText: 'Retractions' });
+    await openMenu(page, 'View');
     await retractionBtn.click();
     await page.waitForTimeout(1000);
 
@@ -464,7 +471,8 @@ test.describe('WebGPU feature interactions', () => {
     await page.waitForTimeout(1000);
 
     // Reset to all layers
-    const allBtn = page.locator('#bottom-panel button', { hasText: 'All' });
+    await openMenu(page, 'Playback');
+    const allBtn = page.locator('#top-panel button', { hasText: 'All' });
     await allBtn.click();
     await page.waitForTimeout(1000);
 

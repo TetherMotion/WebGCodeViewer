@@ -546,44 +546,133 @@ body {
     to { transform: rotate(360deg); }
 }
 
-/* Bottom panel — control panel */
-#bottom-panel {
+/* Top panel — menu bar */
+#top-panel {
     flex-shrink: 0;
     background: var(--bg-secondary);
-    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 8px 16px;
-    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 12px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    z-index: 1000;
 }
 
-#bottom-panel .control-group {
+/* Top menu bar — the control panel inside #top-panel */
+.top-menu-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+
+#top-panel .control-group {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 0 8px;
-    border-right: 1px solid var(--border);
+    padding: 0 6px;
 }
 
-#bottom-panel .control-group:last-child {
-    border-right: none;
-}
-
-#bottom-panel .control-group.status {
+#top-panel .control-group.status {
     margin-left: auto;
     color: var(--text-secondary);
     font-size: 12px;
 }
 
-#bottom-panel label {
+/* Dropdown menu groups */
+.menu-group {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.menu-trigger {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.menu-trigger:hover {
+    background: var(--accent);
+    color: white;
+}
+
+.menu-trigger.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.menu-trigger .chevron {
+    font-size: 10px;
+    opacity: 0.7;
+}
+
+.menu-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    gap: 6px;
+    flex-direction: column;
+    z-index: 1001;
+    min-width: 200px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    margin-top: 2px;
+}
+
+.menu-dropdown.open {
+    display: flex;
+}
+
+.menu-dropdown .menu-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.menu-dropdown .menu-row button {
+    flex: 1;
+    text-align: left;
+}
+
+.menu-dropdown .menu-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+}
+
+.menu-dropdown .menu-section-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 0;
+}
+
+#top-panel label {
     font-size: 12px;
     color: var(--text-secondary);
     white-space: nowrap;
 }
 
-#bottom-panel select,
-#bottom-panel input[type="number"] {
+#top-panel select,
+#top-panel input[type="number"] {
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border);
@@ -592,7 +681,7 @@ body {
     font-size: 12px;
 }
 
-#bottom-panel button {
+#top-panel button {
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 1px solid var(--border);
@@ -603,20 +692,34 @@ body {
     white-space: nowrap;
 }
 
-#bottom-panel button:hover {
+#top-panel button:hover {
     background: var(--accent);
     color: white;
 }
 
-#bottom-panel button.active {
+#top-panel button.active {
     background: var(--accent);
     color: white;
     border-color: var(--accent);
 }
 
-#bottom-panel .status-text {
+#top-panel .status-text {
     font-family: var(--font-mono);
     font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 600px;
+}
+
+/* Error/warning status styling — applied via setStatus() */
+#top-panel .status-text.error {
+    color: #ff6666;
+    cursor: help;
+}
+
+#top-panel .status-text.warning {
+    color: #ffaa44;
 }
 
 /* Sliders in control panel */
@@ -635,7 +738,7 @@ body {
 }
 
 .layer-slider, .time-slider, .cross-slider {
-    width: 120px;
+    width: 160px;
     cursor: pointer;
 }
 
