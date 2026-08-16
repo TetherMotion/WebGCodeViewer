@@ -780,7 +780,11 @@ export class WebGPUApp {
 
     // Comparison: load second job as point cloud overlay
     this.comparisonPanel?.on('loadComparison', async (jobId) => {
-      await this.loadComparisonJob(jobId);
+      try {
+        await this.loadComparisonJob(jobId);
+      } catch (e) {
+        console.error('Failed to load comparison job:', e);
+      }
     });
 
     // Comparison: toggle overlay visibility
@@ -876,11 +880,15 @@ export class WebGPUApp {
       // G-code diff panel
       this.diffPanel = new DiffPanel(gcodePanel);
       this.diffPanel.on('fileUploaded', async (file: File) => {
-        const text = await file.text();
-        const newLines = text.split('\n');
-        const oldLines = this.gcodeViewer?.allLines ?? [];
-        const oldName = this.gcodeViewer?.filename ?? 'current';
-        this.diffPanel?.displayDiff(oldLines, newLines, oldName, file.name);
+        try {
+          const text = await file.text();
+          const newLines = text.split('\n');
+          const oldLines = this.gcodeViewer?.allLines ?? [];
+          const oldName = this.gcodeViewer?.filename ?? 'current';
+          this.diffPanel?.displayDiff(oldLines, newLines, oldName, file.name);
+        } catch (e) {
+          console.error('Failed to process diff file:', e);
+        }
       });
     }
     const canvasContainer = document.getElementById('canvas-container');
@@ -1779,6 +1787,8 @@ export class WebGPUApp {
       this.gpuPlot.init(this.format).then(() => {
         this.updatePaPlotSeries();
         this.renderPaPlot();
+      }).catch((e) => {
+        console.error('Failed to init PA plot:', e);
       });
     } else if (this.gpuPlot) {
       this.updatePaPlotSeries();
@@ -1948,12 +1958,25 @@ export class WebGPUApp {
   }
 
   private async pollJobStatus(jobId: string): Promise<void> {
+    const maxPolls = 120; // 60 seconds at 500ms intervals
+    let pollCount = 0;
     const poll = async (): Promise<void> => {
+      pollCount++;
+      if (pollCount > maxPolls) {
+        console.error(`Polling timeout for job ${jobId} after ${maxPolls} attempts`);
+        this.controlPanel.setStatus('Processing timeout', 'error');
+        return;
+      }
       const status = await this.rpcClient.getJobStatus(jobId);
       console.info(`Job ${jobId} status: ${status.state}`);
       this.controlPanel.updateJobStatus(status);
       if (status.state === 'ready') {
-        await this.loadJobData(jobId);
+        try {
+          await this.loadJobData(jobId);
+        } catch (e) {
+          console.error('Failed to load job data:', e);
+          this.controlPanel.setStatus(`Load failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
+        }
       } else if (status.state === 'processing') {
         setTimeout(poll, 500);
       } else if (status.state === 'failed') {
@@ -2965,13 +2988,26 @@ export class WebGPUApp {
     try {
       // Poll for job status and load data when ready
       this.controlPanel.setStatus('Loading job...');
+      const maxPolls = 120;
+      let pollCount = 0;
       const poll = async (): Promise<void> => {
+        pollCount++;
+        if (pollCount > maxPolls) {
+          console.error(`Polling timeout for job ${jobId} after ${maxPolls} attempts`);
+          this.controlPanel.setStatus('Loading timeout', 'error');
+          return;
+        }
         const status = await this.rpcClient.getJobStatus(jobId);
         this.controlPanel.updateJobStatus(status);
         if (status.state === 'ready') {
-          await this.loadJobData(jobId);
-          // Update bbox display if visible
-          if (this.showBBox) this.updateBBoxDisplay();
+          try {
+            await this.loadJobData(jobId);
+            // Update bbox display if visible
+            if (this.showBBox) this.updateBBoxDisplay();
+          } catch (e) {
+            console.error('Failed to load job data:', e);
+            this.controlPanel.setStatus(`Load failed: ${e instanceof Error ? e.message : String(e)}`, 'error');
+          }
         } else if (status.state === 'processing') {
           setTimeout(poll, 500);
         } else if (status.state === 'failed') {

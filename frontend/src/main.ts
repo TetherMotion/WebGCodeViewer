@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   const urlParams = new URLSearchParams(window.location.search);
   const jobId = urlParams.get('job');
   if (jobId) {
-    app.loadJobFromUrl(jobId);
+    app.loadJobFromUrl(jobId).catch((e) => console.error('Failed to load job from URL:', e));
   }
 
   // Feature #145: Apply camera position from URL (?cam=angle,elevation,distance)

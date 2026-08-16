@@ -238,7 +238,12 @@ export class WsTransport {
     });
     this.pendingCalls.set(callId, call);
 
-    this.sendBinary(bytes, () => { call.sentTime = performance.now(); }).catch(() => {});
+    // If sendBinary fails (e.g. WebSocket not connected), reject the call
+    // instead of silently swallowing the error and leaving the promise pending.
+    this.sendBinary(bytes, () => { call.sentTime = performance.now(); }).catch((e) => {
+      this.pendingCalls.delete(callId);
+      call.reject(new ViewerRpcError(`Failed to send ${requestCase}: ${e instanceof Error ? e.message : String(e)}`, 14));
+    });
 
     signal?.addEventListener('abort', () => {
       this.sendCancel(callId);
@@ -246,7 +251,15 @@ export class WsTransport {
       call.reject(new ViewerRpcError('Aborted', 4));
     });
 
-    return promise.finally(() => this.pendingCalls.delete(callId));
+    // Timeout: reject if no response within 30 seconds
+    const timeout = setTimeout(() => {
+      if (this.pendingCalls.has(callId)) {
+        this.pendingCalls.delete(callId);
+        call.reject(new ViewerRpcError(`Timeout waiting for ${requestCase} response`, 14));
+      }
+    }, 30000);
+
+    return promise.finally(() => { clearTimeout(timeout); this.pendingCalls.delete(callId); });
   }
 
   async *serverStream(
@@ -275,7 +288,11 @@ export class WsTransport {
     call.resolve = () => {};
 
     this.pendingCalls.set(callId, call);
-    this.sendBinary(bytes).catch(() => {});
+    this.sendBinary(bytes).catch((e) => {
+      streamError = new ViewerRpcError(`Failed to send ${requestCase}: ${e instanceof Error ? e.message : String(e)}`, 14);
+      call.streamDone = true;
+      call.streamNotify?.();
+    });
 
     signal?.addEventListener('abort', () => {
       this.sendCancel(callId);
