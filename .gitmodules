@@ -1,3 +1,6 @@
 [submodule "Tether"]
 	path = Tether
 	url = https://github.com/TetherMotion/Tether.git
+[submodule "third_party/ChartGPU"]
+	path = third_party/ChartGPU
+	url = https://github.com/ChartGPU/ChartGPU.git

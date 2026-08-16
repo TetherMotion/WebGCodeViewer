@@ -227,6 +227,7 @@ import { degToRad } from './MathUtils';
 
 export class WebGPUApp {
   private canvas: HTMLCanvasElement;
+  private adapter: GPUAdapter | null = null;
   private device: GPUDevice | null = null;
   private context: GPUCanvasContext | null = null;
   private format: GPUTextureFormat = 'bgra8unorm';
@@ -806,6 +807,7 @@ export class WebGPUApp {
   async init(): Promise<void> {
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error('WebGPU not supported');
+    this.adapter = adapter;
     this.device = await adapter.requestDevice();
     this.context = this.canvas.getContext('webgpu')!;
     this.format = navigator.gpu.getPreferredCanvasFormat();
@@ -862,12 +864,11 @@ export class WebGPUApp {
       this.gridLabelRenderer.updateLabels(this.gridRenderer.ticks);
     }
 
-    // Miniplot renderer (separate WebGPU canvas for speed plot)
-    const miniplotCanvas = document.getElementById('miniplot-canvas') as HTMLCanvasElement | null;
-    if (miniplotCanvas && this.device) {
-      this.miniplotRenderer = new MiniplotRenderer(miniplotCanvas, this.device);
+    // Miniplot renderer (ChartGPU-backed speed plot)
+    if (this.miniplotContainer && this.device && this.adapter) {
+      this.miniplotRenderer = new MiniplotRenderer(this.miniplotContainer, this.device, this.adapter);
       await this.miniplotRenderer.init();
-      this.setupMiniplotInteraction(miniplotCanvas);
+      this.setupMiniplotInteraction(this.miniplotContainer);
     }
 
     // Analysis: Info panel and position overlay
@@ -1637,45 +1638,11 @@ export class WebGPUApp {
 
   // ── Miniplot ─────────────────────────────────────────────────────────────
 
-  private setupMiniplotInteraction(canvas: HTMLCanvasElement): void {
-    canvas.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      if (this.miniplotRenderer) {
-        this.miniplotRenderer.handleWheel(e.deltaY, mouseX);
-        this.updateMiniplotLabel();
-      }
-    });
+  private setupMiniplotInteraction(container: HTMLElement): void {
+    // ChartGPU handles wheel zoom and drag-to-pan internally.
+    this.miniplotRenderer?.onViewRangeChange(() => this.updateMiniplotLabel());
 
-    canvas.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      const rect = canvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      if (this.miniplotRenderer) {
-        this.miniplotRenderer.startDrag(mouseX);
-      }
-    });
-
-    canvas.addEventListener('mousemove', (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      if (this.miniplotRenderer) {
-        const wasDragging = this.miniplotRenderer.dragging;
-        this.miniplotRenderer.updateDrag(mouseX);
-        if (wasDragging) this.updateMiniplotLabel();
-      }
-    });
-
-    canvas.addEventListener('mouseup', () => {
-      this.miniplotRenderer?.endDrag();
-    });
-
-    canvas.addEventListener('mouseleave', () => {
-      this.miniplotRenderer?.endDrag();
-    });
-
-    canvas.addEventListener('dblclick', () => {
+    container.addEventListener('dblclick', () => {
       this.miniplotRenderer?.resetZoom();
       this.updateMiniplotLabel();
     });
