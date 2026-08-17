@@ -101,3 +101,85 @@ export function sampleStateProfile(data: StateProfileData, sNorm: number): [numb
 
   return [t, v, a, j];
 }
+
+/**
+ * Convert a 1D state profile into a TRNP-like structure so it can be fed to
+ * the existing GPU plot (GpuPlot). Each quantity becomes a degree-1 linear
+ * B-spline over the time domain [0, totalTime].
+ *
+ * This is a WSS-derived stepping stone for the motion profile plot; a full
+ * compute-shader resampling can replace this later.
+ */
+export function stateProfileToTrnp(data: StateProfileData) {
+  const n = data.sampleCount;
+  const qCount = 4; // time, velocity, acceleration, jerk
+
+  const knots = new Float32Array(n + 2);
+  knots[0] = 0;
+  knots[1] = 0;
+  for (let i = 0; i < n; i++) {
+    knots[i + 1] = i / Math.max(1, n - 1);
+  }
+  knots[n] = 1;
+  knots[n + 1] = 1;
+
+  const quantities: import('./ReNurbsParser').TRNPQuantityCurve[] = [];
+  for (let q = 0; q < qCount; q++) {
+    const cp = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      cp[i] = data.texels[i * 4 + q];
+    }
+    quantities.push({ controlPoints: cp, knots, degree: 1 });
+  }
+
+  const segment = {
+    sStart: 0,
+    sEnd: data.totalTime,
+    quantities,
+  };
+
+  return {
+    header: {
+      magic: 'TRNP',
+      version: 1,
+      quantityCount: qCount,
+      segmentCount: 1,
+      totalControlPoints: n * qCount,
+      totalKnots: knots.length * qCount,
+      totalLength: data.totalLength,
+      maxVelocity: data.maxVelocity,
+      maxAcceleration: data.maxAcceleration,
+      maxJerk: data.maxJerk,
+      maxTime: data.totalTime,
+    },
+    quantityNames: ['time', 'velocity', 'acceleration', 'jerk'],
+    segments: [segment],
+    allControlPoints: (() => {
+      const out = new Float32Array(n * qCount);
+      for (let q = 0; q < qCount; q++) {
+        for (let i = 0; i < n; i++) {
+          out[q * n + i] = data.texels[i * 4 + q];
+        }
+      }
+      return out;
+    })(),
+    allKnots: (() => {
+      const out = new Float32Array(knots.length * qCount);
+      for (let q = 0; q < qCount; q++) {
+        out.set(knots, q * knots.length);
+      }
+      return out;
+    })(),
+    quantityMeta: (() => {
+      const out = new Uint32Array(qCount * 4);
+      // One segment, qCount quantities: cpOffset, cpCount, knotOffset, degree
+      for (let q = 0; q < qCount; q++) {
+        out[q * 4 + 0] = q * n;
+        out[q * 4 + 1] = n;
+        out[q * 4 + 2] = q * knots.length;
+        out[q * 4 + 3] = 1;
+      }
+      return out;
+    })(),
+  };
+}

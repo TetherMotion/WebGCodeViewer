@@ -8,7 +8,7 @@ import { RpcClient } from './RpcClient';
 import { ColorMap } from './ColorMap';
 import { parseTTHR, TTHRData, extractZLayer } from './TthrParser';
 import { parseNBP, NBPData } from './NurbsParser';
-import { parseTSSP, StateProfileData } from './StateProfileParser';
+import { parseTSSP, StateProfileData, stateProfileToTrnp } from './StateProfileParser';
 import { parseTRNP, TRNPData, parseTRNPPa, TRNPPaData, PaAlgorithmEntry } from './ReNurbsParser';
 import { ToolpathRenderer, ColorAttribute } from '../renderers/ToolpathRenderer';
 import { GridRenderer } from '../renderers/GridRenderer';
@@ -1788,17 +1788,20 @@ export class WebGPUApp {
     const state = this.paControls.getState();
     const series: PlotSeries[] = [];
 
-    // Motion profile series (from TRNP)
-    if (this.currentTRNP) {
+    // Motion profile series from the sampled WSS state profile.
+    const motionTrnp = this.currentStateProfile
+      ? stateProfileToTrnp(this.currentStateProfile)
+      : null;
+    if (motionTrnp) {
       if (state.showVelocity) {
         series.push({
           name: 'Velocity (mm/s)',
           color: [0.2, 0.8, 1.0],
           visible: true,
-          segments: this.currentTRNP.segments,
-          quantityIndex: 0,
+          segments: motionTrnp.segments,
+          quantityIndex: 1,  // state texel (t, v, a, j) -> index 1 = velocity
           yLabel: 'mm/s',
-          normalizeMax: this.currentTRNP.header.maxVelocity || 1,
+          normalizeMax: motionTrnp.header.maxVelocity || 1,
         });
       }
       if (state.showAcceleration) {
@@ -1806,10 +1809,10 @@ export class WebGPUApp {
           name: 'Acceleration (mm/s²)',
           color: [1.0, 0.6, 0.2],
           visible: true,
-          segments: this.currentTRNP.segments,
-          quantityIndex: 1,
+          segments: motionTrnp.segments,
+          quantityIndex: 2,
           yLabel: 'mm/s²',
-          normalizeMax: this.currentTRNP.header.maxAcceleration || 1,
+          normalizeMax: motionTrnp.header.maxAcceleration || 1,
         });
       }
       if (state.showJerk) {
@@ -1817,10 +1820,10 @@ export class WebGPUApp {
           name: 'Jerk (mm/s³)',
           color: [1.0, 0.3, 0.5],
           visible: true,
-          segments: this.currentTRNP.segments,
-          quantityIndex: 2,
+          segments: motionTrnp.segments,
+          quantityIndex: 3,
           yLabel: 'mm/s³',
-          normalizeMax: this.currentTRNP.header.maxJerk || 1,
+          normalizeMax: motionTrnp.header.maxJerk || 1,
         });
       }
     }
