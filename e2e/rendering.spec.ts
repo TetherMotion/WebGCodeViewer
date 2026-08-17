@@ -180,9 +180,12 @@ test.describe('Console message monitoring during rendering', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
+    // View menu interactions (open once, click buttons inside)
+    await openMenu(page, 'View');
+
     // Toggle grid
-    const gridBtn = page.locator('button', { hasText: 'Grid' });
-    if (await gridBtn.count() > 0) {
+    const gridBtn = page.locator('#top-panel .menu-dropdown button', { hasText: 'Grid' });
+    if (await gridBtn.isVisible()) {
       await gridBtn.click();
       await page.waitForTimeout(300);
       await gridBtn.click();
@@ -190,8 +193,8 @@ test.describe('Console message monitoring during rendering', () => {
     }
 
     // Toggle cross-section
-    const crossBtn = page.locator('button', { hasText: 'Cross' });
-    if (await crossBtn.count() > 0) {
+    const crossBtn = page.locator('#top-panel .menu-dropdown button', { hasText: 'Cross-Section' });
+    if (await crossBtn.isVisible()) {
       await crossBtn.click();
       await page.waitForTimeout(300);
       await crossBtn.click();
@@ -211,14 +214,15 @@ test.describe('Console message monitoring during rendering', () => {
     }
 
     // Camera reset
-    const resetBtn = page.locator('button', { hasText: 'Reset' });
-    if (await resetBtn.count() > 0) {
+    const resetBtn = page.locator('#top-panel .menu-dropdown button', { hasText: 'Reset View' });
+    if (await resetBtn.isVisible()) {
       await resetBtn.click();
       await page.waitForTimeout(300);
     }
 
     // Color attribute change
-    const colorSelect = page.locator('select').first();
+    await openMenu(page, 'Color');
+    const colorSelect = page.locator('#top-panel .menu-dropdown select').first();
     if (await colorSelect.count() > 0) {
       const options = await colorSelect.locator('option').allTextContents();
       for (const opt of options.slice(0, 3)) {
@@ -228,7 +232,8 @@ test.describe('Console message monitoring during rendering', () => {
     }
 
     // Miniplot toggle
-    const miniplotBtn = page.locator('button', { hasText: 'Miniplot' });
+    await openMenu(page, 'Plot');
+    const miniplotBtn = page.locator('#top-panel .menu-dropdown button', { hasText: 'Miniplot' });
     if (await miniplotBtn.count() > 0) {
       await miniplotBtn.click();
       await page.waitForTimeout(500);
