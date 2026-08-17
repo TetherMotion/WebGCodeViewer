@@ -8,6 +8,7 @@ import { RpcClient } from './RpcClient';
 import { ColorMap } from './ColorMap';
 import { parseTTHR, TTHRData, extractZLayer } from './TthrParser';
 import { parseNBP, NBPData } from './NurbsParser';
+import { parseTSSP, StateProfileData } from './StateProfileParser';
 import { parseTRNP, TRNPData, parseTRNPPa, TRNPPaData, PaAlgorithmEntry } from './ReNurbsParser';
 import { ToolpathRenderer, ColorAttribute } from '../renderers/ToolpathRenderer';
 import { GridRenderer } from '../renderers/GridRenderer';
@@ -274,6 +275,7 @@ export class WebGPUApp {
   private fullData: TTHRData | null = null;  // unfiltered data (for layer reset)
   private currentNBP: NBPData | null = null;
   private currentTRNP: TRNPData | null = null;
+  private currentStateProfile: StateProfileData | null = null;
   private currentPaData: TRNPPaData | null = null;
   private gpuPlot: GpuPlot | null = null;
   private paControls: PaControls | null = null;
@@ -1971,6 +1973,7 @@ export class WebGPUApp {
     // wrong layer filters, and wrong bbox display.
     this.currentNBP = null;
     this.currentTRNP = null;
+    this.currentStateProfile = null;
     this.currentPaData = null;
     this.currentData = null;
     this.fullData = null;
@@ -2007,21 +2010,20 @@ export class WebGPUApp {
         }
       }
 
-      // Fetch ReNURBS profile data (TRNP format) — per-segment NURBS curves
-      // for velocity, acceleration, jerk, and time. WAY smaller than dense
-      // sampled data. Evaluated directly in WGSL shaders for smooth coloring.
+      // Fetch sampled 1D state profile (TSSP format) — (t, v, a, j) sampled
+      // directly from the WSS and resampled to a uniform arc-length grid.
+      // This is the preferred data source for kinematic coloring.
       try {
-        const trnpBinary = await this.rpcClient.getReNurbsHttp(jobId);
-        this.currentTRNP = parseTRNP(trnpBinary);
-        this.nurbsRenderer?.updateReNurbsData(this.currentTRNP);
-        console.info(`ReNURBS data loaded: ${this.currentTRNP.header.segmentCount} segments, ` +
-                     `${this.currentTRNP.header.totalControlPoints} control points, ` +
-                     `${trnpBinary.byteLength} bytes`);
+        const stateBinary = await this.rpcClient.getStateProfileHttp(jobId);
+        this.currentStateProfile = parseTSSP(stateBinary);
+        this.nurbsRenderer?.updateStateProfile(this.currentStateProfile);
+        console.info(`State profile loaded: ${this.currentStateProfile.sampleCount} samples, ` +
+                     `${stateBinary.byteLength} bytes`);
       } catch (e) {
-        // ReNURBS is optional — if it fails, continue without it.
-        // The viewer will fall back to piece-level coloring.
-        console.info('ReNURBS data not available, using piece-level coloring');
-        this.currentTRNP = null;
+        // State profile is optional — if it fails, the renderer falls back to
+        // ReNURBS or piece-level coloring.
+        console.info('State profile not available');
+        this.currentStateProfile = null;
       }
 
       // Fetch pressure advance profiles (TRNP-PA format) — per-algorithm

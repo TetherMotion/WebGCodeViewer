@@ -241,6 +241,21 @@ export class RpcClient {
     return new Uint8Array(buf);
   }
 
+  /**
+   * Fetch sampled 1D state profile (TSSP format) via HTTP.
+   * Returns (time, velocity, acceleration, jerk) as a 1D RGBA32F texture.
+   */
+  async getStateProfileHttp(jobId: string): Promise<Uint8Array> {
+    const url = `${this.httpBaseUrl}/api/trajectory/${jobId}/state`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new ViewerRpcError(`HTTP ${resp.status}: ${text || resp.statusText}`, resp.status);
+    }
+    const buf = await resp.arrayBuffer();
+    return new Uint8Array(buf);
+  }
+
   async getBlocks(jobId: string): Promise<GetBlocksResponse> {
     return this.transport.unary(
       'getBlocks',

@@ -16,9 +16,10 @@
 import { Mat4 } from '../core/MathUtils';
 import { NBPData, NBPPiece, tessellatePiece } from '../core/NurbsParser';
 import { TRNPData } from '../core/ReNurbsParser';
+import { StateProfileData } from '../core/StateProfileParser';
 import { ColorMap } from '../core/ColorMap';
 
-export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'extruderSpeed' | 'motion' | 'solid' | 'feedRate' | 'spindleRpm' | 'toolNumber' | 'coolant' | 'featureType' | 'velocity' | 'acceleration' | 'jerk' | 'paOffset' | 'paVelocity';
+export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'extruderSpeed' | 'motion' | 'solid' | 'feedRate' | 'spindleRpm' | 'toolNumber' | 'coolant' | 'featureType' | 'velocity' | 'acceleration' | 'jerk' | 'time' | 'paOffset' | 'paVelocity';
 
 export interface NurbsRenderOptions {
   colorMap: ColorMap;
@@ -70,6 +71,13 @@ export class NurbsRenderer {
   private pieceFeatureTypes: Float32Array | null = null;
   private maxFeatureType: number = 0;
 
+  // Sampled state profile (group 3) — 1D (t, v, a, j) texture sampled from WSS
+  private stateTexture: GPUTexture | null = null;
+  private stateSampler: GPUSampler | null = null;
+  private stateBindGroup: GPUBindGroup | null = null;
+  private stateData: StateProfileData | null = null;
+  private hasStateProfile: boolean = false;
+
   // ReNURBS storage buffers (group 1) — for GPU-side velocity/accel/jerk evaluation
   private renurbsCpBuffer: GPUBuffer | null = null;       // all control points (f32)
   private renurbsKnotBuffer: GPUBuffer | null = null;      // all knots (f32)
@@ -120,6 +128,7 @@ export class NurbsRenderer {
           progress: f32,
           colorMode: u32,     // 0=cpuColorValue, 1=velocity, 2=accel, 3=jerk, 4=time
           maxValue: f32,      // for normalization
+          useStateTexture: u32,
           _pad: f32,
         };
         @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -135,6 +144,10 @@ export class NurbsRenderer {
         @group(2) @binding(0) var<storage, read> paCPs: array<f32>;
         @group(2) @binding(1) var<storage, read> paKnots: array<f32>;
         @group(2) @binding(2) var<storage, read> paMeta: array<u32>;
+
+        // Sampled 1D state profile (group 3) — (time, velocity, acceleration, jerk)
+        @group(3) @binding(0) var stateTexture: texture_1d<f32>;
+        @group(3) @binding(1) var stateSampler: sampler;
 
         const MAX_CP: u32 = 64u;
 
@@ -237,20 +250,33 @@ export class NurbsRenderer {
           var output: VertexOutput;
           output.clipPosition = uniforms.viewProj * vec4<f32>(input.position, 1.0);
 
-          // Select color source: CPU-computed or GPU-evaluated ReNURBS
+          // Select color source: CPU-computed, sampled state texture, or ReNURBS
           var cv = input.colorValue;
           if (uniforms.colorMode > 0u && uniforms.colorMode <= 4u) {
-            let segIdx = u32(input.segIndexU.x);
             let localU = input.segIndexU.y;
-            // Quantity index: colorMode 1=velocity(0), 2=accel(1), 3=jerk(2), 4=time(3)
-            let qtyIdx = uniforms.colorMode - 1u;
-            // Quantity metadata: 4 u32 per (segment, quantity): cpOffset, cpCount, knotOffset, degree
-            let metaBase = segIdx * 4u * 4u + qtyIdx * 4u;
-            let cpOffset = renurbsMeta[metaBase + 0u];
-            let cpCount = renurbsMeta[metaBase + 1u];
-            let knotOffset = renurbsMeta[metaBase + 2u];
-            let degree = renurbsMeta[metaBase + 3u];
-            let val = evalBSpline1D(cpOffset, cpCount, knotOffset, degree, localU);
+            var val: f32 = 0.0;
+            if (uniforms.useStateTexture != 0u) {
+              let texel = textureSample(stateTexture, stateSampler, localU);
+              // texel = (time, velocity, acceleration, jerk)
+              switch (uniforms.colorMode) {
+                case 1u: { val = texel.y; }        // velocity
+                case 2u: { val = abs(texel.z); }   // acceleration
+                case 3u: { val = abs(texel.w); }   // jerk
+                case 4u: { val = texel.x; }        // time
+                default: { val = 0.0; }
+              }
+            } else {
+              let segIdx = u32(input.segIndexU.x);
+              // Quantity index: colorMode 1=velocity(0), 2=accel(1), 3=jerk(2), 4=time(3)
+              let qtyIdx = uniforms.colorMode - 1u;
+              // Quantity metadata: 4 u32 per (segment, quantity): cpOffset, cpCount, knotOffset, degree
+              let metaBase = segIdx * 4u * 4u + qtyIdx * 4u;
+              let cpOffset = renurbsMeta[metaBase + 0u];
+              let cpCount = renurbsMeta[metaBase + 1u];
+              let knotOffset = renurbsMeta[metaBase + 2u];
+              let degree = renurbsMeta[metaBase + 3u];
+              val = evalBSpline1D(cpOffset, cpCount, knotOffset, degree, localU);
+            }
             // Normalize to [0,1] using maxValue
             cv = select(0.0, val / uniforms.maxValue, uniforms.maxValue > 0.0);
           }
@@ -312,6 +338,12 @@ export class NurbsRenderer {
     this.sampler = this.device.createSampler({
       magFilter: 'linear',
       minFilter: 'linear',
+    });
+
+    this.stateSampler = this.device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
+      addressModeU: 'clamp-to-edge',
     });
 
     this.pipeline = this.device.createRenderPipeline({
@@ -376,6 +408,9 @@ export class NurbsRenderer {
     // bind group must always be available at render time even when no PA data
     // has been loaded yet.
     this.createDummyPaBuffers();
+
+    // Create dummy 1D state profile texture for group 3.
+    this.createDummyStateTexture();
   }
 
   /**
@@ -461,6 +496,91 @@ export class NurbsRenderer {
   }
 
   /**
+   * Create a minimal 1x1 state profile texture for group 3. The pipeline auto
+   * layout exposes @group(3), so a bind group must always be available.
+   */
+  private createDummyStateTexture(): void {
+    this.stateTexture = this.device.createTexture({
+      size: [1],
+      dimension: '1d',
+      format: 'rgba32float',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    const dummy = new Float32Array([0, 0, 0, 0]);
+    this.device.queue.writeTexture(
+      { texture: this.stateTexture },
+      dummy,
+      { bytesPerRow: 16 },
+      { width: 1 },
+    );
+
+    try {
+      const stateLayout = this.pipeline!.getBindGroupLayout(3);
+      this.stateBindGroup = this.device.createBindGroup({
+        layout: stateLayout,
+        entries: [
+          { binding: 0, resource: this.stateTexture.createView() },
+          { binding: 1, resource: this.stateSampler! },
+        ],
+      });
+    } catch {
+      this.stateBindGroup = null;
+    }
+    this.hasStateProfile = false;
+    this.stateData = null;
+  }
+
+  /**
+   * Update the 1D state profile texture from TSSP data. This replaces the
+   * ReNURBS profile for velocity/acceleration/jerk/time color mapping.
+   */
+  updateStateProfile(data: StateProfileData): void {
+    if (data.texels.length === 0 || data.sampleCount === 0) {
+      this.createDummyStateTexture();
+      return;
+    }
+
+    if (this.stateTexture && (this.stateTexture.width < data.sampleCount || this.stateTexture.format !== 'rgba32float')) {
+      this.stateTexture.destroy();
+      this.stateTexture = null;
+    }
+
+    const sampleCount = data.sampleCount;
+    if (!this.stateTexture) {
+      this.stateTexture = this.device.createTexture({
+        size: [sampleCount],
+        dimension: '1d',
+        format: 'rgba32float',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+    }
+
+    const texels = new Float32Array(data.texels);
+    this.device.queue.writeTexture(
+      { texture: this.stateTexture },
+      texels,
+      { bytesPerRow: texels.byteLength },
+      { width: sampleCount },
+    );
+
+    try {
+      const stateLayout = this.pipeline!.getBindGroupLayout(3);
+      this.stateBindGroup = this.device.createBindGroup({
+        layout: stateLayout,
+        entries: [
+          { binding: 0, resource: this.stateTexture.createView() },
+          { binding: 1, resource: this.stateSampler! },
+        ],
+      });
+    } catch {
+      this.stateBindGroup = null;
+    }
+
+    this.stateData = data;
+    this.hasStateProfile = true;
+  }
+
+  /**
    * Update the renderer with NURBS path data.
    * Tessellates each piece on CPU and uploads to GPU.
    * Also computes per-vertex segment index and normalized arc length
@@ -484,14 +604,13 @@ export class NurbsRenderer {
       if (p.extruderSpeed > maxExtruderSpeed) maxExtruderSpeed = p.extruderSpeed;
     }
 
+    const totalLength = data.header.totalLength || 0.0;
     let vertexOffset = 0;
     let totalSegments = 0;
+    let pieceStartS = 0.0;
 
     for (let i = 0; i < pieces.length; i++) {
       const piece = pieces[i];
-
-      // Feature #1: Skip travel moves (motionType 0) when showTravels is false
-      if (!this.options.showTravels && piece.motionType === 0) continue;
 
       // Adaptive tessellation: more segments for higher-degree curves
       // and longer pieces
@@ -506,6 +625,22 @@ export class NurbsRenderer {
       }
 
       const positions = tessellatePiece(piece, dim, segments);
+
+      // Cumulative arc length along this piece (approximate from tessellation).
+      const pieceDists = new Float64Array(segments + 1);
+      for (let k = 1; k <= segments; k++) {
+        const dx = positions[k * 3] - positions[(k - 1) * 3];
+        const dy = positions[k * 3 + 1] - positions[(k - 1) * 3 + 1];
+        const dz = positions[k * 3 + 2] - positions[(k - 1) * 3 + 2];
+        pieceDists[k] = pieceDists[k - 1] + Math.sqrt(dx * dx + dy * dy + dz * dz);
+      }
+
+      // Feature #1: Skip travel moves (motionType 0) when showTravels is false,
+      // but still track their arc length so the global s coordinate stays correct.
+      if (!this.options.showTravels && piece.motionType === 0) {
+        pieceStartS += pieceDists[segments];
+        continue;
+      }
 
       // Color value depends on the selected color attribute
       let colorValue: number;
@@ -591,9 +726,10 @@ export class NurbsRenderer {
         allPositions.push(positions[j * 3], positions[j * 3 + 1], positions[j * 3 + 2]);
         allColors.push(colorValue);
         allSampleIndices.push(vertexOffset + j);
-        // Per-vertex segment index + normalized arc length for ReNURBS evaluation.
-        // localU = j/segments gives normalized parameter in [0,1] within the piece.
-        allSegIndexU.push(i, j / segments);
+        // Per-vertex segment index + normalized arc length for state profile sampling.
+        // y = global arc length / total path length, used to sample the 1D state texture.
+        const sNorm = totalLength > 0.0 ? (pieceStartS + pieceDists[j]) / totalLength : 0.0;
+        allSegIndexU.push(i, sNorm);
       }
 
       // Line indices: connect consecutive vertices within this piece
@@ -601,6 +737,7 @@ export class NurbsRenderer {
         allIndices.push(vertexOffset + j, vertexOffset + j + 1);
       }
 
+      pieceStartS += pieceDists[segments];
       vertexOffset += segments + 1;
       totalSegments += segments;
     }
@@ -851,6 +988,21 @@ export class NurbsRenderer {
   }
 
   /**
+   * Get the max value from the sampled state profile for the current color
+   * attribute.
+   */
+  private getStateMaxValue(): number {
+    if (!this.stateData) return 1.0;
+    switch (this.options.colorAttribute) {
+      case 'velocity': return this.stateData.maxVelocity || 1.0;
+      case 'acceleration': return this.stateData.maxAcceleration || 1.0;
+      case 'jerk': return this.stateData.maxJerk || 1.0;
+      case 'time': return this.stateData.totalTime || 1.0;
+      default: return 1.0;
+    }
+  }
+
+  /**
    * Map color attribute to shader colorMode constant.
    * 0=cpuColorValue, 1=velocity, 2=accel, 3=jerk, 4=time
    * 5=paOffset, 6=paVelocity
@@ -860,6 +1012,7 @@ export class NurbsRenderer {
       case 'velocity': return 1;
       case 'acceleration': return 2;
       case 'jerk': return 3;
+      case 'time': return 4;
       case 'paOffset': return 5;
       case 'paVelocity': return 6;
       default: return 0;
@@ -972,24 +1125,29 @@ export class NurbsRenderer {
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.options.visible || !this.pipeline || !this.positionBuffer || this.indexCount < 2) return;
     if (!this.uniformBuffer || !this.bindGroup || !this.colorBuffer || !this.sampleIdxBuffer || !this.indexBuffer) return;
-    if (!this.segIndexUBuffer || !this.renurbsBindGroup) return;
+    if (!this.segIndexUBuffer || !this.renurbsBindGroup || !this.stateBindGroup) return;
 
-    // Uniforms: viewProj(16 floats) + progress(1) + colorMode(u32) + maxValue(1) + pad(1) = 80 bytes
-    const uniformData = new ArrayBuffer(80);
+    // Uniforms: viewProj(16 floats) + progress(1) + colorMode(u32) + maxValue(1)
+    //           + useStateTexture(u32) + pad(1) = 84 bytes
+    const cm = this.getColorMode();
+    const isPaMode = cm === 5 || cm === 6;
+    const isKinematicMode = cm >= 1 && cm <= 4;
+    const hasState = this.hasStateProfile && isKinematicMode;
+    const colorMode = isKinematicMode
+      ? (hasState ? cm : 0)
+      : (isPaMode ? (this.hasPaData ? cm : 0) : cm);
+    const maxValue = isPaMode
+      ? (cm === 5 ? this.paMaxOffset : this.paMaxVelocity)
+      : (hasState ? this.getStateMaxValue() : (this.hasReNurbs ? this.getReNurbsMaxValue() : 1.0));
+
+    const uniformData = new ArrayBuffer(84);
     const view = new DataView(uniformData);
     for (let i = 0; i < 16; i++) view.setFloat32(i * 4, viewProj[i], true);
     view.setFloat32(64, this.progress, true);
-    // colorMode: use GPU evaluation only if data is available (written as u32)
-    const cm = this.getColorMode();
-    const isPaMode = cm === 5 || cm === 6;
-    const colorMode = (isPaMode ? this.hasPaData : this.hasReNurbs) ? cm : 0;
     view.setUint32(68, colorMode, true);
-    // maxValue: PA modes use PA max, motion modes use ReNURBS max
-    const maxValue = isPaMode
-      ? (cm === 5 ? this.paMaxOffset : this.paMaxVelocity)
-      : (this.hasReNurbs ? this.getReNurbsMaxValue() : 1.0);
     view.setFloat32(72, maxValue, true);
-    view.setFloat32(76, 0, true); // pad
+    view.setUint32(76, hasState ? 1 : 0, true);
+    view.setFloat32(80, 0, true); // pad
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
     pass.setPipeline(this.pipeline);
@@ -1000,6 +1158,8 @@ export class NurbsRenderer {
     if (this.paBindGroup) {
       pass.setBindGroup(2, this.paBindGroup);
     }
+    // Group 3: 1D state profile texture (real or dummy).
+    pass.setBindGroup(3, this.stateBindGroup);
     pass.setVertexBuffer(0, this.positionBuffer);
     pass.setVertexBuffer(1, this.colorBuffer);
     pass.setVertexBuffer(2, this.sampleIdxBuffer);
@@ -1014,6 +1174,7 @@ export class NurbsRenderer {
     this.indexBuffer?.destroy();
     this.uniformBuffer?.destroy();
     this.colorLUTTexture?.destroy();
+    this.stateTexture?.destroy();
     this.sampleIdxBuffer?.destroy();
     this.segIndexUBuffer?.destroy();
     this.renurbsCpBuffer?.destroy();
