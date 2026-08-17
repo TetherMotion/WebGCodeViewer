@@ -276,6 +276,7 @@ TEST(ProcessResultAnalyzerTest, MaterialLayerAndFeatureSections) {
     EXPECT_EQ(response.sections(4).section_name(), "z_seam");
     EXPECT_EQ(response.sections(5).section_name(), "path_intersections");
     EXPECT_EQ(response.sections(6).section_name(), "volumetric_flow");
+    EXPECT_EQ(response.sections(7).section_name(), "first_layer");
 
     const auto& material = response.sections(0);
     EXPECT_GT(material.metrics_size(), 0);
