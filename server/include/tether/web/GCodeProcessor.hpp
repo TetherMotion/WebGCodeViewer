@@ -18,6 +18,7 @@
 /// and optional dense sampling via TrajectoryAnalyzer.
 
 #include "tether/export/TrajectoryAnalyzer.hpp"
+#include "tether/gcode/SegmentSpeed.hpp"
 #include "tether/gcode/motion/InterpolationStrategy.hpp"
 #include "tether/gcode/PlanningSegmentBuilder.hpp"
 #include "tether/web/TrajectorySerializer.hpp"
@@ -38,17 +39,7 @@
 namespace tether::web {
 
 /// @brief Per-segment speed data for miniplot visualization.
-struct SegmentSpeed {
-    double timeStart = 0.0;      ///< Time at start of segment (seconds)
-    double duration = 0.0;       ///< Segment duration (seconds)
-    int32_t blockIndex = -1;     ///< G-code block index
-    int32_t lineNumber = 0;      ///< G-code line number
-    double speedX = 0.0;        ///< X axis speed (mm/s)
-    double speedY = 0.0;        ///< Y axis speed (mm/s)
-    double speedZ = 0.0;        ///< Z axis speed (mm/s)
-    double speedE = 0.0;        ///< Extruder speed (mm/s)
-    double speedLinear = 0.0;   ///< Linear velocity magnitude (mm/s)
-};
+using SegmentSpeed = tether::gcode::SegmentSpeed;
 
 /// @brief Configuration for G-code processing.
 struct ProcessConfig {

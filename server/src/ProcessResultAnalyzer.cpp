@@ -1,17 +1,19 @@
 /// @file ProcessResultAnalyzer.cpp
-/// @brief ProcessResult-driven material, time, layer, and feature analysis.
+/// @brief ProcessResult-driven material, time, layer, feature and detailed G-code analysis.
 
 #include "ProcessResultAnalyzer.hpp"
-#include "analysis/OverhangAnalyzer.hpp"
-#include "analysis/ZSeamAnalyzer.hpp"
-#include "analysis/SelfIntersectionAnalyzer.hpp"
-#include "analysis/VolumetricFlowAnalyzer.hpp"
-#include "analysis/FirstLayerAnalyzer.hpp"
-#include "analysis/PatternAnalyzer.hpp"
-#include "analysis/ThermalCoolingAnalyzer.hpp"
-#include "analysis/CncToolpathAnalyzer.hpp"
-#include "analysis/StockCollisionAnalyzer.hpp"
-#include "analysis/ThermalSimulationAnalyzer.hpp"
+
+#include "tether/gcode/analysis/OverhangAnalyzer.hpp"
+#include "tether/gcode/analysis/ZSeamAnalyzer.hpp"
+#include "tether/gcode/analysis/SelfIntersectionAnalyzer.hpp"
+#include "tether/gcode/analysis/VolumetricFlowAnalyzer.hpp"
+#include "tether/gcode/analysis/FirstLayerAnalyzer.hpp"
+#include "tether/gcode/analysis/PatternAnalyzer.hpp"
+#include "tether/gcode/analysis/ThermalCoolingAnalyzer.hpp"
+#include "tether/gcode/analysis/CncToolpathAnalyzer.hpp"
+#include "tether/gcode/analysis/StockCollisionAnalyzer.hpp"
+#include "tether/gcode/analysis/ThermalSimulationAnalyzer.hpp"
+
 #include "proto/tether_viewer.pb.h"
 
 #include <algorithm>
@@ -25,6 +27,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 namespace tether::web {
@@ -34,6 +37,10 @@ namespace {
 using ::tether::viewer::v1::AnalysisMetric;
 using ::tether::viewer::v1::AnalysisSection;
 using ::tether::viewer::v1::AnalysisEvent;
+using ::tether::gcode::analysis::Event;
+using ::tether::gcode::analysis::Metric;
+using ::tether::gcode::analysis::Section;
+using ::tether::gcode::analysis::Severity;
 
 constexpr double kFilamentDiameterMm = 1.75;
 constexpr double kFilamentDensityGPerCm3 = 1.24; // PLA
@@ -55,7 +62,6 @@ struct FeatureAggregate {
     uint32_t count = 0;
 };
 
-/// Remove comments and whitespace, leaving just the G-code words for parsing.
 std::string stripGcodeComments(const std::string& raw) {
     std::string out;
     out.reserve(raw.size());
@@ -89,7 +95,6 @@ std::string trim(std::string_view s) {
     return std::string(s.substr(start, end - start));
 }
 
-/// Find the first word starting with `letter` and parse the numeric value.
 std::optional<double> findWordValue(const std::string& line, char letter) {
     const char uc = static_cast<char>(std::toupper(static_cast<unsigned char>(letter)));
     for (size_t i = 0; i < line.size(); ++i) {
@@ -111,16 +116,14 @@ std::optional<double> findWordValue(const std::string& line, char letter) {
     return std::nullopt;
 }
 
-/// Per-line signed E-axis delta (mm). Tracks M82/M83, G90/G91, G92 E, etc.
 std::vector<double> computeEdeltas(const std::vector<std::string>& gcodeLines) {
     std::vector<double> deltas(gcodeLines.size(), 0.0);
     double currentE = 0.0;
-    bool absoluteE = true; // M82 / G90
+    bool absoluteE = true;
 
     for (size_t i = 0; i < gcodeLines.size(); ++i) {
         const std::string line = stripGcodeComments(gcodeLines[i]);
 
-        // M82/M83 or G90/G91 toggles
         bool sawM82Or83 = false;
         if (auto m = findWordValue(line, 'M')) {
             if (*m == 82.0) { absoluteE = true; sawM82Or83 = true; }
@@ -133,7 +136,6 @@ std::vector<double> computeEdeltas(const std::vector<std::string>& gcodeLines) {
             }
         }
 
-        // G92 E0 (or any E) resets the extruder position without moving.
         if (auto g = findWordValue(line, 'G')) {
             if (*g == 92.0) {
                 if (auto e = findWordValue(line, 'E')) {
@@ -142,7 +144,6 @@ std::vector<double> computeEdeltas(const std::vector<std::string>& gcodeLines) {
             }
         }
 
-        // G0-G3 with an E word produce an extrusion/retraction delta.
         if (auto g = findWordValue(line, 'G')) {
             if (*g >= 0.0 && *g <= 3.0) {
                 if (auto e = findWordValue(line, 'E')) {
@@ -157,9 +158,7 @@ std::vector<double> computeEdeltas(const std::vector<std::string>& gcodeLines) {
     return deltas;
 }
 
-/// Extract a slicer feature-type comment value (e.g. ;TYPE:PERIMETER).
 std::optional<std::string> extractFeatureTag(std::string_view raw, std::string_view prefix) {
-    // Require the line to start with an optional ';' and the prefix.
     std::string_view s = raw;
     size_t i = 0;
     while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
@@ -172,7 +171,6 @@ std::optional<std::string> extractFeatureTag(std::string_view raw, std::string_v
     return toUpper(trim(s.substr(i)));
 }
 
-/// Per-line active slicer feature type, derived from TYPE/MESH/FEATURE comments.
 std::vector<std::string> computeFeatures(const std::vector<std::string>& gcodeLines) {
     std::vector<std::string> features(gcodeLines.size(), "UNKNOWN");
     std::string current = "UNKNOWN";
@@ -203,6 +201,72 @@ AnalysisMetric* addIntMetric(AnalysisSection* section, const std::string& key, i
     m->set_key(key);
     m->set_int64_value(value);
     return m;
+}
+
+::tether::viewer::v1::AnalysisSeverity toProtoSeverity(Severity s) {
+    using ::tether::viewer::v1::ANALYSIS_SEVERITY_HIGH;
+    using ::tether::viewer::v1::ANALYSIS_SEVERITY_INFO;
+    using ::tether::viewer::v1::ANALYSIS_SEVERITY_LOW;
+    using ::tether::viewer::v1::ANALYSIS_SEVERITY_MEDIUM;
+    using ::tether::viewer::v1::ANALYSIS_SEVERITY_UNSPECIFIED;
+    switch (s) {
+        case Severity::Info: return ANALYSIS_SEVERITY_INFO;
+        case Severity::Low: return ANALYSIS_SEVERITY_LOW;
+        case Severity::Medium: return ANALYSIS_SEVERITY_MEDIUM;
+        case Severity::High: return ANALYSIS_SEVERITY_HIGH;
+    }
+    return ANALYSIS_SEVERITY_UNSPECIFIED;
+}
+
+void appendMetric(AnalysisSection* section, const Metric& m) {
+    auto* pm = section->add_metrics();
+    pm->set_key(m.key);
+    std::visit([&](auto&& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, double>) {
+            pm->set_double_value(value);
+        } else if constexpr (std::is_same_v<T, int64_t>) {
+            pm->set_int64_value(value);
+        }
+    }, m.value);
+}
+
+void appendEvent(AnalysisSection* section, const Event& e) {
+    auto* pe = section->add_top_events();
+    pe->set_id(e.id);
+    pe->set_line_number(e.lineNumber);
+    pe->set_event_type(e.type);
+    pe->set_severity(toProtoSeverity(e.severity));
+    pe->set_message(e.message);
+    pe->set_metric_value(e.metricValue);
+    pe->set_details_json(e.detailsJson);
+}
+
+void appendSection(::tether::viewer::v1::AnalysisResultResponse& response, const Section& s) {
+    if (s.name.empty()) return;
+    auto* section = response.add_sections();
+    section->set_section_name(s.name);
+    section->set_display_name(s.displayName);
+    section->set_score(s.score);
+    section->set_total_event_count(static_cast<uint32_t>(s.totalEventCount));
+    section->set_has_more_events(s.hasMoreEvents);
+    for (const auto& m : s.metrics) appendMetric(section, m);
+    for (const auto& e : s.events) appendEvent(section, e);
+}
+
+::tether::gcode::analysis::Options makeOptions(const ::tether::viewer::v1::GetAnalysisRequest& request) {
+    ::tether::gcode::analysis::Options options;
+    std::string detail = request.detail_level();
+    if (detail.empty()) detail = "standard";
+    options.detailLevel = detail;
+    if (detail == "full") {
+        options.topEventLimit = std::numeric_limits<std::size_t>::max();
+    } else {
+        options.topEventLimit = (request.top_event_limit() > 0)
+                                    ? static_cast<std::size_t>(request.top_event_limit())
+                                    : 64;
+    }
+    return options;
 }
 
 } // namespace
@@ -339,7 +403,7 @@ void appendProcessResultAnalysis(
             ev->set_message(std::format("Layer Z={:.2f} mm", l.z));
             ev->set_metric_value(l.extrusion);
             ev->set_details_json(std::format(
-                R"({{"z":{:.2f},"time_s":{:.3f},"extrusion_mm":{:.2f},"path_length_mm":{:.2f},"segment_count":{}}})",
+                R"({{"z":{:.2f},"time_s":{:.3f},"extrusion_mm":{:.2f},"path_length_mm":{:.2f},"segment_count":{}}})" ,
                 l.z, l.time, l.extrusion, l.pathLength, l.count));
         }
     }
@@ -376,21 +440,25 @@ void appendProcessResultAnalysis(
                                         std::format("{:.3f} s", f.time)));
             ev->set_metric_value(f.extrusion);
             ev->set_details_json(std::format(
-                R"({{"time_s":{:.3f},"extrusion_mm":{:.2f},"path_length_mm":{:.2f},"segment_count":{}}})",
+                R"({{"time_s":{:.3f},"extrusion_mm":{:.2f},"path_length_mm":{:.2f},"segment_count":{}}})" ,
                 f.time, f.extrusion, f.pathLength, f.count));
         }
     }
 
-    appendOverhangAnalysis(response, result, gcodeLines, request);
-    appendZSeamAnalysis(response, result, gcodeLines, request);
-    appendSelfIntersectionAnalysis(response, result, gcodeLines, request);
-    appendVolumetricFlowAnalysis(response, result, gcodeLines, request);
-    appendFirstLayerAnalysis(response, result, gcodeLines, request);
-    appendPatternAnalysis(response, result, gcodeLines, request);
-    appendThermalCoolingAnalysis(response, result, gcodeLines, request);
-    appendCncToolpathAnalysis(response, result, gcodeLines, request);
-    appendStockCollisionAnalysis(response, result, gcodeLines, request);
-    appendThermalSimulationAnalysis(response, result, gcodeLines, request);
+    const auto options = makeOptions(request);
+    const auto& planning = result->planningSegments;
+    const auto& speeds = result->segmentSpeeds;
+
+    appendSection(response, ::tether::gcode::analysis::analyzeOverhangs(planning, speeds, gcodeLines, options));
+    appendSection(response, ::tether::gcode::analysis::analyzeZSeam(planning, speeds, gcodeLines, options));
+    appendSection(response, ::tether::gcode::analysis::analyzeSelfIntersections(planning, speeds, gcodeLines, options));
+    appendSection(response, ::tether::gcode::analysis::analyzeVolumetricFlow(planning, speeds, gcodeLines, options));
+    appendSection(response, ::tether::gcode::analysis::analyzeFirstLayer(planning, speeds, gcodeLines, options));
+    appendSection(response, ::tether::gcode::analysis::analyzePatterns(planning, speeds, gcodeLines, options));
+    appendSection(response, ::tether::gcode::analysis::analyzeThermalCooling(planning, speeds, gcodeLines, options));
+    appendSection(response, ::tether::gcode::analysis::analyzeCncToolpath(planning, speeds, gcodeLines, options));
+    appendSection(response, ::tether::gcode::analysis::analyzeStockCollision(planning, speeds, gcodeLines, options));
+    appendSection(response, ::tether::gcode::analysis::analyzeThermalSimulation(planning, speeds, gcodeLines, options));
 }
 
 } // namespace tether::web
