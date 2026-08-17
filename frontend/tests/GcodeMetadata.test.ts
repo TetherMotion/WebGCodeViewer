@@ -6,7 +6,7 @@ import {
   computeMaterialUsage,
   formatTime,
   getMachineStateAtLine,
-} from '../src/core/GcodeMetadata';
+} from "@tether/gcode-analyzer/GcodeMetadata";
 
 describe('GcodeMetadata', () => {
   describe('parseGcodeMetadata', () => {

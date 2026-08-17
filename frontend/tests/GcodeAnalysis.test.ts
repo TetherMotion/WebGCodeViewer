@@ -18,7 +18,7 @@ import {
   parseStockDimensions,
   estimatePrintTime,
   computeSelectionMetrics,
-} from '../src/core/GcodeAnalysis';
+} from "@tether/gcode-analyzer/GcodeAnalysis";
 
 // ── Test helpers ──
 

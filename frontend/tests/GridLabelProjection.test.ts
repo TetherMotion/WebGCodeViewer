@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { mat4Perspective, mat4LookAt, mat4Multiply, Mat4 } from '../src/core/MathUtils';
+import { mat4Perspective, mat4LookAt, mat4Multiply, Mat4 } from "@tether/viewer-core";
 
 // ─── Projection Logic Tests ────────────────────────────────────────────
 

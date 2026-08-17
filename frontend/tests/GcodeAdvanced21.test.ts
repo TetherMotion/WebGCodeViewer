@@ -17,7 +17,7 @@ import {
   validateCommandSequence,
   analyzeFeedRateHarmonics,
   analyzeLayerHeightVariance,
-} from '../src/core/GcodeAdvanced21';
+} from "@tether/gcode-analyzer/GcodeAdvanced21";
 
 // ── 1. Per-Layer Bounds ──
 

@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { GcodeViewer } from '../src/ui/GcodeViewer';
+import { GcodeViewer } from "@tether/gcode-viewer";
 
 describe('GcodeViewer', () => {
   let container: HTMLElement;

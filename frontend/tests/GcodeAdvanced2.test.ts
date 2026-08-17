@@ -19,7 +19,7 @@ import {
   parseBedLevelingMesh,
   detectBridges,
   detectRapidPlanes,
-} from '../src/core/GcodeAdvanced2';
+} from "@tether/gcode-analyzer/GcodeAdvanced2";
 
 // ── 1. Motion Profile Time Estimation ──
 

@@ -17,7 +17,7 @@ import {
   analyzeArcInterpolationQuality,
   analyzeLayerHeightConsistencyPerLayer,
   analyzeModalStateTransitions,
-} from '../src/core/GcodeAdvanced26';
+} from "@tether/gcode-analyzer/GcodeAdvanced26";
 
 // ── 1. Engagement Time Per Layer ──
 

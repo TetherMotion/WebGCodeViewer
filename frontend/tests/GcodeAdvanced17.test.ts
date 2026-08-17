@@ -17,7 +17,7 @@ import {
   analyzeCommentDensity,
   optimizeRapidTraverse,
   analyzeSkirtBrim,
-} from '../src/core/GcodeAdvanced17';
+} from "@tether/gcode-analyzer/GcodeAdvanced17";
 
 // ── 1. Idle Time Analyzer ──
 

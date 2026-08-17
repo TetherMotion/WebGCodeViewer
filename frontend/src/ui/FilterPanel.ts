@@ -3,7 +3,7 @@
  * @brief Side panel for filtering trajectory data by time, segment, and attributes.
  */
 
-import { EventDispatcher } from '../core/EventDispatcher';
+import { EventDispatcher } from "@tether/viewer-core";
 
 export interface FilterEvents {
   timeRangeChanged: { start: number; end: number };

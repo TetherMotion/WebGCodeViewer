@@ -17,8 +17,8 @@ import {
   checkSafetyZones,
   analyzeToolpathDirection,
   parseWithRecovery,
-} from '../src/core/GcodeAdvanced9';
-import type { SafetyZone } from '../src/core/GcodeAdvanced9';
+} from "@tether/gcode-analyzer/GcodeAdvanced9";
+import type { SafetyZone } from "@tether/gcode-analyzer/GcodeAdvanced9";
 
 // ── 1. Self-Intersection Detection ──
 

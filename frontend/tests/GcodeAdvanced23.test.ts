@@ -17,7 +17,7 @@ import {
   optimizeRetractPlane,
   analyzeSkirtBrimGap,
   estimateExecutionTime,
-} from '../src/core/GcodeAdvanced23';
+} from "@tether/gcode-analyzer/GcodeAdvanced23";
 
 // ── 1. Scallop Height ──
 

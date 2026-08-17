@@ -44,7 +44,7 @@ import {
   type GetZLayersResponse,
   type PingResponse,
   type VersionResponse,
-} from '../generated/tether_viewer_pb';
+} from "@tether/viewer-core/generated";
 
 export interface ProcessJobOptions {
   sampleRate?: number;

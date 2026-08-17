@@ -17,7 +17,7 @@ import {
   analyzeExtrusionStartStopQuality,
   analyzeProgramFlowStructure,
   calculateMRRPerLayer,
-} from '../src/core/GcodeAdvanced24';
+} from "@tether/gcode-analyzer/GcodeAdvanced24";
 
 // ── 1. Engagement Angle Per Segment ──
 

@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "A WebGPU-based G-code viewer with a Drogon C++ backend and TypeScript frontend.",
   "main": "index.js",
+  "workspaces": [
+    "frontend",
+    "packages/*"
+  ],
   "directories": {
     "example": "examples",
     "test": "tests"

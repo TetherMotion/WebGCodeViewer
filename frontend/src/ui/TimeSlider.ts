@@ -3,7 +3,7 @@
  * @brief Time slider UI for scrubbing through trajectory animation.
  */
 
-import { EventDispatcher } from '../core/EventDispatcher';
+import { EventDispatcher } from "@tether/viewer-core";
 
 export interface TimeSliderEvents {
   timeChanged: number;

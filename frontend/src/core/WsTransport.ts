@@ -18,7 +18,7 @@ import {
   type TetherViewerEnvelope,
   type TetherViewerRequest,
   type TetherViewerResponse,
-} from '../generated/tether_viewer_pb';
+} from "@tether/viewer-core/generated";
 
 export type WsConnectionState = 'disconnected' | 'connecting' | 'connected';
 

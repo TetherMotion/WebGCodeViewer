@@ -18,7 +18,7 @@ import {
   suggestTravelOptimization,
   addLineNumbers,
   findLineByNumber,
-} from '../src/core/GcodeAdvanced7';
+} from "@tether/gcode-analyzer/GcodeAdvanced7";
 
 // ── 1. Chatter Prediction ──
 

@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { EventDispatcher } from '../src/core/EventDispatcher';
+import { EventDispatcher } from "@tether/viewer-core";
 
 interface TestEvents {
   foo: number;

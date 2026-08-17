@@ -3,9 +3,9 @@
  * @brief WebGPU renderer for G-code toolpath line strips with color mapping.
  */
 
-import type { TTHRData } from '../core/TthrParser';
-import { ColorMap } from '../core/ColorMap';
-import { Mat4 } from '../core/MathUtils';
+import type { TTHRData } from "@tether/viewer-core";
+import { ColorMap } from "@tether/viewer-core";
+import { Mat4 } from "@tether/viewer-core";
 
 export type ColorAttribute = 'velocity' | 'acceleration' | 'jerk' | 'curvature' | 'deviation' | 'zHeight' | 'motion' | 'segment' | 'solid';
 

@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseNBP, NBP_MAGIC, NBP_VERSION, tessellatePiece, evaluateNurbs } from '../src/core/NurbsParser';
+import { parseNBP, NBP_MAGIC, NBP_VERSION, tessellatePiece, evaluateNurbs } from "@tether/viewer-core";
 
 // ── NBP header size must be exactly 82 bytes ──────────────────────────
 //  4 (magic) + 2 (version) + 1 (dim) + 3 (reserved) + 4×4 (counts) +

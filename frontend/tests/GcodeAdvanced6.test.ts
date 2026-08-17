@@ -18,7 +18,7 @@ import {
   compressGcode,
   compensateThermalExpansion,
   expandSubprograms,
-} from '../src/core/GcodeAdvanced6';
+} from "@tether/gcode-analyzer/GcodeAdvanced6";
 
 // ── 1. Cost Estimation ──
 

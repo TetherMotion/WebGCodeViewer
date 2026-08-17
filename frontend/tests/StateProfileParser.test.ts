@@ -4,7 +4,7 @@ import {
   sampleStateProfile,
   stateProfileToTrnp,
   type StateProfileData,
-} from '../src/core/StateProfileParser';
+} from "@tether/viewer-core";
 
 function buildTssp(profile: StateProfileData): Uint8Array {
   const headerSize = 4 + 4 + 4 + 8 + 8 + 4 + 4 + 4; // magic + version + n + L + T + maxV/A/J

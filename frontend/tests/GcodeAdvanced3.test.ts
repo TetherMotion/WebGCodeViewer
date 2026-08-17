@@ -25,7 +25,7 @@ import {
   estimateSpindleLoad,
   estimateToolWear,
   checkCollisions,
-} from '../src/core/GcodeAdvanced3';
+} from "@tether/gcode-analyzer/GcodeAdvanced3";
 
 // ── 1. Stock/Fixture Visualization ──
 

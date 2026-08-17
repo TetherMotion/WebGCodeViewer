@@ -17,7 +17,7 @@ import {
   generateCurvatureHeatmap,
   predictLayerAdhesionStrength,
   calculateCorneringSpeed,
-} from '../src/core/GcodeAdvanced22';
+} from "@tether/gcode-analyzer/GcodeAdvanced22";
 
 // ── 1. Acceleration Profile ──
 

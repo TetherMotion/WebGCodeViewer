@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { evaluateNurbs, tessellatePiece, NBPPiece } from '../src/core/NurbsParser';
+import { evaluateNurbs, tessellatePiece, NBPPiece } from "@tether/viewer-core";
 
 // ─── Helper: Create a simple linear NURBS (degree 1) ───────────────────
 

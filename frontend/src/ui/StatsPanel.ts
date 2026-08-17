@@ -3,7 +3,7 @@
  * @brief Bottom panel showing real-time job status and statistics summary.
  */
 
-import type { GetJobStatusResponse } from '../generated/tether_viewer_pb';
+import type { GetJobStatusResponse } from "@tether/viewer-core/generated";
 
 export class StatsPanel {
   private element: HTMLElement;

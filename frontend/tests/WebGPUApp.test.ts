@@ -12,10 +12,10 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { WebGPUApp } from '../src/core/WebGPUApp';
-import { Camera } from '../src/core/Camera';
-import { BookmarkManager } from '../src/ui/BookmarkManager';
-import type { NBPData } from '../src/core/NurbsParser';
-import type { TTHRData } from '../src/core/TthrParser';
+import { Camera } from "@tether/viewer-core";
+import { BookmarkManager } from "@tether/gcode-viewer";
+import type { NBPData } from "@tether/viewer-core";
+import type { TTHRData } from "@tether/viewer-core";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 

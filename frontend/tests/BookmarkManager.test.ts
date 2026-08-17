@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { BookmarkManager } from '../src/ui/BookmarkManager';
+import { BookmarkManager } from "@tether/gcode-viewer";
 
 // Mock localStorage
 const localStorageMock = (() => {

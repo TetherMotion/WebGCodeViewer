@@ -1,231 +1,71 @@
+import { InfoPanel } from '@tether/gcode-analyzer';
+import { parseDrillingCycles, parseCutterCompensation, parseProbeEvents, parseSubprograms, analyzePathOptimization, computeFeatureTimeBreakdown, estimateJobCost } from '@tether/gcode-analyzer/GcodeAdvanced';
+import { analyzeZHops, analyzeExtrusionConsistency, analyzeToolpathSmoothing, predictPrintQuality, analyzeVolumetricFlowRate, generateStatisticsSummary, detectToolpathOverlaps, analyzePrintEfficiency, autoGenerateAnnotations } from '@tether/gcode-analyzer/GcodeAdvanced10';
+import { simulateGcode, trackToolWearProgression, generateOptimizationReport, analyzeBedThermalMap, buildSubprogramCallGraph, analyzeCoolingEffectiveness, analyzeDependencies, predictPrintFailure, generateDocumentation, benchmarkGcode, auditGcodeSecurity } from '@tether/gcode-analyzer/GcodeAdvanced11';
+import { reverseEngineerGcode, analyzeMachiningStrategy, analyzeBedLevelingQuality, optimizeToolpathForRendering, validateGcodeRules } from '@tether/gcode-analyzer/GcodeAdvanced12';
+import { generateExecutionTrace, analyzeChipThickness, generateQualityHeatmap, analyzeWorkholding, analyzeMaterialFlow, generateFlowVisualization, optimizeFixturePlacement, generateLayerVisualization, analyzeCompressionOpportunities, analyzeAerodynamics, analyzeAdaptiveSpeed, generateDependencyGraph } from '@tether/gcode-analyzer/GcodeAdvanced13';
+import { highlightGcodeSyntax, predictToolDeflectionAdvanced, generateStringingRiskMap, previewMacroExpansion, predictSurfaceRoughness, simulateWarping, detectCollisions3D, calculateToolLife, analyzeInfillPattern, computeBounds, simulateCuttingForces, optimizeRetractions } from '@tether/gcode-analyzer/GcodeAdvanced14';
+import { profileGcodeExecution, generateToolWearMap, analyzeLayerAdhesion, analyzeChatterFrequency, generateOverhangMap, generateOperationTimeline, checkToolpathContinuity, analyzeExtrusionWidthConsistency, optimizePostProcessorOutput, analyzeMachineVibration, trackThermalHistory } from '@tether/gcode-analyzer/GcodeAdvanced15';
+import { analyzeLineStatistics, generateEngagementMap, visualizeBedMesh, generateCommandFlow, calculateChipLoad, estimateSpoolUsage, suggestErrorRecovery, calculateMRR, analyzeCoasting, identifyBottlenecks, calculatePullOffDistance, analyzeFirstLayerSquish } from '@tether/gcode-analyzer/GcodeAdvanced16';
+import { analyzeIdleTime, quantifyToolpathOverlap, adviseFlowRateCalibration, estimateMemoryUsage, validateCuttingParameters, detectLayerShiftRisk, optimizeExecutionPath, calculateNoseRadiusCompensation, analyzeElephantFoot, analyzeCommentDensity, optimizeRapidTraverse, analyzeSkirtBrim } from '@tether/gcode-analyzer/GcodeAdvanced17';
+import { analyzePerToolPathLength, analyzeOozePrevention, analyzeCoordinateSystems, analyzeSpindleSpeedVariation, predictBridgeQuality, analyzeModalGroups, simulateFeedRateOverride, analyzeFanCurve, analyzeSubprogramComplexity, countDirectionReversals, optimizeZSeamAlignment, assessExecutionRisk } from '@tether/gcode-analyzer/GcodeAdvanced18';
+import { calculateArcLength, analyzeEntryExitAngles, optimizeRetractionDistance, analyzeBlockStructure, calculateFeedPerRevolution, analyzeThinWalls, trackVariableUsage, classifyToolpathSegments, analyzeInfillDensityVariance, detectErrorPatterns, calculateSurfaceSpeed, analyzeLayerTimeVariance } from '@tether/gcode-analyzer/GcodeAdvanced19';
+import { parseColorChanges, analyzeSupportStructure, parseInfillDensity, parseMacros, trackMultiExtruder, parseBedLevelingMesh, detectRapidPlanes } from '@tether/gcode-analyzer/GcodeAdvanced2';
+import { generateSpeedHeatmap, predictToolWearProgression, optimizeRetractionSpeed, scoreLineComplexity, optimizeDepthOfCut, optimizeLayerFanSpeed, detectCircularInterpolation, calculateToolpathEfficiency, trackMaterialPerLayer, removeCommandRedundancy, adviseCuttingStrategy, analyzeIroningPattern } from '@tether/gcode-analyzer/GcodeAdvanced20';
+import { calculatePerLayerBounds, calculateEngagementTime, analyzeRetractionFrequency, estimateSpindleLoadProfile, countDirectionChanges, calculateBedAdhesionArea, detectCoordinateRotations, calculateWearRate, analyzeFlowRateConsistency, validateCommandSequence, analyzeFeedRateHarmonics, analyzeLayerHeightVariance } from '@tether/gcode-analyzer/GcodeAdvanced21';
+import { analyzeAccelerationProfile, analyzeCuttingForceSpectrum, optimizePressureAdvance, mapCoordinateOrigins, detectToolpathLoops, analyzeExtrusionWidthPerLayer, optimizeSpindleWarmup, optimizeSupportStructure, optimizeFileSize, generateCurvatureHeatmap, predictLayerAdhesionStrength, calculateCorneringSpeed } from '@tether/gcode-analyzer/GcodeAdvanced22';
+import { calculateScallopHeight, detectFilamentDiameterVariance, detectCoordinateScaling, calculateChipThinning, analyzeInfillAngles, analyzeSegmentLengthDistribution, calculateStepover, calibrateExtrusionMultiplier, detectToolpathSymmetry, optimizeRetractPlane, analyzeSkirtBrimGap, estimateExecutionTime } from '@tether/gcode-analyzer/GcodeAdvanced23';
+import { calculateEngagementAnglePerSegment, optimizeFirstLayerSpeed, analyzeRapidTravelEfficiency, analyzePlungeRate, calculateMaterialPerExtruder, classifyClimbConventionalPerPass, analyzeLayerCoolingTime, analyzeReversalPoints, analyzeCuttingModeConsistency, analyzeExtrusionStartStopQuality, analyzeProgramFlowStructure, calculateMRRPerLayer } from '@tether/gcode-analyzer/GcodeAdvanced24';
+import { calculateAirCuttingTime, analyzeBeadWidthVariance, validateParameterRanges, generateEngagementHeatmapPerLayer, analyzeFanDutyCycle, optimizeToolChangePositions, adviseSpindleSpeed, optimizeFirstLayerHeight, checkContinuityPerLayer, calculateMinimumClearance, analyzeWallThicknessConsistency, optimizeExecutionOrder } from '@tether/gcode-analyzer/GcodeAdvanced25';
+import { calculateEngagementTimePerLayer, analyzeExtrusionRatePerLayer, analyzeWorkOffsetUsage, calculateDeflectionCompensation, optimizeBridgingSpeed, detectOverlapsPerLayer, analyzeSpindleLoadPerLayer, analyzeRetractionHopHeight, calculateProgramComplexity, analyzeArcInterpolationQuality, analyzeLayerHeightConsistencyPerLayer, analyzeModalStateTransitions } from '@tether/gcode-analyzer/GcodeAdvanced26';
+import { analyzeEntryStrategy, analyzeRetractionAcceleration, checkCoordinateSystemAlignment, validateNoseRadiusCompensation, analyzeInfillDensityPerLayer, classifySegmentsPerLayer, validateSpindleWarmupCycle, analyzeFanSpeedPerLayer, analyzeStructureComplexityPerSection, analyzeLeadInOut, analyzeExtrusionConsistencyPerLayer, checkMachineCoordinateBoundary } from '@tether/gcode-analyzer/GcodeAdvanced27';
+import { parseRotaryAxes, simulateThermal, predictWarping, buildPrintTimeGraph, estimateSpindleLoad, estimateToolWear, checkCollisions, createStockModel, parseToolDefinitions, getDefaultToolLibrary } from '@tether/gcode-analyzer/GcodeAdvanced3';
+import { analyzeRetractions, checkLayerHeightConsistency, analyzeFlowRate, analyzeFirstLayer, predictStringing, analyzeCoolingFan, analyzePrintSpeeds } from '@tether/gcode-analyzer/GcodeAdvanced4';
+import { lintGcode, analyzeToolpathOptimization, analyzePressureAdvance, detectArcFittingCandidates, profileGcode, computeBeadGeometry } from '@tether/gcode-analyzer/GcodeAdvanced5';
+import { detectMillingDirection, estimateAccelerationLimitedTime, estimateEnergyConsumption, analyzeWorkOffsets, recognizePatterns, estimateToolDeflection, compensateThermalExpansion, expandSubprograms } from '@tether/gcode-analyzer/GcodeAdvanced6';
+import { predictChatter, trackMacroVariables, analyzeCoordinateRotation, estimateToolLife, verifyCutterCompensation, suggestTravelOptimization } from '@tether/gcode-analyzer/GcodeAdvanced7';
+import { trackModalStates, analyzeDwellTime, check3DPSafety, analyzeCurvature, recognizeFeatures, analyzeSpindlePower, analyzeMultiPart, analyzeBedAdhesion, checkGcodeCompatibility } from '@tether/gcode-analyzer/GcodeAdvanced8';
+import { detectSelfIntersections, analyzeCommandFrequency, optimizeToolChanges, analyzeLayerTimes, extractComments, analyzeToolpathLength, analyzeMCodes, analyzeSpindleWarmup, generateFeedRateHistogram, analyzeToolpathDirection, parseWithRecovery } from '@tether/gcode-analyzer/GcodeAdvanced9';
+import { detectStringingRisk, detectGcodeErrors, detectLayerTimeWarnings, computeVolumetricFlow, getFlowStats, parseFeatureTypes, parseWorkCoordinateSystems, parseStockDimensions, estimatePrintTime, getFeatureTypeAtLine, FeatureTypeSegment } from '@tether/gcode-analyzer/GcodeAnalysis';
+import { parseGcodeMetadata, GcodeMetadata, computeMaterialUsage, computeSpeedStats, computeLayerTimes, formatTime, getMachineStateAtLine } from '@tether/gcode-analyzer/GcodeMetadata';
 /**
  * @file WebGPUApp.ts
  * @brief Main WebGPU application orchestrating renderers, camera, and UI.
  */
 
-import { Camera } from './Camera';
+import { Camera } from "@tether/viewer-core";
 import { RpcClient } from './RpcClient';
-import { ColorMap } from './ColorMap';
-import { parseTTHR, TTHRData, extractZLayer } from './TthrParser';
-import { parseNBP, NBPData } from './NurbsParser';
-import { parseTSSP, StateProfileData, stateProfileToTrnp } from './StateProfileParser';
-import { parseTRNP, TRNPData, parseTRNPPa, TRNPPaData, PaAlgorithmEntry } from './ReNurbsParser';
+import { ColorMap } from "@tether/viewer-core";
+import { parseTTHR, TTHRData, extractZLayer } from "@tether/viewer-core";
+import { parseNBP, NBPData } from "@tether/viewer-core";
+import { parseTSSP, StateProfileData, stateProfileToTrnp } from "@tether/viewer-core";
+import { parseTRNP, TRNPData, parseTRNPPa, TRNPPaData, PaAlgorithmEntry } from "@tether/viewer-core";
 import { ToolpathRenderer, ColorAttribute } from '../renderers/ToolpathRenderer';
-import { GridRenderer } from '../renderers/GridRenderer';
-import { CrossSectionRenderer } from '../renderers/CrossSectionRenderer';
-import { PointCloudRenderer } from '../renderers/PointCloudRenderer';
-import { OverlayRenderer } from '../renderers/OverlayRenderer';
-import { NavigationGizmo } from '../renderers/NavigationGizmo';
-import { PrintHeadMarker } from '../renderers/PrintHeadMarker';
-import { PrinterFrameRenderer } from '../renderers/PrinterFrameRenderer';
-import { DirectionCubeRenderer } from '../renderers/DirectionCubeRenderer';
-import { NurbsRenderer, NurbsColorAttribute } from '../renderers/NurbsRenderer';
-import { GpuPlot, PlotSeries } from '../ui/GpuPlot';
-import { PaControls, PaAlgorithmId } from '../ui/PaControls';
-import { MiniplotRenderer, MiniplotAxis, MiniplotData } from '../renderers/MiniplotRenderer';
-import { ComputeMiniplotRenderer } from '../renderers/ComputeMiniplotRenderer';
-import { GridLabels } from '../ui/GridLabels';
-import { GridLabelRenderer } from '../renderers/GridLabelRenderer';
-import { ToolChangeMarkerRenderer } from '../renderers/ToolChangeMarkerRenderer';
+import { GridRenderer } from "@tether/ground-grid";
+import { CrossSectionRenderer } from "@tether/cross-section";
+import { PointCloudRenderer } from "@tether/compare";
+import { OverlayRenderer } from "@tether/scene-decorators";
+import { NavigationGizmo } from "@tether/nav-overlay";
+import { PrintHeadMarker } from "@tether/scene-decorators";
+import { PrinterFrameRenderer } from "@tether/scene-decorators";
+import { DirectionCubeRenderer } from "@tether/nav-overlay";
+import { NurbsRenderer, NurbsColorAttribute } from "@tether/nurbs-renderer";
+import { GpuPlot, PlotSeries } from "@tether/pa-plot";
+import { PaControls, PaAlgorithmId } from "@tether/pa-plot";
+import { MiniplotRenderer } from "@tether/miniplot"
+import type { MiniplotAxis, MiniplotData } from "@tether/viewer-core";
+import { ComputeMiniplotRenderer } from "@tether/miniplot";
+import { GridLabels } from "@tether/ground-grid";
+import { GridLabelRenderer } from "@tether/ground-grid";
+import { ToolChangeMarkerRenderer } from "@tether/scene-decorators";
 import { ControlPanel } from '../ui/ControlPanel';
-import { GcodeViewer } from '../ui/GcodeViewer';
-import { NavigationCube, ViewDirection } from '../ui/NavigationCube';
-import { InfoPanel } from '../ui/InfoPanel';
+import { GcodeViewer } from "@tether/gcode-viewer";
+import { NavigationCube, ViewDirection } from "@tether/nav-overlay";
 import { PositionOverlay } from '../ui/PositionOverlay';
-import { ComparisonPanel } from '../ui/ComparisonPanel';
-import { DiffPanel } from '../ui/DiffPanel';
-import { BookmarkManager } from '../ui/BookmarkManager';
-import { parseGcodeMetadata, GcodeMetadata, computeMaterialUsage, computeSpeedStats, computeLayerTimes, formatTime, getMachineStateAtLine } from './GcodeMetadata';
-import {
-  detectStringingRisk, detectGcodeErrors, detectLayerTimeWarnings,
-  computeVolumetricFlow, getFlowStats, parseFeatureTypes,
-  parseWorkCoordinateSystems, parseStockDimensions, estimatePrintTime,
-  getFeatureTypeAtLine, FeatureTypeSegment,
-} from './GcodeAnalysis';
-import {
-  parseDrillingCycles, parseCutterCompensation, parseProbeEvents,
-  parseSubprograms, analyzePathOptimization, computeFeatureTimeBreakdown,
-  estimateJobCost,
-} from './GcodeAdvanced';
-import {
-  parseColorChanges, analyzeSupportStructure, parseInfillDensity,
-  parseMacros, trackMultiExtruder, parseBedLevelingMesh,
-  detectRapidPlanes,
-} from './GcodeAdvanced2';
-import {
-  parseRotaryAxes, simulateThermal, predictWarping, buildPrintTimeGraph,
-  estimateSpindleLoad, estimateToolWear, checkCollisions, createStockModel,
-  parseToolDefinitions, getDefaultToolLibrary,
-} from './GcodeAdvanced3';
-import {
-  analyzeRetractions, checkLayerHeightConsistency, analyzeFlowRate,
-  analyzeFirstLayer, predictStringing, analyzeCoolingFan, analyzePrintSpeeds,
-} from './GcodeAdvanced4';
-import {
-  lintGcode, analyzeToolpathOptimization,
-  analyzePressureAdvance,
-  detectArcFittingCandidates, profileGcode, computeBeadGeometry,
-} from './GcodeAdvanced5';
-import {
-  detectMillingDirection, estimateAccelerationLimitedTime,
-  estimateEnergyConsumption, analyzeWorkOffsets, recognizePatterns,
-  estimateToolDeflection,
-  compensateThermalExpansion, expandSubprograms,
-} from './GcodeAdvanced6';
-import {
-  predictChatter, trackMacroVariables,
-  analyzeCoordinateRotation, estimateToolLife,
-  verifyCutterCompensation,
-  suggestTravelOptimization,
-} from './GcodeAdvanced7';
-import {
-  trackModalStates, analyzeDwellTime, check3DPSafety,
-  analyzeCurvature, recognizeFeatures, analyzeSpindlePower,
-  analyzeMultiPart, analyzeBedAdhesion,
-  checkGcodeCompatibility,
-} from './GcodeAdvanced8';
-import {
-  detectSelfIntersections, analyzeCommandFrequency, optimizeToolChanges,
-  analyzeLayerTimes, extractComments, analyzeToolpathLength,
-  analyzeMCodes, analyzeSpindleWarmup, generateFeedRateHistogram,
-  analyzeToolpathDirection, parseWithRecovery,
-} from './GcodeAdvanced9';
-import {
-  analyzeZHops, analyzeExtrusionConsistency,
-  analyzeToolpathSmoothing, predictPrintQuality, analyzeVolumetricFlowRate,
-  generateStatisticsSummary, detectToolpathOverlaps,
-  analyzePrintEfficiency, autoGenerateAnnotations,
-} from './GcodeAdvanced10';
-import {
-  simulateGcode, trackToolWearProgression, generateOptimizationReport,
-  analyzeBedThermalMap, buildSubprogramCallGraph,
-  analyzeCoolingEffectiveness, analyzeDependencies, predictPrintFailure,
-  generateDocumentation, benchmarkGcode, auditGcodeSecurity,
-} from './GcodeAdvanced11';
-import {
-  reverseEngineerGcode, analyzeMachiningStrategy,
-  analyzeBedLevelingQuality,
-  optimizeToolpathForRendering, validateGcodeRules,
-} from './GcodeAdvanced12';
-import {
-  generateExecutionTrace, analyzeChipThickness, generateQualityHeatmap,
-  analyzeWorkholding, analyzeMaterialFlow, generateFlowVisualization,
-  optimizeFixturePlacement, generateLayerVisualization,
-  analyzeCompressionOpportunities, analyzeAerodynamics,
-  analyzeAdaptiveSpeed, generateDependencyGraph,
-} from './GcodeAdvanced13';
-import {
-  highlightGcodeSyntax, predictToolDeflectionAdvanced,
-  generateStringingRiskMap, previewMacroExpansion,
-  predictSurfaceRoughness, simulateWarping,
-  detectCollisions3D, calculateToolLife, analyzeInfillPattern,
-  computeBounds, simulateCuttingForces, optimizeRetractions,
-} from './GcodeAdvanced14';
-import {
-  profileGcodeExecution, generateToolWearMap,
-  analyzeLayerAdhesion,
-  analyzeChatterFrequency, generateOverhangMap,
-  generateOperationTimeline, checkToolpathContinuity,
-  analyzeExtrusionWidthConsistency, optimizePostProcessorOutput,
-  analyzeMachineVibration, trackThermalHistory,
-} from './GcodeAdvanced15';
-import {
-  analyzeLineStatistics, generateEngagementMap,
-  visualizeBedMesh, generateCommandFlow,
-  calculateChipLoad, estimateSpoolUsage,
-  suggestErrorRecovery, calculateMRR,
-  analyzeCoasting, identifyBottlenecks,
-  calculatePullOffDistance, analyzeFirstLayerSquish,
-} from './GcodeAdvanced16';
-import {
-  analyzeIdleTime, quantifyToolpathOverlap,
-  adviseFlowRateCalibration, estimateMemoryUsage,
-  validateCuttingParameters, detectLayerShiftRisk,
-  optimizeExecutionPath, calculateNoseRadiusCompensation,
-  analyzeElephantFoot, analyzeCommentDensity,
-  optimizeRapidTraverse, analyzeSkirtBrim,
-} from './GcodeAdvanced17';
-import {
-  analyzePerToolPathLength, analyzeOozePrevention,
-  analyzeCoordinateSystems, analyzeSpindleSpeedVariation,
-  predictBridgeQuality, analyzeModalGroups,
-  simulateFeedRateOverride, analyzeFanCurve,
-  analyzeSubprogramComplexity, countDirectionReversals,
-  optimizeZSeamAlignment, assessExecutionRisk,
-} from './GcodeAdvanced18';
-import {
-  calculateArcLength, analyzeEntryExitAngles,
-  optimizeRetractionDistance, analyzeBlockStructure,
-  calculateFeedPerRevolution, analyzeThinWalls,
-  trackVariableUsage, classifyToolpathSegments,
-  analyzeInfillDensityVariance, detectErrorPatterns,
-  calculateSurfaceSpeed, analyzeLayerTimeVariance,
-} from './GcodeAdvanced19';
-import {
-  generateSpeedHeatmap, predictToolWearProgression,
-  optimizeRetractionSpeed, scoreLineComplexity,
-  optimizeDepthOfCut, optimizeLayerFanSpeed,
-  detectCircularInterpolation, calculateToolpathEfficiency,
-  trackMaterialPerLayer, removeCommandRedundancy,
-  adviseCuttingStrategy, analyzeIroningPattern,
-} from './GcodeAdvanced20';
-import {
-  calculatePerLayerBounds, calculateEngagementTime,
-  analyzeRetractionFrequency, estimateSpindleLoadProfile,
-  countDirectionChanges, calculateBedAdhesionArea,
-  detectCoordinateRotations, calculateWearRate,
-  analyzeFlowRateConsistency, validateCommandSequence,
-  analyzeFeedRateHarmonics, analyzeLayerHeightVariance,
-} from './GcodeAdvanced21';
-import {
-  analyzeAccelerationProfile, analyzeCuttingForceSpectrum,
-  optimizePressureAdvance, mapCoordinateOrigins,
-  detectToolpathLoops, analyzeExtrusionWidthPerLayer,
-  optimizeSpindleWarmup, optimizeSupportStructure,
-  optimizeFileSize, generateCurvatureHeatmap,
-  predictLayerAdhesionStrength, calculateCorneringSpeed,
-} from './GcodeAdvanced22';
-import {
-  calculateScallopHeight, detectFilamentDiameterVariance,
-  detectCoordinateScaling, calculateChipThinning,
-  analyzeInfillAngles, analyzeSegmentLengthDistribution,
-  calculateStepover, calibrateExtrusionMultiplier,
-  detectToolpathSymmetry, optimizeRetractPlane,
-  analyzeSkirtBrimGap, estimateExecutionTime,
-} from './GcodeAdvanced23';
-import {
-  calculateEngagementAnglePerSegment, optimizeFirstLayerSpeed,
-  analyzeRapidTravelEfficiency, analyzePlungeRate,
-  calculateMaterialPerExtruder, classifyClimbConventionalPerPass,
-  analyzeLayerCoolingTime, analyzeReversalPoints,
-  analyzeCuttingModeConsistency, analyzeExtrusionStartStopQuality,
-  analyzeProgramFlowStructure, calculateMRRPerLayer,
-} from './GcodeAdvanced24';
-import {
-  calculateAirCuttingTime, analyzeBeadWidthVariance,
-  validateParameterRanges, generateEngagementHeatmapPerLayer,
-  analyzeFanDutyCycle, optimizeToolChangePositions,
-  adviseSpindleSpeed, optimizeFirstLayerHeight,
-  checkContinuityPerLayer, calculateMinimumClearance,
-  analyzeWallThicknessConsistency, optimizeExecutionOrder,
-} from './GcodeAdvanced25';
-import {
-  calculateEngagementTimePerLayer, analyzeExtrusionRatePerLayer,
-  analyzeWorkOffsetUsage, calculateDeflectionCompensation,
-  optimizeBridgingSpeed, detectOverlapsPerLayer,
-  analyzeSpindleLoadPerLayer, analyzeRetractionHopHeight,
-  calculateProgramComplexity, analyzeArcInterpolationQuality,
-  analyzeLayerHeightConsistencyPerLayer, analyzeModalStateTransitions,
-} from './GcodeAdvanced26';
-import {
-  analyzeEntryStrategy, analyzeRetractionAcceleration,
-  checkCoordinateSystemAlignment, validateNoseRadiusCompensation,
-  analyzeInfillDensityPerLayer, classifySegmentsPerLayer,
-  validateSpindleWarmupCycle, analyzeFanSpeedPerLayer,
-  analyzeStructureComplexityPerSection, analyzeLeadInOut,
-  analyzeExtrusionConsistencyPerLayer, checkMachineCoordinateBoundary,
-} from './GcodeAdvanced27';
-import { degToRad } from './MathUtils';
+import { ComparisonPanel } from "@tether/compare";
+import { DiffPanel } from "@tether/compare";
+import { BookmarkManager } from "@tether/gcode-viewer";
+import { degToRad } from "@tether/viewer-core";
 
 export class WebGPUApp {
   private canvas: HTMLCanvasElement;

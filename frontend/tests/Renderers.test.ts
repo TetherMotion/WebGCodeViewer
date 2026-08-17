@@ -5,22 +5,22 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createMockDevice, createMockRenderPass, MockGPUBuffer, MockGPUTexture, setupNavigatorGPU } from './webgpu-mock';
-import { PointCloudRenderer } from '../src/renderers/PointCloudRenderer';
-import { GridRenderer } from '../src/renderers/GridRenderer';
-import { PrintHeadMarker } from '../src/renderers/PrintHeadMarker';
-import { OverlayRenderer } from '../src/renderers/OverlayRenderer';
-import { NavigationGizmo } from '../src/renderers/NavigationGizmo';
-import { CrossSectionRenderer } from '../src/renderers/CrossSectionRenderer';
-import { ToolChangeMarkerRenderer } from '../src/renderers/ToolChangeMarkerRenderer';
-import { PrinterFrameRenderer } from '../src/renderers/PrinterFrameRenderer';
-import { NurbsRenderer } from '../src/renderers/NurbsRenderer';
+import { PointCloudRenderer } from "@tether/compare";
+import { GridRenderer } from "@tether/ground-grid";
+import { PrintHeadMarker } from "@tether/scene-decorators";
+import { OverlayRenderer } from "@tether/scene-decorators";
+import { NavigationGizmo } from "@tether/nav-overlay";
+import { CrossSectionRenderer } from "@tether/cross-section";
+import { ToolChangeMarkerRenderer } from "@tether/scene-decorators";
+import { PrinterFrameRenderer } from "@tether/scene-decorators";
+import { NurbsRenderer } from "@tether/nurbs-renderer";
 import { ToolpathRenderer } from '../src/renderers/ToolpathRenderer';
-import { MiniplotRenderer } from '../src/renderers/MiniplotRenderer';
-import { DirectionCubeRenderer } from '../src/renderers/DirectionCubeRenderer';
-import { GridLabelRenderer } from '../src/renderers/GridLabelRenderer';
-import { mat4Identity } from '../src/core/MathUtils';
-import type { TTHRData } from '../src/core/TthrParser';
-import type { NBPData, NBPPiece } from '../src/core/NurbsParser';
+import { MiniplotRenderer } from "@tether/miniplot";
+import { DirectionCubeRenderer } from "@tether/nav-overlay";
+import { GridLabelRenderer } from "@tether/ground-grid";
+import { mat4Identity } from "@tether/viewer-core";
+import type { TTHRData } from "@tether/viewer-core";
+import type { NBPData, NBPPiece } from "@tether/viewer-core";
 
 /**
  * Helper: create a mock canvas with WebGPU and 2D context support.
@@ -642,7 +642,7 @@ describe('NurbsRenderer', () => {
   it('setColorMap updates options', async () => {
     const r = new NurbsRenderer(device);
     await r.init('bgra8unorm');
-    const { ColorMap } = await import('../src/core/ColorMap');
+    const { ColorMap } = await import('@tether/viewer-core');
     r.setColorMap(new ColorMap('plasma'));
     expect(r.options.colorMap.name).toBe('plasma');
   });

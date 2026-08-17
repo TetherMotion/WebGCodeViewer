@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { BinaryReader } from '../src/core/BinaryReader';
+import { BinaryReader } from "@tether/viewer-core";
 
 describe('BinaryReader', () => {
   it('reads uint8 values', () => {

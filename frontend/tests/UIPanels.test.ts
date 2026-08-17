@@ -4,10 +4,10 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ComparisonPanel } from '../src/ui/ComparisonPanel';
-import { InfoPanel } from '../src/ui/InfoPanel';
+import { ComparisonPanel } from "@tether/compare";
+import { InfoPanel } from "@tether/gcode-analyzer";
 import { PositionOverlay } from '../src/ui/PositionOverlay';
-import { parseGcodeMetadata } from '../src/core/GcodeMetadata';
+import { parseGcodeMetadata } from "@tether/gcode-analyzer/GcodeMetadata";
 
 describe('ComparisonPanel', () => {
   let container: HTMLElement;

@@ -17,7 +17,7 @@ import {
   optimizePostProcessorOutput,
   analyzeMachineVibration,
   trackThermalHistory,
-} from '../src/core/GcodeAdvanced15';
+} from "@tether/gcode-analyzer/GcodeAdvanced15";
 
 // ── 1. Execution Profiler ──
 

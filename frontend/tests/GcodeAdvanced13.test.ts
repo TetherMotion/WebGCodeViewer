@@ -17,7 +17,7 @@ import {
   analyzeAerodynamics,
   analyzeAdaptiveSpeed,
   generateDependencyGraph,
-} from '../src/core/GcodeAdvanced13';
+} from "@tether/gcode-analyzer/GcodeAdvanced13";
 
 // ── 1. Execution Trace ──
 

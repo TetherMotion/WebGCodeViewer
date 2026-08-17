@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { DiffPanel } from '../src/ui/DiffPanel';
+import { DiffPanel } from "@tether/compare";
 
 describe('DiffPanel', () => {
   let container: HTMLElement;

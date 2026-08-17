@@ -23,7 +23,7 @@ import {
   diffGcodeRevisions,
   exportRevisionHistory,
   importRevisionHistory,
-} from '../src/core/GcodeAdvanced5';
+} from "@tether/gcode-analyzer/GcodeAdvanced5";
 
 // ── 1. G-code Linting ──
 

@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseTTHR, extractZLayer, TTHR_FLAGS, TTHR_MAGIC } from '../src/core/TthrParser';
+import { parseTTHR, extractZLayer, TTHR_FLAGS, TTHR_MAGIC } from "@tether/viewer-core";
 
 function buildTTHRHeader(sampleCount: number, flags: number, axisCount: number = 3): ArrayBuffer {
   const buffer = new ArrayBuffer(92);

@@ -17,7 +17,7 @@ import {
   generateDocumentation,
   benchmarkGcode,
   auditGcodeSecurity,
-} from '../src/core/GcodeAdvanced11';
+} from "@tether/gcode-analyzer/GcodeAdvanced11";
 
 // ── 1. Simulation Engine ──
 

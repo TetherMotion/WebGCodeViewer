@@ -17,7 +17,7 @@ import {
   analyzeLeadInOut,
   analyzeExtrusionConsistencyPerLayer,
   checkMachineCoordinateBoundary,
-} from '../src/core/GcodeAdvanced27';
+} from "@tether/gcode-analyzer/GcodeAdvanced27";
 
 // ── 1. Entry Strategy ──
 

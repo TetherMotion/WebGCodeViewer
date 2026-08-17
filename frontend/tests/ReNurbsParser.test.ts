@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseTRNP, parseTRNPPa, evalBSpline1D, TRNP_MAGIC, TRNP_VERSION } from '../src/core/ReNurbsParser';
-import type { TRNPHeader, TRNPData, TRNPPaData } from '../src/core/ReNurbsParser';
+import { parseTRNP, parseTRNPPa, evalBSpline1D, TRNP_MAGIC, TRNP_VERSION } from "@tether/viewer-core";
+import type { TRNPHeader, TRNPData, TRNPPaData } from "@tether/viewer-core";
 
 /**
  * Build a minimal TRNP binary for testing.

@@ -17,8 +17,8 @@ import {
   transformCoordinates,
   optimizeCycleTime,
   checkGcodeCompatibility,
-} from '../src/core/GcodeAdvanced8';
-import type { Fixture } from '../src/core/GcodeAdvanced8';
+} from "@tether/gcode-analyzer/GcodeAdvanced8";
+import type { Fixture } from "@tether/gcode-analyzer/GcodeAdvanced8";
 
 // ── 1. Modal State Tracker ──
 

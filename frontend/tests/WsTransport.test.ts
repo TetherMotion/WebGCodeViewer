@@ -84,7 +84,7 @@ describe('WsTransport', () => {
     // Simulate server response with callId=1
     const { create, toBinary } = await import('@bufbuild/protobuf');
     const { TetherViewerEnvelopeSchema, TetherViewerResponseSchema, PingResponseSchema } =
-      await import('../src/generated/tether_viewer_pb');
+      await import("@tether/viewer-core/generated");
 
     const response = create(TetherViewerResponseSchema, {
       callId: 1, done: true,
@@ -109,7 +109,7 @@ describe('WsTransport', () => {
 
     const { create, toBinary } = await import('@bufbuild/protobuf');
     const { TetherViewerEnvelopeSchema, TetherViewerResponseSchema } =
-      await import('../src/generated/tether_viewer_pb');
+      await import("@tether/viewer-core/generated");
 
     const response = create(TetherViewerResponseSchema, {
       callId: 2, done: true, errorMessage: 'Test error', errorCode: 13,

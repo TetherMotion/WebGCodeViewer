@@ -5,7 +5,7 @@
  * temperature, fan speed, and coolant state when available.
  */
 
-import { formatTime } from '../core/GcodeMetadata';
+import { formatTime } from "@tether/gcode-analyzer/GcodeMetadata";
 
 export class PositionOverlay {
   private element: HTMLElement;

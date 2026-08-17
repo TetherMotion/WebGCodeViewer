@@ -20,7 +20,7 @@ import {
   schedulePrintJobs,
   validateGcodeRules,
   scheduleWarmupCooldown,
-} from '../src/core/GcodeAdvanced12';
+} from "@tether/gcode-analyzer/GcodeAdvanced12";
 
 // ── 1. Reverse Engineering ──
 

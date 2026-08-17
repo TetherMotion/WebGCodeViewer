@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseTTHR, extractZLayer, TTHR_FLAGS } from '../src/core/TthrParser';
+import { parseTTHR, extractZLayer, TTHR_FLAGS } from "@tether/viewer-core";
 
 function buildTTHRWithPositions(positions: number[], axisCount: number = 3): ArrayBuffer {
   const sampleCount = positions.length / axisCount;

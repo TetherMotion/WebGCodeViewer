@@ -17,7 +17,7 @@ import {
   detectErrorPatterns,
   calculateSurfaceSpeed,
   analyzeLayerTimeVariance,
-} from '../src/core/GcodeAdvanced19';
+} from "@tether/gcode-analyzer/GcodeAdvanced19";
 
 // ── 1. Arc Length Calculator ──
 

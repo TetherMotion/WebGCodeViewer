@@ -26,7 +26,7 @@ import {
   searchAnnotations,
   analyzeCoolingFan,
   analyzePrintSpeeds,
-} from '../src/core/GcodeAdvanced4';
+} from "@tether/gcode-analyzer/GcodeAdvanced4";
 
 // ── 1. G-code Playback Controller ──
 

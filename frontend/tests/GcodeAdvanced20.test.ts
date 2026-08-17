@@ -17,7 +17,7 @@ import {
   removeCommandRedundancy,
   adviseCuttingStrategy,
   analyzeIroningPattern,
-} from '../src/core/GcodeAdvanced20';
+} from "@tether/gcode-analyzer/GcodeAdvanced20";
 
 // ── 1. Speed Heatmap ──
 

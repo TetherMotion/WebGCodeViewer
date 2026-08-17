@@ -17,7 +17,7 @@ import {
   countDirectionReversals,
   optimizeZSeamAlignment,
   assessExecutionRisk,
-} from '../src/core/GcodeAdvanced18';
+} from "@tether/gcode-analyzer/GcodeAdvanced18";
 
 // ── 1. Per-Tool Path Length ──
 

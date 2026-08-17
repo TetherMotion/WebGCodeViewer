@@ -1,0 +1,33 @@
+{
+  "name": "@tether/nurbs-renderer",
+  "version": "1.0.0",
+  "description": "Tether viewer nurbs-renderer package",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    },
+    "./NurbsRenderer": {
+      "import": "./src/NurbsRenderer.ts",
+      "types": "./src/NurbsRenderer.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0",
+    "jsdom": "^24.0.0",
+    "@webgpu/types": "^0.1.71"
+  },
+  "dependencies": {
+    "@tether/viewer-core": "*"
+  }
+}

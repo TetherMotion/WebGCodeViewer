@@ -4,16 +4,16 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AttributePanel } from '../src/ui/AttributePanel';
-import { CutPlanePanel } from '../src/ui/CutPlanePanel';
+import { AttributePanel } from "@tether/gcode-viewer";
+import { CutPlanePanel } from "@tether/cross-section";
 import { FilterPanel } from '../src/ui/FilterPanel';
-import { SegmentList } from '../src/ui/SegmentList';
+import { SegmentList } from "@tether/gcode-viewer";
 import { StatsPanel } from '../src/ui/StatsPanel';
 import { TimeSlider } from '../src/ui/TimeSlider';
 import { Toolbar } from '../src/ui/Toolbar';
 import { ZLayerPanel } from '../src/ui/ZLayerPanel';
-import { NavigationCube } from '../src/ui/NavigationCube';
-import { GridLabels } from '../src/ui/GridLabels';
+import { NavigationCube } from "@tether/nav-overlay";
+import { GridLabels } from "@tether/ground-grid";
 import type {
   GetStatisticsResponse,
   GetBlocksResponse,
@@ -21,7 +21,7 @@ import type {
   GetJobStatusResponse,
   GetZLayersResponse,
   AxisStats,
-} from '../src/generated/tether_viewer_pb';
+} from "@tether/viewer-core/generated";
 
 // ── Helpers ──
 

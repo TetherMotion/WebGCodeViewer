@@ -17,7 +17,7 @@ import {
   computeBounds,
   simulateCuttingForces,
   optimizeRetractions,
-} from '../src/core/GcodeAdvanced14';
+} from "@tether/gcode-analyzer/GcodeAdvanced14";
 
 // ── 1. Syntax Highlighter ──
 

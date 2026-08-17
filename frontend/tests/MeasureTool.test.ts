@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MeasureTool } from '../src/ui/MeasureTool';
+import { MeasureTool } from "@tether/scene-decorators";
 
 describe('MeasureTool', () => {
   let container: HTMLElement;

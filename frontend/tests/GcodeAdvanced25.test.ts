@@ -17,7 +17,7 @@ import {
   calculateMinimumClearance,
   analyzeWallThicknessConsistency,
   optimizeExecutionOrder,
-} from '../src/core/GcodeAdvanced25';
+} from "@tether/gcode-analyzer/GcodeAdvanced25";
 
 // ── 1. Air Cutting Time ──
 

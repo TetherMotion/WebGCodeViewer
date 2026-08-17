@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { ColorMap } from '../src/core/ColorMap';
+import { ColorMap } from "@tether/viewer-core";
 
 // ─── Color Map Endpoint Verification ───────────────────────────────────
 

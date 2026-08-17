@@ -9,7 +9,7 @@ import {
   lerp, clamp, degToRad, radToDeg, centroid, boundingBox,
   mat4Identity, mat4Multiply, mat4Perspective, mat4Ortho, mat4LookAt,
   mat4Translate, mat4Scale, lerpColor,
-} from '../src/core/MathUtils';
+} from "@tether/viewer-core";
 
 describe('MathUtils', () => {
   describe('Vec3 operations', () => {

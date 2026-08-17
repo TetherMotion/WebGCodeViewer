@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { Camera } from '../src/core/Camera';
-import { degToRad } from '../src/core/MathUtils';
+import { Camera } from "@tether/viewer-core";
+import { degToRad } from "@tether/viewer-core";
 
 describe('Camera', () => {
   it('has default eye and target', () => {

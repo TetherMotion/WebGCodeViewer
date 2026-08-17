@@ -17,7 +17,7 @@ import {
   identifyBottlenecks,
   calculatePullOffDistance,
   analyzeFirstLayerSquish,
-} from '../src/core/GcodeAdvanced16';
+} from "@tether/gcode-analyzer/GcodeAdvanced16";
 
 // ── 1. Line Statistics ──
 

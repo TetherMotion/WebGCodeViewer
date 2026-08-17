@@ -17,8 +17,8 @@ import {
   compareBatchGcode,
   analyzePrintEfficiency,
   autoGenerateAnnotations,
-} from '../src/core/GcodeAdvanced10';
-import type { MachineCapability } from '../src/core/GcodeAdvanced10';
+} from "@tether/gcode-analyzer/GcodeAdvanced10";
+import type { MachineCapability } from "@tether/gcode-analyzer/GcodeAdvanced10";
 
 // ── 1. Z-Hop Analysis ──
 

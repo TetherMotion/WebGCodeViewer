@@ -4,8 +4,8 @@
  * view settings, analysis, playback, and status.
  */
 
-import { EventDispatcher } from '../core/EventDispatcher';
-import type { GetJobStatusResponse, GetZLayersResponse } from '../generated/tether_viewer_pb';
+import { EventDispatcher } from "@tether/viewer-core";
+import type { GetJobStatusResponse, GetZLayersResponse } from "@tether/viewer-core/generated";
 
 export interface ControlPanelEvents {
   uploadFile: File;

@@ -19,7 +19,7 @@ import {
   parseSubprograms,
   estimateJobCost,
   diffGcode,
-} from '../src/core/GcodeAdvanced';
+} from "@tether/gcode-analyzer/GcodeAdvanced";
 
 // ── 1. Overhang Detection ──
 

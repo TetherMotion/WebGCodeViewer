@@ -3,7 +3,7 @@
  * @brief Top toolbar UI panel for the viewer.
  */
 
-import { EventDispatcher } from '../core/EventDispatcher';
+import { EventDispatcher } from "@tether/viewer-core";
 
 export interface ToolbarEvents {
   uploadFile: File;

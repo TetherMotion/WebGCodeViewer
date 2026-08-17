@@ -4,7 +4,7 @@
   "description": "WebGPU-based G-code trajectory viewer frontend",
   "type": "module",
   "scripts": {
-    "proto:generate": "mkdir -p src/generated && protoc --proto_path=../proto --plugin=protoc-gen-es=./node_modules/.bin/protoc-gen-es --es_out=src/generated --es_opt=target=ts ../proto/tether_viewer.proto",
+    "proto:generate": "mkdir -p ../packages/viewer-core/src/generated && protoc --proto_path=../proto --plugin=protoc-gen-es=./node_modules/.bin/protoc-gen-es --es_out=../packages/viewer-core/src/generated --es_opt=target=ts ../proto/tether_viewer.proto",
     "build:chartgpu": "cd ../third_party/ChartGPU && npm install --silent && npm run build --silent",
     "build": "npm run build:chartgpu --silent && tsc && node build.mjs",
     "build:dev": "npm run build:chartgpu --silent && tsc && node build.mjs --dev",

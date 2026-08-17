@@ -5,8 +5,8 @@
  * filter the toolpath to show only specific Z-layers.
  */
 
-import { EventDispatcher } from '../core/EventDispatcher';
-import type { GetZLayersResponse, ZLayerInfo } from '../generated/tether_viewer_pb';
+import { EventDispatcher } from "@tether/viewer-core";
+import type { GetZLayersResponse, ZLayerInfo } from "@tether/viewer-core/generated";
 
 export interface ZLayerEvents {
   layerSelected: number;       // layer index
