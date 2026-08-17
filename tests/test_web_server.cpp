@@ -280,6 +280,7 @@ TEST(ProcessResultAnalyzerTest, MaterialLayerAndFeatureSections) {
     EXPECT_EQ(response.sections(8).section_name(), "pattern_analysis");
     EXPECT_EQ(response.sections(9).section_name(), "thermal_cooling");
     EXPECT_EQ(response.sections(10).section_name(), "cnc_toolpath");
+    EXPECT_EQ(response.sections(11).section_name(), "stock_collision");
 
     const auto& material = response.sections(0);
     EXPECT_GT(material.metrics_size(), 0);
