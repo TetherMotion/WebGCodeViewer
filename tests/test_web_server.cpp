@@ -268,10 +268,11 @@ TEST(ProcessResultAnalyzerTest, MaterialLayerAndFeatureSections) {
     AnalysisResultResponse response;
     appendProcessResultAnalysis(response, jm.getResult(id), jm.getGcodeLines(id), request);
 
-    ASSERT_EQ(response.sections_size(), 3);
+    ASSERT_EQ(response.sections_size(), 4);
     EXPECT_EQ(response.sections(0).section_name(), "material_time");
     EXPECT_EQ(response.sections(1).section_name(), "layer_summary");
     EXPECT_EQ(response.sections(2).section_name(), "feature_summary");
+    EXPECT_EQ(response.sections(3).section_name(), "overhang_bridge_support");
 
     const auto& material = response.sections(0);
     EXPECT_GT(material.metrics_size(), 0);

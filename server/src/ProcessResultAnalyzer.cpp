@@ -2,6 +2,7 @@
 /// @brief ProcessResult-driven material, time, layer, and feature analysis.
 
 #include "ProcessResultAnalyzer.hpp"
+#include "analysis/OverhangAnalyzer.hpp"
 #include "proto/tether_viewer.pb.h"
 
 #include <algorithm>
@@ -370,6 +371,8 @@ void appendProcessResultAnalysis(
                 f.time, f.extrusion, f.pathLength, f.count));
         }
     }
+
+    appendOverhangAnalysis(response, result, gcodeLines, request);
 }
 
 } // namespace tether::web

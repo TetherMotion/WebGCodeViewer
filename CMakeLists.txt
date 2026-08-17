@@ -100,6 +100,7 @@ add_custom_command(
 # ── Server library ───────────────────────────────────────────────────────────
 file(GLOB WGV_SERVER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/server/src/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/server/src/analysis/*.cpp"
 )
 # Tether's IO Registry is needed by AnalysisExposer. If tether_io_protocol is
 # not built, compile the Registry directly into the server so the signal API
