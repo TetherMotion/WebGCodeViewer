@@ -2,8 +2,8 @@
 // @generated from file tether_viewer.proto (package tether.viewer.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Empty } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_empty } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file tether_viewer.proto.
  */
 export const file_tether_viewer: GenFile = /*@__PURE__*/
-  fileDesc("ChN0ZXRoZXJfdmlld2VyLnByb3RvEhB0ZXRoZXIudmlld2VyLnYxIhwKC0F1dGhSZXF1ZXN0Eg0KBXRva2VuGAEgASgJIiAKDUNhbmNlbFJlcXVlc3QSDwoHY2FsbF9pZBgBIAEoDSL6AQoUVGV0aGVyVmlld2VyRW52ZWxvcGUSLQoEYXV0aBgBIAEoCzIdLnRldGhlci52aWV3ZXIudjEuQXV0aFJlcXVlc3RIABI4CgdyZXF1ZXN0GAIgASgLMiUudGV0aGVyLnZpZXdlci52MS5UZXRoZXJWaWV3ZXJSZXF1ZXN0SAASOgoIcmVzcG9uc2UYAyABKAsyJi50ZXRoZXIudmlld2VyLnYxLlRldGhlclZpZXdlclJlc3BvbnNlSAASMQoGY2FuY2VsGAQgASgLMh8udGV0aGVyLnZpZXdlci52MS5DYW5jZWxSZXF1ZXN0SABCCgoIZW52ZWxvcGUigQcKE1RldGhlclZpZXdlclJlcXVlc3QSDwoHY2FsbF9pZBgBIAEoDRI8Cgx1cGxvYWRfZ2NvZGUYBSABKAsyJC50ZXRoZXIudmlld2VyLnYxLlVwbG9hZEdjb2RlUmVxdWVzdEgAEjoKC3Byb2Nlc3Nfam9iGAYgASgLMiMudGV0aGVyLnZpZXdlci52MS5Qcm9jZXNzSm9iUmVxdWVzdEgAEj8KDmdldF9qb2Jfc3RhdHVzGAcgASgLMiUudGV0aGVyLnZpZXdlci52MS5HZXRKb2JTdGF0dXNSZXF1ZXN0SAASOAoKZ2V0X2JpbmFyeRgIIAEoCzIiLnRldGhlci52aWV3ZXIudjEuR2V0QmluYXJ5UmVxdWVzdEgAEjgKCmdldF9ibG9ja3MYCSABKAsyIi50ZXRoZXIudmlld2VyLnYxLkdldEJsb2Nrc1JlcXVlc3RIABJACg5nZXRfc3RhdGlzdGljcxgKIAEoCzImLnRldGhlci52aWV3ZXIudjEuR2V0U3RhdGlzdGljc1JlcXVlc3RIABI8CgxnZXRfc2VnbWVudHMYCyABKAsyJC50ZXRoZXIudmlld2VyLnYxLkdldFNlZ21lbnRzUmVxdWVzdEgAEjYKCWxpc3Rfam9icxgMIAEoCzIhLnRldGhlci52aWV3ZXIudjEuTGlzdEpvYnNSZXF1ZXN0SAASOAoKZGVsZXRlX2pvYhgNIAEoCzIiLnRldGhlci52aWV3ZXIudjEuRGVsZXRlSm9iUmVxdWVzdEgAEjsKDGdldF96X2xheWVycxgOIAEoCzIjLnRldGhlci52aWV3ZXIudjEuR2V0WkxheWVyc1JlcXVlc3RIABJGChJnZXRfel9sYXllcl9iaW5hcnkYDyABKAsyKC50ZXRoZXIudmlld2VyLnYxLkdldFpMYXllckJpbmFyeVJlcXVlc3RIABJRChhnZXRfel9sYXllcl9yYW5nZV9iaW5hcnkYECABKAsyLS50ZXRoZXIudmlld2VyLnYxLkdldFpMYXllclJhbmdlQmluYXJ5UmVxdWVzdEgAEiYKBHBpbmcYESABKAsyFi5nb29nbGUucHJvdG9idWYuRW1wdHlIABItCgtnZXRfdmVyc2lvbhgSIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eUgAQgkKB3JlcXVlc3QiqAEKDFNlcnZlclRpbWluZxIQCgh0b3RhbF9tcxgBIAEoARIZChFlbnZlbG9wZV9kZXNlcl9tcxgCIAEoARIZChFoYW5kbGVyX2xvb2t1cF9tcxgDIAEoARIYChByZXF1ZXN0X2Rlc2VyX21zGAQgASgBEhgKEGhhbmRsZXJfdG90YWxfbXMYBSABKAESHAoUcmVzcG9uc2Vfc2VyX3NlbmRfbXMYBiABKAEihQgKFFRldGhlclZpZXdlclJlc3BvbnNlEg8KB2NhbGxfaWQYASABKA0SDAoEZG9uZRgCIAEoCBIVCg1lcnJvcl9tZXNzYWdlGAMgASgJEhIKCmVycm9yX2NvZGUYBCABKA0SNgoNc2VydmVyX3RpbWluZxi3ASABKAsyHi50ZXRoZXIudmlld2VyLnYxLlNlcnZlclRpbWluZxI9Cgx1cGxvYWRfZ2NvZGUYBSABKAsyJS50ZXRoZXIudmlld2VyLnYxLlVwbG9hZEdjb2RlUmVzcG9uc2VIABI7Cgtwcm9jZXNzX2pvYhgGIAEoCzIkLnRldGhlci52aWV3ZXIudjEuUHJvY2Vzc0pvYlJlc3BvbnNlSAASQAoOZ2V0X2pvYl9zdGF0dXMYByABKAsyJi50ZXRoZXIudmlld2VyLnYxLkdldEpvYlN0YXR1c1Jlc3BvbnNlSAASOgoKZ2V0X2JpbmFyeRgIIAEoCzIkLnRldGhlci52aWV3ZXIudjEuQmluYXJ5RGF0YVJlc3BvbnNlSAASOQoKZ2V0X2Jsb2NrcxgJIAEoCzIjLnRldGhlci52aWV3ZXIudjEuR2V0QmxvY2tzUmVzcG9uc2VIABJBCg5nZXRfc3RhdGlzdGljcxgKIAEoCzInLnRldGhlci52aWV3ZXIudjEuR2V0U3RhdGlzdGljc1Jlc3BvbnNlSAASPQoMZ2V0X3NlZ21lbnRzGAsgASgLMiUudGV0aGVyLnZpZXdlci52MS5HZXRTZWdtZW50c1Jlc3BvbnNlSAASNwoJbGlzdF9qb2JzGAwgASgLMiIudGV0aGVyLnZpZXdlci52MS5MaXN0Sm9ic1Jlc3BvbnNlSAASOQoKZGVsZXRlX2pvYhgNIAEoCzIjLnRldGhlci52aWV3ZXIudjEuRGVsZXRlSm9iUmVzcG9uc2VIABI8CgxnZXRfel9sYXllcnMYDiABKAsyJC50ZXRoZXIudmlld2VyLnYxLkdldFpMYXllcnNSZXNwb25zZUgAEkIKEmdldF96X2xheWVyX2JpbmFyeRgPIAEoCzIkLnRldGhlci52aWV3ZXIudjEuQmluYXJ5RGF0YVJlc3BvbnNlSAASSAoYZ2V0X3pfbGF5ZXJfcmFuZ2VfYmluYXJ5GBAgASgLMiQudGV0aGVyLnZpZXdlci52MS5CaW5hcnlEYXRhUmVzcG9uc2VIABIuCgRwaW5nGBEgASgLMh4udGV0aGVyLnZpZXdlci52MS5QaW5nUmVzcG9uc2VIABI4CgtnZXRfdmVyc2lvbhgSIAEoCzIhLnRldGhlci52aWV3ZXIudjEuVmVyc2lvblJlc3BvbnNlSABCCgoIcmVzcG9uc2UiOgoSVXBsb2FkR2NvZGVSZXF1ZXN0EhIKCmdjb2RlX3RleHQYASABKAkSEAoIZmlsZW5hbWUYAiABKAkiRgoTVXBsb2FkR2NvZGVSZXNwb25zZRIOCgZqb2JfaWQYASABKAkSEAoIZmlsZW5hbWUYAiABKAkSDQoFc3RhdGUYAyABKAkijAEKEVByb2Nlc3NKb2JSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCRITCgtzYW1wbGVfcmF0ZRgCIAEoARIUCgxtYXhfdmVsb2NpdHkYAyABKAESGAoQbWF4X2FjY2VsZXJhdGlvbhgEIAEoARIQCghtYXhfamVyaxgFIAEoARIQCghzdHJhdGVneRgGIAEoCSIzChJQcm9jZXNzSm9iUmVzcG9uc2USDgoGam9iX2lkGAEgASgJEg0KBXN0YXRlGAIgASgJIiUKE0dldEpvYlN0YXR1c1JlcXVlc3QSDgoGam9iX2lkGAEgASgJIqwBChRHZXRKb2JTdGF0dXNSZXNwb25zZRIOCgZqb2JfaWQYASABKAkSDQoFc3RhdGUYAiABKAkSEAoIcHJvZ3Jlc3MYAyABKAESFAoMc2FtcGxlX2NvdW50GAQgASgNEhAKCGR1cmF0aW9uGAUgASgBEhMKC3BhdGhfbGVuZ3RoGAYgASgBEhUKDWVycm9yX21lc3NhZ2UYByABKAkSDwoHd2FybmluZxgIIAEoCSKfAQoRQmluYXJ5RGF0YVJlcXVlc3QSDgoGam9iX2lkGAEgASgJEg4KBmZpZWxkcxgCIAEoDRIMCgRheGVzGAMgASgNEhIKCnN0YXJ0X3RpbWUYBCABKAESEAoIZW5kX3RpbWUYBSABKAESEQoJc2VnX3N0YXJ0GAYgASgREg8KB3NlZ19lbmQYByABKBESEgoKZG93bnNhbXBsZRgIIAEoDSKeAQoQR2V0QmluYXJ5UmVxdWVzdBIOCgZqb2JfaWQYASABKAkSDgoGZmllbGRzGAIgASgNEgwKBGF4ZXMYAyABKA0SEgoKc3RhcnRfdGltZRgEIAEoARIQCghlbmRfdGltZRgFIAEoARIRCglzZWdfc3RhcnQYBiABKBESDwoHc2VnX2VuZBgHIAEoERISCgpkb3duc2FtcGxlGAggASgNIiIKEkJpbmFyeURhdGFSZXNwb25zZRIMCgRkYXRhGAEgASgMIiIKEEdldEJsb2Nrc1JlcXVlc3QSDgoGam9iX2lkGAEgASgJImMKDkdjb2RlQmxvY2tJbmZvEhMKC2Jsb2NrX2luZGV4GAEgASgREhMKC2xpbmVfbnVtYmVyGAIgASgREhMKC21vdGlvbl90eXBlGAMgASgNEhIKCmdjb2RlX3RleHQYBCABKAkiRQoRR2V0QmxvY2tzUmVzcG9uc2USMAoGYmxvY2tzGAEgAygLMiAudGV0aGVyLnZpZXdlci52MS5HY29kZUJsb2NrSW5mbyImChRHZXRTdGF0aXN0aWNzUmVxdWVzdBIOCgZqb2JfaWQYASABKAkieQoJQXhpc1N0YXRzEhQKDG1pbl9wb3NpdGlvbhgBIAEoARIUCgxtYXhfcG9zaXRpb24YAiABKAESFAoMbWF4X3ZlbG9jaXR5GAMgASgBEhgKEG1heF9hY2NlbGVyYXRpb24YBCABKAESEAoIbWF4X2plcmsYBSABKAEi3gIKFUdldFN0YXRpc3RpY3NSZXNwb25zZRIQCghkdXJhdGlvbhgBIAEoARITCgtwYXRoX2xlbmd0aBgCIAEoARIUCgxzYW1wbGVfY291bnQYAyABKA0SGwoTbWF4X2xpbmVhcl92ZWxvY2l0eRgEIAEoARIfChdtYXhfbGluZWFyX2FjY2VsZXJhdGlvbhgFIAEoARIXCg9tYXhfbGluZWFyX2plcmsYBiABKAESFQoNbWF4X2N1cnZhdHVyZRgHIAEoARIdChVtYXhfY2VudHJpcGV0YWxfYWNjZWwYCCABKAESGgoSdG90YWxfY29ybmVyX2Vycm9yGAkgASgBEhgKEG1heF9jb3JuZXJfZXJyb3IYCiABKAESFAoMbWVldHNfbGltaXRzGAsgASgIEi8KCmF4aXNfc3RhdHMYDCADKAsyGy50ZXRoZXIudmlld2VyLnYxLkF4aXNTdGF0cyIkChJHZXRTZWdtZW50c1JlcXVlc3QSDgoGam9iX2lkGAEgASgJIoUBCgtTZWdtZW50SW5mbxIVCg1zZWdtZW50X2luZGV4GAEgASgREhIKCnN0YXJ0X3RpbWUYAiABKAESEAoIZW5kX3RpbWUYAyABKAESEgoKc3RhcnRfcGF0aBgEIAEoARIQCghlbmRfcGF0aBgFIAEoARITCgttb3Rpb25fdHlwZRgGIAEoDSJGChNHZXRTZWdtZW50c1Jlc3BvbnNlEi8KCHNlZ21lbnRzGAEgAygLMh0udGV0aGVyLnZpZXdlci52MS5TZWdtZW50SW5mbyIRCg9MaXN0Sm9ic1JlcXVlc3QiiAEKCkpvYlN1bW1hcnkSCgoCaWQYASABKAkSEAoIZmlsZW5hbWUYAiABKAkSDQoFc3RhdGUYAyABKAkSEAoIcHJvZ3Jlc3MYBCABKAESFAoMc2FtcGxlX2NvdW50GAUgASgNEhAKCGR1cmF0aW9uGAYgASgBEhMKC3BhdGhfbGVuZ3RoGAcgASgBIj4KEExpc3RKb2JzUmVzcG9uc2USKgoEam9icxgBIAMoCzIcLnRldGhlci52aWV3ZXIudjEuSm9iU3VtbWFyeSIiChBEZWxldGVKb2JSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSIkChFEZWxldGVKb2JSZXNwb25zZRIPCgdkZWxldGVkGAEgASgIIjgKEUdldFpMYXllcnNSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCRITCgt6X3RvbGVyYW5jZRgCIAEoASKIAQoKWkxheWVySW5mbxITCgtsYXllcl9pbmRleBgBIAEoDRIQCgh6X2hlaWdodBgCIAEoARIUCgxzYW1wbGVfc3RhcnQYAyABKA0SEgoKc2FtcGxlX2VuZBgEIAEoDRIUCgxzYW1wbGVfY291bnQYBSABKA0SEwoLcGF0aF9sZW5ndGgYBiABKAEijAEKEkdldFpMYXllcnNSZXNwb25zZRIsCgZsYXllcnMYASADKAsyHC50ZXRoZXIudmlld2VyLnYxLlpMYXllckluZm8SFAoMdG90YWxfbGF5ZXJzGAIgASgNEg0KBW1pbl96GAMgASgBEg0KBW1heF96GAQgASgBEhQKDGxheWVyX2hlaWdodBgFIAEoASJbChZHZXRaTGF5ZXJCaW5hcnlSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCRITCgtsYXllcl9pbmRleBgCIAEoDRIOCgZmaWVsZHMYAyABKA0SDAoEYXhlcxgEIAEoDSJzChtHZXRaTGF5ZXJSYW5nZUJpbmFyeVJlcXVlc3QSDgoGam9iX2lkGAEgASgJEhMKC3N0YXJ0X2xheWVyGAIgASgNEhEKCWVuZF9sYXllchgDIAEoDRIOCgZmaWVsZHMYBCABKA0SDAoEYXhlcxgFIAEoDSINCgtQaW5nUmVxdWVzdCIhCgxQaW5nUmVzcG9uc2USEQoJdGltZXN0YW1wGAEgASgBIjwKD1ZlcnNpb25SZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEhgKEHByb3RvY29sX3ZlcnNpb24YAiABKAliBnByb3RvMw", [file_google_protobuf_empty]);
+  fileDesc("ChN0ZXRoZXJfdmlld2VyLnByb3RvEhB0ZXRoZXIudmlld2VyLnYxIhwKC0F1dGhSZXF1ZXN0Eg0KBXRva2VuGAEgASgJIiAKDUNhbmNlbFJlcXVlc3QSDwoHY2FsbF9pZBgBIAEoDSL6AQoUVGV0aGVyVmlld2VyRW52ZWxvcGUSLQoEYXV0aBgBIAEoCzIdLnRldGhlci52aWV3ZXIudjEuQXV0aFJlcXVlc3RIABI4CgdyZXF1ZXN0GAIgASgLMiUudGV0aGVyLnZpZXdlci52MS5UZXRoZXJWaWV3ZXJSZXF1ZXN0SAASOgoIcmVzcG9uc2UYAyABKAsyJi50ZXRoZXIudmlld2VyLnYxLlRldGhlclZpZXdlclJlc3BvbnNlSAASMQoGY2FuY2VsGAQgASgLMh8udGV0aGVyLnZpZXdlci52MS5DYW5jZWxSZXF1ZXN0SABCCgoIZW52ZWxvcGUijAgKE1RldGhlclZpZXdlclJlcXVlc3QSDwoHY2FsbF9pZBgBIAEoDRI8Cgx1cGxvYWRfZ2NvZGUYBSABKAsyJC50ZXRoZXIudmlld2VyLnYxLlVwbG9hZEdjb2RlUmVxdWVzdEgAEjoKC3Byb2Nlc3Nfam9iGAYgASgLMiMudGV0aGVyLnZpZXdlci52MS5Qcm9jZXNzSm9iUmVxdWVzdEgAEj8KDmdldF9qb2Jfc3RhdHVzGAcgASgLMiUudGV0aGVyLnZpZXdlci52MS5HZXRKb2JTdGF0dXNSZXF1ZXN0SAASOAoKZ2V0X2JpbmFyeRgIIAEoCzIiLnRldGhlci52aWV3ZXIudjEuR2V0QmluYXJ5UmVxdWVzdEgAEjgKCmdldF9ibG9ja3MYCSABKAsyIi50ZXRoZXIudmlld2VyLnYxLkdldEJsb2Nrc1JlcXVlc3RIABJACg5nZXRfc3RhdGlzdGljcxgKIAEoCzImLnRldGhlci52aWV3ZXIudjEuR2V0U3RhdGlzdGljc1JlcXVlc3RIABI8CgxnZXRfc2VnbWVudHMYCyABKAsyJC50ZXRoZXIudmlld2VyLnYxLkdldFNlZ21lbnRzUmVxdWVzdEgAEjYKCWxpc3Rfam9icxgMIAEoCzIhLnRldGhlci52aWV3ZXIudjEuTGlzdEpvYnNSZXF1ZXN0SAASOAoKZGVsZXRlX2pvYhgNIAEoCzIiLnRldGhlci52aWV3ZXIudjEuRGVsZXRlSm9iUmVxdWVzdEgAEjsKDGdldF96X2xheWVycxgOIAEoCzIjLnRldGhlci52aWV3ZXIudjEuR2V0WkxheWVyc1JlcXVlc3RIABJGChJnZXRfel9sYXllcl9iaW5hcnkYDyABKAsyKC50ZXRoZXIudmlld2VyLnYxLkdldFpMYXllckJpbmFyeVJlcXVlc3RIABJRChhnZXRfel9sYXllcl9yYW5nZV9iaW5hcnkYECABKAsyLS50ZXRoZXIudmlld2VyLnYxLkdldFpMYXllclJhbmdlQmluYXJ5UmVxdWVzdEgAEjwKDGdldF9hbmFseXNpcxgTIAEoCzIkLnRldGhlci52aWV3ZXIudjEuR2V0QW5hbHlzaXNSZXF1ZXN0SAASSwoUZ2V0X2FuYWx5c2lzX2RldGFpbHMYFCABKAsyKy50ZXRoZXIudmlld2VyLnYxLkdldEFuYWx5c2lzRGV0YWlsc1JlcXVlc3RIABImCgRwaW5nGBEgASgLMhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5SAASLQoLZ2V0X3ZlcnNpb24YEiABKAsyFi5nb29nbGUucHJvdG9idWYuRW1wdHlIAEIJCgdyZXF1ZXN0IqgBCgxTZXJ2ZXJUaW1pbmcSEAoIdG90YWxfbXMYASABKAESGQoRZW52ZWxvcGVfZGVzZXJfbXMYAiABKAESGQoRaGFuZGxlcl9sb29rdXBfbXMYAyABKAESGAoQcmVxdWVzdF9kZXNlcl9tcxgEIAEoARIYChBoYW5kbGVyX3RvdGFsX21zGAUgASgBEhwKFHJlc3BvbnNlX3Nlcl9zZW5kX21zGAYgASgBIsoIChRUZXRoZXJWaWV3ZXJSZXNwb25zZRIPCgdjYWxsX2lkGAEgASgNEgwKBGRvbmUYAiABKAgSFQoNZXJyb3JfbWVzc2FnZRgDIAEoCRISCgplcnJvcl9jb2RlGAQgASgNEjYKDXNlcnZlcl90aW1pbmcYtwEgASgLMh4udGV0aGVyLnZpZXdlci52MS5TZXJ2ZXJUaW1pbmcSPQoMdXBsb2FkX2djb2RlGAUgASgLMiUudGV0aGVyLnZpZXdlci52MS5VcGxvYWRHY29kZVJlc3BvbnNlSAASOwoLcHJvY2Vzc19qb2IYBiABKAsyJC50ZXRoZXIudmlld2VyLnYxLlByb2Nlc3NKb2JSZXNwb25zZUgAEkAKDmdldF9qb2Jfc3RhdHVzGAcgASgLMiYudGV0aGVyLnZpZXdlci52MS5HZXRKb2JTdGF0dXNSZXNwb25zZUgAEjoKCmdldF9iaW5hcnkYCCABKAsyJC50ZXRoZXIudmlld2VyLnYxLkJpbmFyeURhdGFSZXNwb25zZUgAEjkKCmdldF9ibG9ja3MYCSABKAsyIy50ZXRoZXIudmlld2VyLnYxLkdldEJsb2Nrc1Jlc3BvbnNlSAASQQoOZ2V0X3N0YXRpc3RpY3MYCiABKAsyJy50ZXRoZXIudmlld2VyLnYxLkdldFN0YXRpc3RpY3NSZXNwb25zZUgAEj0KDGdldF9zZWdtZW50cxgLIAEoCzIlLnRldGhlci52aWV3ZXIudjEuR2V0U2VnbWVudHNSZXNwb25zZUgAEjcKCWxpc3Rfam9icxgMIAEoCzIiLnRldGhlci52aWV3ZXIudjEuTGlzdEpvYnNSZXNwb25zZUgAEjkKCmRlbGV0ZV9qb2IYDSABKAsyIy50ZXRoZXIudmlld2VyLnYxLkRlbGV0ZUpvYlJlc3BvbnNlSAASPAoMZ2V0X3pfbGF5ZXJzGA4gASgLMiQudGV0aGVyLnZpZXdlci52MS5HZXRaTGF5ZXJzUmVzcG9uc2VIABJCChJnZXRfel9sYXllcl9iaW5hcnkYDyABKAsyJC50ZXRoZXIudmlld2VyLnYxLkJpbmFyeURhdGFSZXNwb25zZUgAEkgKGGdldF96X2xheWVyX3JhbmdlX2JpbmFyeRgQIAEoCzIkLnRldGhlci52aWV3ZXIudjEuQmluYXJ5RGF0YVJlc3BvbnNlSAASLgoEcGluZxgRIAEoCzIeLnRldGhlci52aWV3ZXIudjEuUGluZ1Jlc3BvbnNlSAASOAoLZ2V0X3ZlcnNpb24YEiABKAsyIS50ZXRoZXIudmlld2VyLnYxLlZlcnNpb25SZXNwb25zZUgAEkMKD2FuYWx5c2lzX3Jlc3VsdBgTIAEoCzIoLnRldGhlci52aWV3ZXIudjEuQW5hbHlzaXNSZXN1bHRSZXNwb25zZUgAQgoKCHJlc3BvbnNlIjoKElVwbG9hZEdjb2RlUmVxdWVzdBISCgpnY29kZV90ZXh0GAEgASgJEhAKCGZpbGVuYW1lGAIgASgJIkYKE1VwbG9hZEdjb2RlUmVzcG9uc2USDgoGam9iX2lkGAEgASgJEhAKCGZpbGVuYW1lGAIgASgJEg0KBXN0YXRlGAMgASgJIowBChFQcm9jZXNzSm9iUmVxdWVzdBIOCgZqb2JfaWQYASABKAkSEwoLc2FtcGxlX3JhdGUYAiABKAESFAoMbWF4X3ZlbG9jaXR5GAMgASgBEhgKEG1heF9hY2NlbGVyYXRpb24YBCABKAESEAoIbWF4X2plcmsYBSABKAESEAoIc3RyYXRlZ3kYBiABKAkiMwoSUHJvY2Vzc0pvYlJlc3BvbnNlEg4KBmpvYl9pZBgBIAEoCRINCgVzdGF0ZRgCIAEoCSIlChNHZXRKb2JTdGF0dXNSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSKsAQoUR2V0Sm9iU3RhdHVzUmVzcG9uc2USDgoGam9iX2lkGAEgASgJEg0KBXN0YXRlGAIgASgJEhAKCHByb2dyZXNzGAMgASgBEhQKDHNhbXBsZV9jb3VudBgEIAEoDRIQCghkdXJhdGlvbhgFIAEoARITCgtwYXRoX2xlbmd0aBgGIAEoARIVCg1lcnJvcl9tZXNzYWdlGAcgASgJEg8KB3dhcm5pbmcYCCABKAkinwEKEUJpbmFyeURhdGFSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCRIOCgZmaWVsZHMYAiABKA0SDAoEYXhlcxgDIAEoDRISCgpzdGFydF90aW1lGAQgASgBEhAKCGVuZF90aW1lGAUgASgBEhEKCXNlZ19zdGFydBgGIAEoERIPCgdzZWdfZW5kGAcgASgREhIKCmRvd25zYW1wbGUYCCABKA0ingEKEEdldEJpbmFyeVJlcXVlc3QSDgoGam9iX2lkGAEgASgJEg4KBmZpZWxkcxgCIAEoDRIMCgRheGVzGAMgASgNEhIKCnN0YXJ0X3RpbWUYBCABKAESEAoIZW5kX3RpbWUYBSABKAESEQoJc2VnX3N0YXJ0GAYgASgREg8KB3NlZ19lbmQYByABKBESEgoKZG93bnNhbXBsZRgIIAEoDSIiChJCaW5hcnlEYXRhUmVzcG9uc2USDAoEZGF0YRgBIAEoDCIiChBHZXRCbG9ja3NSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSJjCg5HY29kZUJsb2NrSW5mbxITCgtibG9ja19pbmRleBgBIAEoERITCgtsaW5lX251bWJlchgCIAEoERITCgttb3Rpb25fdHlwZRgDIAEoDRISCgpnY29kZV90ZXh0GAQgASgJIkUKEUdldEJsb2Nrc1Jlc3BvbnNlEjAKBmJsb2NrcxgBIAMoCzIgLnRldGhlci52aWV3ZXIudjEuR2NvZGVCbG9ja0luZm8iJgoUR2V0U3RhdGlzdGljc1JlcXVlc3QSDgoGam9iX2lkGAEgASgJInkKCUF4aXNTdGF0cxIUCgxtaW5fcG9zaXRpb24YASABKAESFAoMbWF4X3Bvc2l0aW9uGAIgASgBEhQKDG1heF92ZWxvY2l0eRgDIAEoARIYChBtYXhfYWNjZWxlcmF0aW9uGAQgASgBEhAKCG1heF9qZXJrGAUgASgBIt4CChVHZXRTdGF0aXN0aWNzUmVzcG9uc2USEAoIZHVyYXRpb24YASABKAESEwoLcGF0aF9sZW5ndGgYAiABKAESFAoMc2FtcGxlX2NvdW50GAMgASgNEhsKE21heF9saW5lYXJfdmVsb2NpdHkYBCABKAESHwoXbWF4X2xpbmVhcl9hY2NlbGVyYXRpb24YBSABKAESFwoPbWF4X2xpbmVhcl9qZXJrGAYgASgBEhUKDW1heF9jdXJ2YXR1cmUYByABKAESHQoVbWF4X2NlbnRyaXBldGFsX2FjY2VsGAggASgBEhoKEnRvdGFsX2Nvcm5lcl9lcnJvchgJIAEoARIYChBtYXhfY29ybmVyX2Vycm9yGAogASgBEhQKDG1lZXRzX2xpbWl0cxgLIAEoCBIvCgpheGlzX3N0YXRzGAwgAygLMhsudGV0aGVyLnZpZXdlci52MS5BeGlzU3RhdHMiJAoSR2V0U2VnbWVudHNSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSKFAQoLU2VnbWVudEluZm8SFQoNc2VnbWVudF9pbmRleBgBIAEoERISCgpzdGFydF90aW1lGAIgASgBEhAKCGVuZF90aW1lGAMgASgBEhIKCnN0YXJ0X3BhdGgYBCABKAESEAoIZW5kX3BhdGgYBSABKAESEwoLbW90aW9uX3R5cGUYBiABKA0iRgoTR2V0U2VnbWVudHNSZXNwb25zZRIvCghzZWdtZW50cxgBIAMoCzIdLnRldGhlci52aWV3ZXIudjEuU2VnbWVudEluZm8iEQoPTGlzdEpvYnNSZXF1ZXN0IogBCgpKb2JTdW1tYXJ5EgoKAmlkGAEgASgJEhAKCGZpbGVuYW1lGAIgASgJEg0KBXN0YXRlGAMgASgJEhAKCHByb2dyZXNzGAQgASgBEhQKDHNhbXBsZV9jb3VudBgFIAEoDRIQCghkdXJhdGlvbhgGIAEoARITCgtwYXRoX2xlbmd0aBgHIAEoASI+ChBMaXN0Sm9ic1Jlc3BvbnNlEioKBGpvYnMYASADKAsyHC50ZXRoZXIudmlld2VyLnYxLkpvYlN1bW1hcnkiIgoQRGVsZXRlSm9iUmVxdWVzdBIOCgZqb2JfaWQYASABKAkiJAoRRGVsZXRlSm9iUmVzcG9uc2USDwoHZGVsZXRlZBgBIAEoCCI4ChFHZXRaTGF5ZXJzUmVxdWVzdBIOCgZqb2JfaWQYASABKAkSEwoLel90b2xlcmFuY2UYAiABKAEiiAEKClpMYXllckluZm8SEwoLbGF5ZXJfaW5kZXgYASABKA0SEAoIel9oZWlnaHQYAiABKAESFAoMc2FtcGxlX3N0YXJ0GAMgASgNEhIKCnNhbXBsZV9lbmQYBCABKA0SFAoMc2FtcGxlX2NvdW50GAUgASgNEhMKC3BhdGhfbGVuZ3RoGAYgASgBIowBChJHZXRaTGF5ZXJzUmVzcG9uc2USLAoGbGF5ZXJzGAEgAygLMhwudGV0aGVyLnZpZXdlci52MS5aTGF5ZXJJbmZvEhQKDHRvdGFsX2xheWVycxgCIAEoDRINCgVtaW5fehgDIAEoARINCgVtYXhfehgEIAEoARIUCgxsYXllcl9oZWlnaHQYBSABKAEiWwoWR2V0WkxheWVyQmluYXJ5UmVxdWVzdBIOCgZqb2JfaWQYASABKAkSEwoLbGF5ZXJfaW5kZXgYAiABKA0SDgoGZmllbGRzGAMgASgNEgwKBGF4ZXMYBCABKA0icwobR2V0WkxheWVyUmFuZ2VCaW5hcnlSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCRITCgtzdGFydF9sYXllchgCIAEoDRIRCgllbmRfbGF5ZXIYAyABKA0SDgoGZmllbGRzGAQgASgNEgwKBGF4ZXMYBSABKA0iDQoLUGluZ1JlcXVlc3QiIQoMUGluZ1Jlc3BvbnNlEhEKCXRpbWVzdGFtcBgBIAEoASI8Cg9WZXJzaW9uUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIYChBwcm90b2NvbF92ZXJzaW9uGAIgASgJIoMBCg5BbmFseXNpc01ldHJpYxILCgNrZXkYASABKAkSFgoMZG91YmxlX3ZhbHVlGAIgASgBSAASFQoLaW50NjRfdmFsdWUYAyABKANIABIUCgpib29sX3ZhbHVlGAQgASgISAASFgoMc3RyaW5nX3ZhbHVlGAUgASgJSABCBwoFdmFsdWUitwEKDUFuYWx5c2lzRXZlbnQSCgoCaWQYASABKAkSEwoLbGluZV9udW1iZXIYAiABKAUSEgoKZXZlbnRfdHlwZRgDIAEoCRI0CghzZXZlcml0eRgEIAEoDjIiLnRldGhlci52aWV3ZXIudjEuQW5hbHlzaXNTZXZlcml0eRIPCgdtZXNzYWdlGAUgASgJEhQKDG1ldHJpY192YWx1ZRgGIAEoARIUCgxkZXRhaWxzX2pzb24YByABKAkigQIKD0FuYWx5c2lzU2VjdGlvbhIUCgxzZWN0aW9uX25hbWUYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJEjEKB21ldHJpY3MYAyADKAsyIC50ZXRoZXIudmlld2VyLnYxLkFuYWx5c2lzTWV0cmljEjMKCnRvcF9ldmVudHMYBCADKAsyHy50ZXRoZXIudmlld2VyLnYxLkFuYWx5c2lzRXZlbnQSFwoPcmVjb21tZW5kYXRpb25zGAUgAygJEg0KBXNjb3JlGAYgASgBEhkKEXRvdGFsX2V2ZW50X2NvdW50GAcgASgNEhcKD2hhc19tb3JlX2V2ZW50cxgIIAEoCCKTAQoSR2V0QW5hbHlzaXNSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCRIVCg1hbmFseXplcl9tYXNrGAIgASgNEhcKD3RvcF9ldmVudF9saW1pdBgDIAEoDRIUCgxkZXRhaWxfbGV2ZWwYBCABKAkSDgoGc3RyZWFtGAUgASgIEhcKD21heF9ldmVudF9saW1pdBgGIAEoDSJ0ChlHZXRBbmFseXNpc0RldGFpbHNSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCRIUCgxzZWN0aW9uX25hbWUYAiABKAkSEgoKZXZlbnRfdHlwZRgDIAEoCRIOCgZvZmZzZXQYBCABKA0SDQoFbGltaXQYBSABKA0igQEKF0FuYWx5c2lzRGV0YWlsc1Jlc3BvbnNlEhQKDHNlY3Rpb25fbmFtZRgBIAEoCRIvCgZldmVudHMYAiADKAsyHy50ZXRoZXIudmlld2VyLnYxLkFuYWx5c2lzRXZlbnQSDQoFdG90YWwYAyABKA0SEAoIaGFzX21vcmUYBCABKAgiWAoWQW5hbHlzaXNQcm9ncmVzc1VwZGF0ZRIUCgxzZWN0aW9uX25hbWUYASABKAkSGAoQcHJvZ3Jlc3NfcGVyY2VudBgCIAEoDRIOCgZzdGF0dXMYAyABKAkiswIKFkFuYWx5c2lzUmVzdWx0UmVzcG9uc2USPAoIcHJvZ3Jlc3MYASABKAsyKC50ZXRoZXIudmlld2VyLnYxLkFuYWx5c2lzUHJvZ3Jlc3NVcGRhdGVIABI0CgdzZWN0aW9uGAIgASgLMiEudGV0aGVyLnZpZXdlci52MS5BbmFseXNpc1NlY3Rpb25IABI8CgdkZXRhaWxzGAMgASgLMikudGV0aGVyLnZpZXdlci52MS5BbmFseXNpc0RldGFpbHNSZXNwb25zZUgAEhAKCGNvbXBsZXRlGAQgASgIEjMKCHNlY3Rpb25zGAUgAygLMiEudGV0aGVyLnZpZXdlci52MS5BbmFseXNpc1NlY3Rpb24SFQoNZXJyb3JfbWVzc2FnZRgGIAEoCUIJCgdwYXlsb2FkKqYBChBBbmFseXNpc1NldmVyaXR5EiEKHUFOQUxZU0lTX1NFVkVSSVRZX1VOU1BFQ0lGSUVEEAASGgoWQU5BTFlTSVNfU0VWRVJJVFlfSU5GTxABEhkKFUFOQUxZU0lTX1NFVkVSSVRZX0xPVxACEhwKGEFOQUxZU0lTX1NFVkVSSVRZX01FRElVTRADEhoKFkFOQUxZU0lTX1NFVkVSSVRZX0hJR0gQBGIGcHJvdG8z", [file_google_protobuf_empty]);
 
 /**
  * @generated from message tether.viewer.v1.AuthRequest
@@ -177,6 +177,20 @@ export type TetherViewerRequest = Message<"tether.viewer.v1.TetherViewerRequest"
      */
     value: GetZLayerRangeBinaryRequest;
     case: "getZLayerRangeBinary";
+  } | {
+    /**
+     * Server-side G-code analysis (C++ Tether analyzers)
+     *
+     * @generated from field: tether.viewer.v1.GetAnalysisRequest get_analysis = 19;
+     */
+    value: GetAnalysisRequest;
+    case: "getAnalysis";
+  } | {
+    /**
+     * @generated from field: tether.viewer.v1.GetAnalysisDetailsRequest get_analysis_details = 20;
+     */
+    value: GetAnalysisDetailsRequest;
+    case: "getAnalysisDetails";
   } | {
     /**
      * Server info
@@ -359,6 +373,14 @@ export type TetherViewerResponse = Message<"tether.viewer.v1.TetherViewerRespons
      */
     value: VersionResponse;
     case: "getVersion";
+  } | {
+    /**
+     * Server-side G-code analysis results
+     *
+     * @generated from field: tether.viewer.v1.AnalysisResultResponse analysis_result = 19;
+     */
+    value: AnalysisResultResponse;
+    case: "analysisResult";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1280,4 +1302,429 @@ export type VersionResponse = Message<"tether.viewer.v1.VersionResponse"> & {
  */
 export const VersionResponseSchema: GenMessage<VersionResponse> = /*@__PURE__*/
   messageDesc(file_tether_viewer, 36);
+
+/**
+ * @generated from message tether.viewer.v1.AnalysisMetric
+ */
+export type AnalysisMetric = Message<"tether.viewer.v1.AnalysisMetric"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * @generated from oneof tether.viewer.v1.AnalysisMetric.value
+   */
+  value: {
+    /**
+     * @generated from field: double double_value = 2;
+     */
+    value: number;
+    case: "doubleValue";
+  } | {
+    /**
+     * @generated from field: int64 int64_value = 3;
+     */
+    value: bigint;
+    case: "int64Value";
+  } | {
+    /**
+     * @generated from field: bool bool_value = 4;
+     */
+    value: boolean;
+    case: "boolValue";
+  } | {
+    /**
+     * @generated from field: string string_value = 5;
+     */
+    value: string;
+    case: "stringValue";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message tether.viewer.v1.AnalysisMetric.
+ * Use `create(AnalysisMetricSchema)` to create a new message.
+ */
+export const AnalysisMetricSchema: GenMessage<AnalysisMetric> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 37);
+
+/**
+ * @generated from message tether.viewer.v1.AnalysisEvent
+ */
+export type AnalysisEvent = Message<"tether.viewer.v1.AnalysisEvent"> & {
+  /**
+   * Stable identifier for the event class / location, e.g. "retraction:12345"
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * Source G-code line number (1-based, 0 if unknown)
+   *
+   * @generated from field: int32 line_number = 2;
+   */
+  lineNumber: number;
+
+  /**
+   * Event type, e.g. "limit_violation", "sharp_turn", "retraction", "arc_candidate"
+   *
+   * @generated from field: string event_type = 3;
+   */
+  eventType: string;
+
+  /**
+   * @generated from field: tether.viewer.v1.AnalysisSeverity severity = 4;
+   */
+  severity: AnalysisSeverity;
+
+  /**
+   * Human-readable description
+   *
+   * @generated from field: string message = 5;
+   */
+  message: string;
+
+  /**
+   * Primary numeric metric associated with the event
+   *
+   * @generated from field: double metric_value = 6;
+   */
+  metricValue: number;
+
+  /**
+   * Optional additional fields as a JSON string for forward extensibility
+   *
+   * @generated from field: string details_json = 7;
+   */
+  detailsJson: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.AnalysisEvent.
+ * Use `create(AnalysisEventSchema)` to create a new message.
+ */
+export const AnalysisEventSchema: GenMessage<AnalysisEvent> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 38);
+
+/**
+ * @generated from message tether.viewer.v1.AnalysisSection
+ */
+export type AnalysisSection = Message<"tether.viewer.v1.AnalysisSection"> & {
+  /**
+   * Machine-readable section id, e.g. "machine_limit", "retraction", "curvature"
+   *
+   * @generated from field: string section_name = 1;
+   */
+  sectionName: string;
+
+  /**
+   * Human-readable display name
+   *
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+
+  /**
+   * Scalar metrics for this section. New analyzers can emit arbitrary
+   * key/value pairs without changing the schema.
+   *
+   * @generated from field: repeated tether.viewer.v1.AnalysisMetric metrics = 3;
+   */
+  metrics: AnalysisMetric[];
+
+  /**
+   * Top-N most important events for this section. Full event lists can be
+   * fetched paginated via GetAnalysisDetailsRequest.
+   *
+   * @generated from field: repeated tether.viewer.v1.AnalysisEvent top_events = 4;
+   */
+  topEvents: AnalysisEvent[];
+
+  /**
+   * @generated from field: repeated string recommendations = 5;
+   */
+  recommendations: string[];
+
+  /**
+   * 0-100 overall score for this section (higher is better)
+   *
+   * @generated from field: double score = 6;
+   */
+  score: number;
+
+  /**
+   * Total number of events available on the server for this section
+   *
+   * @generated from field: uint32 total_event_count = 7;
+   */
+  totalEventCount: number;
+
+  /**
+   * True if more events exist than were sent in top_events
+   *
+   * @generated from field: bool has_more_events = 8;
+   */
+  hasMoreEvents: boolean;
+};
+
+/**
+ * Describes the message tether.viewer.v1.AnalysisSection.
+ * Use `create(AnalysisSectionSchema)` to create a new message.
+ */
+export const AnalysisSectionSchema: GenMessage<AnalysisSection> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 39);
+
+/**
+ * @generated from message tether.viewer.v1.GetAnalysisRequest
+ */
+export type GetAnalysisRequest = Message<"tether.viewer.v1.GetAnalysisRequest"> & {
+  /**
+   * @generated from field: string job_id = 1;
+   */
+  jobId: string;
+
+  /**
+   * Bit mask of analyzers to run. 0 = all. Bit 0 = machine_limit, 1 = curvature,
+   * 2 = arc, 3 = modal, 4 = topology, 5 = efficiency, 6 = retraction,
+   * 7 = acceleration, 8 = coordinate, 9 = continuity.
+   *
+   * @generated from field: uint32 analyzer_mask = 2;
+   */
+  analyzerMask: number;
+
+  /**
+   * Max number of top events per section to include in the stream
+   *
+   * @generated from field: uint32 top_event_limit = 3;
+   */
+  topEventLimit: number;
+
+  /**
+   * "summary" = only section scores + counts, "standard" = metrics + top events,
+   * "full" = all events (not recommended for huge files)
+   *
+   * @generated from field: string detail_level = 4;
+   */
+  detailLevel: string;
+
+  /**
+   * If true, server streams one section at a time. Recommended for huge files.
+   *
+   * @generated from field: bool stream = 5;
+   */
+  stream: boolean;
+
+  /**
+   * Hard cap on total events across all sections when detail_level != "full"
+   *
+   * @generated from field: uint32 max_event_limit = 6;
+   */
+  maxEventLimit: number;
+};
+
+/**
+ * Describes the message tether.viewer.v1.GetAnalysisRequest.
+ * Use `create(GetAnalysisRequestSchema)` to create a new message.
+ */
+export const GetAnalysisRequestSchema: GenMessage<GetAnalysisRequest> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 40);
+
+/**
+ * @generated from message tether.viewer.v1.GetAnalysisDetailsRequest
+ */
+export type GetAnalysisDetailsRequest = Message<"tether.viewer.v1.GetAnalysisDetailsRequest"> & {
+  /**
+   * @generated from field: string job_id = 1;
+   */
+  jobId: string;
+
+  /**
+   * @generated from field: string section_name = 2;
+   */
+  sectionName: string;
+
+  /**
+   * empty = all event types
+   *
+   * @generated from field: string event_type = 3;
+   */
+  eventType: string;
+
+  /**
+   * @generated from field: uint32 offset = 4;
+   */
+  offset: number;
+
+  /**
+   * @generated from field: uint32 limit = 5;
+   */
+  limit: number;
+};
+
+/**
+ * Describes the message tether.viewer.v1.GetAnalysisDetailsRequest.
+ * Use `create(GetAnalysisDetailsRequestSchema)` to create a new message.
+ */
+export const GetAnalysisDetailsRequestSchema: GenMessage<GetAnalysisDetailsRequest> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 41);
+
+/**
+ * @generated from message tether.viewer.v1.AnalysisDetailsResponse
+ */
+export type AnalysisDetailsResponse = Message<"tether.viewer.v1.AnalysisDetailsResponse"> & {
+  /**
+   * @generated from field: string section_name = 1;
+   */
+  sectionName: string;
+
+  /**
+   * @generated from field: repeated tether.viewer.v1.AnalysisEvent events = 2;
+   */
+  events: AnalysisEvent[];
+
+  /**
+   * @generated from field: uint32 total = 3;
+   */
+  total: number;
+
+  /**
+   * @generated from field: bool has_more = 4;
+   */
+  hasMore: boolean;
+};
+
+/**
+ * Describes the message tether.viewer.v1.AnalysisDetailsResponse.
+ * Use `create(AnalysisDetailsResponseSchema)` to create a new message.
+ */
+export const AnalysisDetailsResponseSchema: GenMessage<AnalysisDetailsResponse> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 42);
+
+/**
+ * @generated from message tether.viewer.v1.AnalysisProgressUpdate
+ */
+export type AnalysisProgressUpdate = Message<"tether.viewer.v1.AnalysisProgressUpdate"> & {
+  /**
+   * section currently being processed
+   *
+   * @generated from field: string section_name = 1;
+   */
+  sectionName: string;
+
+  /**
+   * 0-100 overall progress
+   *
+   * @generated from field: uint32 progress_percent = 2;
+   */
+  progressPercent: number;
+
+  /**
+   * e.g. "starting", "running", "section_complete", "complete"
+   *
+   * @generated from field: string status = 3;
+   */
+  status: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.AnalysisProgressUpdate.
+ * Use `create(AnalysisProgressUpdateSchema)` to create a new message.
+ */
+export const AnalysisProgressUpdateSchema: GenMessage<AnalysisProgressUpdate> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 43);
+
+/**
+ * @generated from message tether.viewer.v1.AnalysisResultResponse
+ */
+export type AnalysisResultResponse = Message<"tether.viewer.v1.AnalysisResultResponse"> & {
+  /**
+   * @generated from oneof tether.viewer.v1.AnalysisResultResponse.payload
+   */
+  payload: {
+    /**
+     * @generated from field: tether.viewer.v1.AnalysisProgressUpdate progress = 1;
+     */
+    value: AnalysisProgressUpdate;
+    case: "progress";
+  } | {
+    /**
+     * @generated from field: tether.viewer.v1.AnalysisSection section = 2;
+     */
+    value: AnalysisSection;
+    case: "section";
+  } | {
+    /**
+     * @generated from field: tether.viewer.v1.AnalysisDetailsResponse details = 3;
+     */
+    value: AnalysisDetailsResponse;
+    case: "details";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * True for the final message in a stream or for a unary response
+   *
+   * @generated from field: bool complete = 4;
+   */
+  complete: boolean;
+
+  /**
+   * When non-streaming, all completed sections are returned in a single message
+   *
+   * @generated from field: repeated tether.viewer.v1.AnalysisSection sections = 5;
+   */
+  sections: AnalysisSection[];
+
+  /**
+   * Sub-section / per-message error; the top-level TetherViewerResponse also
+   * carries an error_message field for stream-level errors.
+   *
+   * @generated from field: string error_message = 6;
+   */
+  errorMessage: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.AnalysisResultResponse.
+ * Use `create(AnalysisResultResponseSchema)` to create a new message.
+ */
+export const AnalysisResultResponseSchema: GenMessage<AnalysisResultResponse> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 44);
+
+/**
+ * @generated from enum tether.viewer.v1.AnalysisSeverity
+ */
+export enum AnalysisSeverity {
+  /**
+   * @generated from enum value: ANALYSIS_SEVERITY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ANALYSIS_SEVERITY_INFO = 1;
+   */
+  INFO = 1,
+
+  /**
+   * @generated from enum value: ANALYSIS_SEVERITY_LOW = 2;
+   */
+  LOW = 2,
+
+  /**
+   * @generated from enum value: ANALYSIS_SEVERITY_MEDIUM = 3;
+   */
+  MEDIUM = 3,
+
+  /**
+   * @generated from enum value: ANALYSIS_SEVERITY_HIGH = 4;
+   */
+  HIGH = 4,
+}
+
+/**
+ * Describes the enum tether.viewer.v1.AnalysisSeverity.
+ */
+export const AnalysisSeveritySchema: GenEnum<AnalysisSeverity> = /*@__PURE__*/
+  enumDesc(file_tether_viewer, 0);
 

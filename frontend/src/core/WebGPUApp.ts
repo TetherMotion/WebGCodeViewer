@@ -38,6 +38,7 @@ import { RpcClient } from './RpcClient';
 import { ColorMap } from "@tether/viewer-core";
 import { parseTTHR, TTHRData, extractZLayer } from "@tether/viewer-core";
 import { parseNBP, NBPData } from "@tether/viewer-core";
+import { type AnalysisSection } from "@tether/viewer-core/generated";
 import { parseTSSP, StateProfileData, stateProfileToTrnp } from "@tether/viewer-core";
 import { parseTRNP, TRNPData, parseTRNPPa, TRNPPaData, PaAlgorithmEntry } from "@tether/viewer-core";
 import { ToolpathRenderer, ColorAttribute } from '../renderers/ToolpathRenderer';
@@ -149,6 +150,8 @@ export class WebGPUApp {
   private positionOverlay: PositionOverlay | null = null;
   private comparisonPanel: ComparisonPanel | null = null;
   private diffPanel: DiffPanel | null = null;
+  private remoteAnalysisSections: AnalysisSection[] = [];
+  private remoteAnalysisAbort: AbortController | null = null;
   // Advanced visualization state
   private overhangHighlight = false;
   private zSeamVisible = false;
@@ -1829,6 +1832,11 @@ export class WebGPUApp {
     this.fullData = null;
     this.zLayers = [];
     this.miniplotData = null;
+    this.remoteAnalysisSections = [];
+    if (this.remoteAnalysisAbort) {
+      this.remoteAnalysisAbort.abort();
+      this.remoteAnalysisAbort = null;
+    }
 
     // Hide PA plot panel
     if (this.plotContainer) {
@@ -1937,6 +1945,10 @@ export class WebGPUApp {
     // Load miniplot speed data (always fetch — needed for analysis even if miniplot is hidden)
     this.fetchMiniplotData(jobId);
 
+    // Start streaming C++ G-code analysis in the background. This is decoupled
+    // from trajectory processing so it can run heavy-duty checks in parallel.
+    this.startRemoteAnalysis(jobId);
+
     // Reset playback
     this.playProgress = 1.0;
     this.playing = false;
@@ -1975,6 +1987,44 @@ export class WebGPUApp {
       console.info(`Deferred camera params applied: angle=${this.pendingCamParams.angle}, elev=${this.pendingCamParams.elevation}, dist=${this.pendingCamParams.distance}`);
       this.pendingCamParams = null;
     }
+  }
+
+  /**
+   * Stream server-side G-code analysis from the C++ Tether analyzers.
+   * Collects sections as they arrive and refreshes the info panel.
+   */
+  private startRemoteAnalysis(jobId: string): void {
+    const abort = new AbortController();
+    this.remoteAnalysisAbort = abort;
+
+    (async () => {
+      try {
+        for await (const msg of this.rpcClient.streamAnalysis(jobId, { detailLevel: 'standard', topEventLimit: 32 }, abort.signal)) {
+          const payload = msg.payload;
+          if (payload.case === 'section') {
+            this.remoteAnalysisSections.push(payload.value);
+            this.updateInfoPanel();
+          } else if (msg.sections.length > 0) {
+            this.remoteAnalysisSections.push(...msg.sections);
+            this.updateInfoPanel();
+          } else if (payload.case === 'progress') {
+            console.info(`[RemoteAnalysis] ${payload.value.status} ${payload.value.progressPercent}%`);
+          }
+
+          if (msg.complete) break;
+        }
+      } catch (e) {
+        if (abort.signal.aborted) {
+          console.info('[RemoteAnalysis] cancelled');
+        } else {
+          console.error('[RemoteAnalysis] failed:', e);
+        }
+      } finally {
+        if (this.remoteAnalysisAbort === abort) {
+          this.remoteAnalysisAbort = null;
+        }
+      }
+    })();
   }
 
   /**
@@ -2260,6 +2310,7 @@ export class WebGPUApp {
       pieceCount: this.currentNBP?.pieces.length ?? 0,
       gcodeLines: gcodeLines.length > 0 ? gcodeLines : undefined,
       materialUsage,
+      remoteSections: this.remoteAnalysisSections,
     });
   }
 

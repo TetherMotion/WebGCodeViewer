@@ -50,6 +50,10 @@ message TetherViewerRequest {
     GetZLayerBinaryRequest get_z_layer_binary = 15;
     GetZLayerRangeBinaryRequest get_z_layer_range_binary = 16;
 
+    // Server-side G-code analysis (C++ Tether analyzers)
+    GetAnalysisRequest get_analysis = 19;
+    GetAnalysisDetailsRequest get_analysis_details = 20;
+
     // Server info
     google.protobuf.Empty ping = 17;
     google.protobuf.Empty get_version = 18;
@@ -90,6 +94,9 @@ message TetherViewerResponse {
     BinaryDataResponse get_z_layer_range_binary = 16;
     PingResponse ping = 17;
     VersionResponse get_version = 18;
+
+    // Server-side G-code analysis results
+    AnalysisResultResponse analysis_result = 19;
   }
 }
 
@@ -300,4 +307,136 @@ message PingResponse {
 message VersionResponse {
   string version = 1;
   string protocol_version = 2;
+}
+
+// ============================================================================
+// Server-side G-code analysis messages
+// ============================================================================
+
+enum AnalysisSeverity {
+  ANALYSIS_SEVERITY_UNSPECIFIED = 0;
+  ANALYSIS_SEVERITY_INFO = 1;
+  ANALYSIS_SEVERITY_LOW = 2;
+  ANALYSIS_SEVERITY_MEDIUM = 3;
+  ANALYSIS_SEVERITY_HIGH = 4;
+}
+
+message AnalysisMetric {
+  string key = 1;
+  oneof value {
+    double double_value = 2;
+    int64 int64_value = 3;
+    bool bool_value = 4;
+    string string_value = 5;
+  }
+}
+
+message AnalysisEvent {
+  // Stable identifier for the event class / location, e.g. "retraction:12345"
+  string id = 1;
+
+  // Source G-code line number (1-based, 0 if unknown)
+  int32 line_number = 2;
+
+  // Event type, e.g. "limit_violation", "sharp_turn", "retraction", "arc_candidate"
+  string event_type = 3;
+
+  AnalysisSeverity severity = 4;
+
+  // Human-readable description
+  string message = 5;
+
+  // Primary numeric metric associated with the event
+  double metric_value = 6;
+
+  // Optional additional fields as a JSON string for forward extensibility
+  string details_json = 7;
+}
+
+message AnalysisSection {
+  // Machine-readable section id, e.g. "machine_limit", "retraction", "curvature"
+  string section_name = 1;
+
+  // Human-readable display name
+  string display_name = 2;
+
+  // Scalar metrics for this section. New analyzers can emit arbitrary
+  // key/value pairs without changing the schema.
+  repeated AnalysisMetric metrics = 3;
+
+  // Top-N most important events for this section. Full event lists can be
+  // fetched paginated via GetAnalysisDetailsRequest.
+  repeated AnalysisEvent top_events = 4;
+
+  repeated string recommendations = 5;
+
+  // 0-100 overall score for this section (higher is better)
+  double score = 6;
+
+  // Total number of events available on the server for this section
+  uint32 total_event_count = 7;
+
+  // True if more events exist than were sent in top_events
+  bool has_more_events = 8;
+}
+
+message GetAnalysisRequest {
+  string job_id = 1;
+
+  // Bit mask of analyzers to run. 0 = all. Bit 0 = machine_limit, 1 = curvature,
+  // 2 = arc, 3 = modal, 4 = topology, 5 = efficiency, 6 = retraction,
+  // 7 = acceleration, 8 = coordinate, 9 = continuity.
+  uint32 analyzer_mask = 2;
+
+  // Max number of top events per section to include in the stream
+  uint32 top_event_limit = 3;
+
+  // "summary" = only section scores + counts, "standard" = metrics + top events,
+  // "full" = all events (not recommended for huge files)
+  string detail_level = 4;
+
+  // If true, server streams one section at a time. Recommended for huge files.
+  bool stream = 5;
+
+  // Hard cap on total events across all sections when detail_level != "full"
+  uint32 max_event_limit = 6;
+}
+
+message GetAnalysisDetailsRequest {
+  string job_id = 1;
+  string section_name = 2;
+  string event_type = 3;  // empty = all event types
+  uint32 offset = 4;
+  uint32 limit = 5;
+}
+
+message AnalysisDetailsResponse {
+  string section_name = 1;
+  repeated AnalysisEvent events = 2;
+  uint32 total = 3;
+  bool has_more = 4;
+}
+
+message AnalysisProgressUpdate {
+  string section_name = 1;      // section currently being processed
+  uint32 progress_percent = 2;  // 0-100 overall progress
+  string status = 3;            // e.g. "starting", "running", "section_complete", "complete"
+}
+
+message AnalysisResultResponse {
+  oneof payload {
+    AnalysisProgressUpdate progress = 1;
+    AnalysisSection section = 2;
+    AnalysisDetailsResponse details = 3;
+  }
+
+  // True for the final message in a stream or for a unary response
+  bool complete = 4;
+
+  // When non-streaming, all completed sections are returned in a single message
+  repeated AnalysisSection sections = 5;
+
+  // Sub-section / per-message error; the top-level TetherViewerResponse also
+  // carries an error_message field for stream-level errors.
+  string error_message = 6;
 }

@@ -8,6 +8,7 @@
 
 import { GcodeMetadata, computeSpeedStats, computeLayerTimes, formatTime } from "./GcodeMetadata";
 import { MiniplotData } from "@tether/viewer-core";
+import { type AnalysisSection } from "@tether/viewer-core/generated";
 import {
   detectStringingRisk,
   detectLayerTimeWarnings,
@@ -337,8 +338,9 @@ export class InfoPanel {
     pieceCount: number;
     gcodeLines?: string[];
     materialUsage?: { extrusionLength: number; volume: number; weight: number };
+    remoteSections?: AnalysisSection[];
   }): void {
-    const { metadata, miniplotData, zLayers, totalDuration, pathLength, bounds, sampleCount, pieceCount, gcodeLines, materialUsage } = data;
+    const { metadata, miniplotData, zLayers, totalDuration, pathLength, bounds, sampleCount, pieceCount, gcodeLines, materialUsage, remoteSections } = data;
 
     const speedStats = miniplotData
       ? computeSpeedStats(miniplotData.segments)
@@ -3035,6 +3037,41 @@ export class InfoPanel {
         html += `<div class="info-row"><span>Safety</span><span>${machineBoundary.safetyScore.toFixed(0)}/100</span></div>`;
         html += '</div>';
       }
+    }
+
+    // ── Server-side analysis (C++ Tether analyzers) ──
+    if (remoteSections && remoteSections.length > 0) {
+      html += '<div class="info-section"><h4>Server Analysis</h4>';
+      for (const section of remoteSections) {
+        const score = Number.isFinite(section.score) ? section.score.toFixed(0) : '–';
+        html += `<details class="info-subsection">`;
+        html += `<summary><strong>${section.displayName || section.sectionName}</strong> <span style="margin-left:auto">${score}/100</span></summary>`;
+        if (section.metrics && section.metrics.length > 0) {
+          for (const metric of section.metrics) {
+            let valueText: string;
+            const v = metric.value;
+            switch (v.case) {
+              case 'doubleValue':
+                valueText = v.value.toFixed(2).replace(/\.?0+$/, '') || '0';
+                break;
+              case 'int64Value':
+                valueText = String(v.value);
+                break;
+              case 'boolValue':
+                valueText = v.value ? 'Yes' : 'No';
+                break;
+              case 'stringValue':
+                valueText = String(v.value);
+                break;
+              default:
+                valueText = '–';
+            }
+            html += `<div class="info-row"><span>${metric.key}</span><span>${valueText}</span></div>`;
+          }
+        }
+        html += '</details>';
+      }
+      html += '</div>';
     }
 
     this.contentEl.innerHTML = html;

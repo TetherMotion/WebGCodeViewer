@@ -30,6 +30,8 @@ import {
   GetZLayersResponseSchema,
   GetZLayerBinaryRequestSchema,
   GetZLayerRangeBinaryRequestSchema,
+  GetAnalysisRequestSchema,
+  GetAnalysisDetailsRequestSchema,
   PingResponseSchema,
   VersionResponseSchema,
   type UploadGcodeResponse,
@@ -44,6 +46,8 @@ import {
   type GetZLayersResponse,
   type PingResponse,
   type VersionResponse,
+  type AnalysisResultResponse,
+  type AnalysisDetailsResponse,
 } from "@tether/viewer-core/generated";
 
 export interface ProcessJobOptions {
@@ -334,6 +338,36 @@ export class RpcClient {
 
   async getVersion(): Promise<VersionResponse> {
     return this.transport.unary('getVersion', create(EmptySchema, {}));
+  }
+
+  /**
+   * Stream server-side G-code analysis results from the C++ Tether analyzers.
+   * Yields progress updates and section results as they are computed.
+   */
+  async *streamAnalysis(
+    jobId: string,
+    options: {
+      analyzerMask?: number;
+      topEventLimit?: number;
+      detailLevel?: 'summary' | 'standard' | 'full';
+      maxEventLimit?: number;
+    } = {},
+    signal?: AbortSignal,
+  ): AsyncGenerator<AnalysisResultResponse, void, unknown> {
+    for await (const msg of this.transport.serverStream(
+      'getAnalysis',
+      create(GetAnalysisRequestSchema, {
+        jobId,
+        analyzerMask: options.analyzerMask ?? 0,
+        topEventLimit: options.topEventLimit ?? 64,
+        detailLevel: options.detailLevel ?? 'standard',
+        maxEventLimit: options.maxEventLimit ?? 1024,
+        stream: true,
+      }),
+      signal,
+    )) {
+      yield msg as AnalysisResultResponse;
+    }
   }
 
   close(): void {

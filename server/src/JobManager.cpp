@@ -570,4 +570,24 @@ void JobManager::processWorker(std::shared_ptr<Job> job) {
     }
 }
 
+std::vector<std::string> JobManager::getGcodeLines(const std::string& jobId) const {
+    auto job = getJob(jobId);
+    if (!job || job->gcodeText.empty()) return {};
+
+    std::vector<std::string> lines;
+    lines.reserve(256);
+    std::string text = job->gcodeText;
+
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t end = text.find('\n', start);
+        size_t len = (end == std::string::npos) ? text.size() - start : end - start;
+        // Trim trailing \r for CRLF files
+        if (len > 0 && text[start + len - 1] == '\r') --len;
+        lines.emplace_back(text.substr(start, len));
+        start = (end == std::string::npos) ? text.size() : end + 1;
+    }
+    return lines;
+}
+
 } // namespace tether::web

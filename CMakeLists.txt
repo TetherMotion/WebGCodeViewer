@@ -101,6 +101,14 @@ add_custom_command(
 file(GLOB WGV_SERVER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/server/src/*.cpp"
 )
+# Tether's IO Registry is needed by AnalysisExposer. If tether_io_protocol is
+# not built, compile the Registry directly into the server so the signal API
+# is available without pulling in the full IO protocol stack.
+if(NOT TARGET tether_io_protocol)
+    list(APPEND WGV_SERVER_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/Tether/src/io/Registry.cpp"
+    )
+endif()
 list(APPEND WGV_SERVER_SOURCES ${WGV_PROTO_CC})
 
 set(WGV_SERVER_TARGETS "")
@@ -142,6 +150,12 @@ foreach(_tgt ${WGV_SERVER_TARGETS})
         target_link_libraries(${_tgt} PUBLIC tether_controls_shared)
     elseif(TARGET tether_controls_static)
         target_link_libraries(${_tgt} PUBLIC tether_controls_static)
+    endif()
+
+    if(TARGET tether_analysis_shared)
+        target_link_libraries(${_tgt} PUBLIC tether_analysis_shared)
+    elseif(TARGET tether_analysis_static)
+        target_link_libraries(${_tgt} PUBLIC tether_analysis_static)
     endif()
 
     # Link against Drogon + Protobuf

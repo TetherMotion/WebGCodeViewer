@@ -11,6 +11,10 @@
 #include "tether/web/WebServerConfig.hpp"
 #include "tether/web/GCodeProcessor.hpp"
 
+namespace tether::viewer::v1 {
+class AnalysisResultResponse;
+}
+
 #include <drogon/WebSocketConnection.h>
 
 #include <atomic>
@@ -45,7 +49,7 @@ private:
     // Per-connection state
     struct ConnectionState {
         std::string authToken;
-        std::map<uint32_t, std::atomic<bool>> activeCalls;
+        std::map<uint32_t, std::shared_ptr<std::atomic<bool>>> activeCalls;
     };
 
     std::mutex stateMutex_;
@@ -65,6 +69,11 @@ private:
                            uint32_t callId, uint32_t errorCode,
                            const std::string& message);
 
+    void sendAnalysisResult(const drogon::WebSocketConnectionPtr& conn,
+                            uint32_t callId,
+                            const ::tether::viewer::v1::AnalysisResultResponse& result,
+                            bool done);
+
     // Individual RPC handlers
     std::string handleUploadGcode(const std::string& requestBytes);
     std::string handleProcessJob(const std::string& requestBytes);
@@ -80,6 +89,10 @@ private:
     std::string handleGetZLayerRangeBinary(const std::string& requestBytes);
     std::string handlePing(const std::string& requestBytes);
     std::string handleGetVersion(const std::string& requestBytes);
+    std::string handleGetAnalysis(const std::string& requestBytes,
+                                  const drogon::WebSocketConnectionPtr& conn,
+                                  uint32_t callId,
+                                  ConnectionState& state);
 
     // Z-layer computation
     struct ZLayer {

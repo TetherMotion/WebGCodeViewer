@@ -3,14 +3,20 @@
 
 #include "tether/web/ViewerRpcHandler.hpp"
 #include "tether/web/TrajectorySerializer.hpp"
+#include "AnalysisSerializer.hpp"
 
 #include "tether_viewer.pb.h"
 
+#include "tether/analysis/AnalysisExposer.hpp"
+#include "tether/io/Registry.hpp"
+
 #include <drogon/WebSocketConnection.h>
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <sstream>
+#include <thread>
 
 namespace tether::web {
 
@@ -71,8 +77,8 @@ void ViewerRpcHandler::handleEnvelope(const drogon::WebSocketConnectionPtr& conn
         case TetherViewerEnvelope::kCancel: {
             uint32_t callId = envelope.cancel().call_id();
             auto it = state.activeCalls.find(callId);
-            if (it != state.activeCalls.end()) {
-                it->second = false;
+            if (it != state.activeCalls.end() && it->second) {
+                it->second->store(false);
             }
             return;
         }
@@ -90,6 +96,7 @@ void ViewerRpcHandler::handleEnvelope(const drogon::WebSocketConnectionPtr& conn
     // Dispatch based on request case
     std::string responseBytes;
     bool hasResponse = true;
+    bool streaming = false;
 
     try {
         switch (requestCase) {
@@ -149,6 +156,11 @@ void ViewerRpcHandler::handleEnvelope(const drogon::WebSocketConnectionPtr& conn
                 responseBytes = handleGetZLayerRangeBinary(req.get_z_layer_range_binary().SerializeAsString());
                 requestCaseStr = "get_z_layer_range_binary";
                 break;
+            case TetherViewerRequest::kGetAnalysis:
+                responseBytes = handleGetAnalysis(req.get_analysis().SerializeAsString(), conn, callId, state);
+                requestCaseStr = "get_analysis";
+                streaming = true;
+                break;
             default:
                 sendErrorResponse(conn, callId, RPC_NOT_FOUND, "No handler for request case");
                 return;
@@ -158,7 +170,7 @@ void ViewerRpcHandler::handleEnvelope(const drogon::WebSocketConnectionPtr& conn
         return;
     }
 
-    sendResponse(conn, callId, requestCaseStr, responseBytes, true, hasResponse);
+    sendResponse(conn, callId, requestCaseStr, responseBytes, !streaming, hasResponse);
 }
 
 void ViewerRpcHandler::sendResponse(const drogon::WebSocketConnectionPtr& conn,
@@ -201,6 +213,8 @@ void ViewerRpcHandler::sendResponse(const drogon::WebSocketConnectionPtr& conn,
             parsed = response->mutable_ping()->ParseFromString(responseBytes);
         } else if (requestCase == "get_version") {
             parsed = response->mutable_get_version()->ParseFromString(responseBytes);
+        } else if (requestCase == "get_analysis") {
+            parsed = response->mutable_analysis_result()->ParseFromString(responseBytes);
         }
 
         if (!parsed) {
@@ -523,6 +537,106 @@ std::string ViewerRpcHandler::handleGetVersion(const std::string& /*requestBytes
     resp.set_version("1.0.0");
     resp.set_protocol_version("v1");
     return resp.SerializeAsString();
+}
+
+// ── Analysis helpers ─────────────────────────────────────────────────────────
+
+void ViewerRpcHandler::sendAnalysisResult(const drogon::WebSocketConnectionPtr& conn,
+                                          uint32_t callId,
+                                          const ::tether::viewer::v1::AnalysisResultResponse& result,
+                                          bool done) {
+    TetherViewerEnvelope envelope;
+    auto* response = envelope.mutable_response();
+    response->set_call_id(callId);
+    response->set_done(done);
+    *response->mutable_analysis_result() = result;
+
+    std::string serialized = envelope.SerializeAsString();
+    conn->send(serialized, drogon::WebSocketMessageType::Binary);
+}
+
+std::string ViewerRpcHandler::handleGetAnalysis(const std::string& requestBytes,
+                                                const drogon::WebSocketConnectionPtr& conn,
+                                                uint32_t callId,
+                                                ConnectionState& state) {
+    using namespace ::tether::viewer::v1;
+
+    GetAnalysisRequest req;
+    if (!req.ParseFromString(requestBytes)) {
+        throw std::runtime_error("Failed to parse GetAnalysisRequest");
+    }
+
+    if (jobManager_->getGcodeLines(req.job_id()).empty()) {
+        throw std::runtime_error("Job not found or has no G-code");
+    }
+
+    // Cancellation token for this call; also stored in per-connection state.
+    auto cancelToken = std::make_shared<std::atomic<bool>>(true);
+    state.activeCalls[callId] = cancelToken;
+
+    // Send an immediate progress message so the client knows the analysis started.
+    AnalysisResultResponse startProgress;
+    startProgress.set_complete(false);
+    auto* progress = startProgress.mutable_progress();
+    progress->set_status("starting");
+    progress->set_progress_percent(0);
+
+    // Start the heavy lifting on a background thread. The initial progress is
+    // returned to handleEnvelope and sent with done=false, which keeps the
+    // WebSocket call open for the worker to stream the final result.
+    std::thread worker([this, conn, callId, cancelToken, req = std::move(req)]() mutable {
+        try {
+            auto gcodeLines = jobManager_->getGcodeLines(req.job_id());
+            if (gcodeLines.empty()) {
+                AnalysisResultResponse err;
+                err.set_complete(true);
+                err.set_error_message("Job not found or has no G-code");
+                sendAnalysisResult(conn, callId, err, true);
+                return;
+            }
+
+            tether::analysis::AnalysisExposer exposer;
+            tether::io::Registry registry;
+            exposer.expose(registry, tether::analysis::ModuleIdAnalysis);
+
+            if (!cancelToken->load()) {
+                AnalysisResultResponse err;
+                err.set_complete(true);
+                err.set_error_message("Cancelled");
+                sendAnalysisResult(conn, callId, err, true);
+                return;
+            }
+
+            exposer.analyze(gcodeLines);
+
+            if (!cancelToken->load()) {
+                AnalysisResultResponse err;
+                err.set_complete(true);
+                err.set_error_message("Cancelled");
+                sendAnalysisResult(conn, callId, err, true);
+                return;
+            }
+
+            auto response = buildAnalysisResponse(registry);
+
+            // Final progress + sections. The `complete` flag tells the client this
+            // is the last message in the stream.
+            auto* finalProgress = response.mutable_progress();
+            finalProgress->set_status("complete");
+            finalProgress->set_progress_percent(100);
+            response.set_complete(true);
+
+            sendAnalysisResult(conn, callId, response, true);
+        } catch (const std::exception& e) {
+            AnalysisResultResponse err;
+            err.set_complete(true);
+            err.set_error_message(std::string("Analysis failed: ") + e.what());
+            sendAnalysisResult(conn, callId, err, true);
+        }
+    });
+    worker.detach();
+
+    return startProgress.SerializeAsString();
 }
 
 // ── Z-layer computation ──────────────────────────────────────────────────────

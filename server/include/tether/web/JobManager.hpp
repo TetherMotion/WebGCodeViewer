@@ -154,6 +154,10 @@ public:
     /// @brief Get number of active jobs.
     size_t jobCount() const;
 
+    /// @brief Get the original G-code text split into lines.
+    /// @return Empty vector if job not found or gcode is empty.
+    std::vector<std::string> getGcodeLines(const std::string& jobId) const;
+
 private:
     /// @brief Generate a unique job ID.
     std::string generateId() const;
