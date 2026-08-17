@@ -590,4 +590,10 @@ std::vector<std::string> JobManager::getGcodeLines(const std::string& jobId) con
     return lines;
 }
 
+std::string JobManager::getGcodeText(const std::string& jobId) const {
+    auto job = getJob(jobId);
+    if (!job) return "";
+    return job->gcodeText;
+}
+
 } // namespace tether::web

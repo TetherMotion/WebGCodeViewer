@@ -1,6 +1,13 @@
 import { InfoPanel } from '@tether/gcode-analyzer';
-import { parseFeatureTypes, getFeatureTypeAtLine, FeatureTypeSegment } from '@tether/gcode-analyzer/GcodeAnalysis';
-import { parseGcodeMetadata, GcodeMetadata, computeMaterialUsage, computeSpeedStats, computeLayerTimes, formatTime, getMachineStateAtLine } from '@tether/gcode-analyzer/GcodeMetadata';
+import { formatTime } from '@tether/gcode-analyzer/GcodeMetadata';
+import {
+  type GetGcodeMetadataResponse,
+  type GetFeatureTypesResponse,
+  type GetProbeEventsResponse,
+  type GetDrillingCyclesResponse,
+  type GetJobSummaryResponse,
+  type FeatureTypeSegment,
+} from '@tether/viewer-core/generated';
 /**
  * @file WebGPUApp.ts
  * @brief Main WebGPU application orchestrating renderers, camera, and UI.
@@ -134,8 +141,16 @@ export class WebGPUApp {
   private bridgesVisible = false;
   private supportVisible = false;
   private bookmarkManager: BookmarkManager | null = null;
-  private gcodeMetadata: GcodeMetadata | null = null;
+  private gcodeMetadata: GetGcodeMetadataResponse | null = null;
+  private jobSummary: GetJobSummaryResponse | null = null;
+  private probeEvents: GetProbeEventsResponse | null = null;
+  private drillingCycles: GetDrillingCyclesResponse | null = null;
   private totalDuration: number = 0;
+
+  // Cached block state maps derived from server gcodeMetadata
+  private blockFeedRates: Map<number, number> = new Map();
+  private blockTools: Map<number, number> = new Map();
+  private blockSpindleRpms: Map<number, number> = new Map();
 
   // Feature #66: Theme state
   private lightTheme = false;
@@ -1106,14 +1121,14 @@ export class WebGPUApp {
         const pz = positions[bestIdx * axes + 2];
         let feedRate: number | undefined;
         let toolNumber: number | undefined;
-        let machineState: ReturnType<typeof getMachineStateAtLine> | undefined;
+        let machineState: ReturnType<typeof this.getMachineStateAtLine> | undefined;
         if (this.gcodeMetadata) {
-          feedRate = this.gcodeMetadata.blockFeedRates.get(blockIdx);
-          toolNumber = this.gcodeMetadata.blockTools.get(blockIdx);
+          feedRate = this.blockFeedRates.get(blockIdx);
+          toolNumber = this.blockTools.get(blockIdx);
           // Find the line number for this block
           const block = this.currentNBP?.blocks.find(b => b.blockIndex === blockIdx);
           if (block) {
-            machineState = getMachineStateAtLine(this.gcodeMetadata, block.lineNumber);
+            machineState = this.getMachineStateAtLine(this.gcodeMetadata, block.lineNumber);
           }
         }
         this.positionOverlay.update({
@@ -1274,21 +1289,21 @@ export class WebGPUApp {
       // Compute machine state from metadata for current progress
       let feedRate: number | undefined;
       let toolNumber: number | undefined;
-      let machineState: ReturnType<typeof getMachineStateAtLine> | undefined;
+      let machineState: ReturnType<typeof this.getMachineStateAtLine> | undefined;
       if (this.gcodeMetadata && this.gcodeViewer) {
         const blockCount = this.currentNBP?.pieces.length ?? 0;
         if (blockCount > 0) {
           const estBlock = Math.floor(this.playProgress * blockCount);
-          feedRate = this.gcodeMetadata.blockFeedRates.get(estBlock);
-          toolNumber = this.gcodeMetadata.blockTools.get(estBlock);
+          feedRate = this.blockFeedRates.get(estBlock);
+          toolNumber = this.blockTools.get(estBlock);
         }
         const lineCount = this.gcodeViewer.allLines.length;
         if (lineCount > 0) {
           const estLine = Math.floor(this.playProgress * lineCount);
-          machineState = getMachineStateAtLine(this.gcodeMetadata, estLine);
+          machineState = this.getMachineStateAtLine(this.gcodeMetadata, estLine);
           // Update current feature type from parsed segments
           if (this.featureTypeSegments.length > 0) {
-            this.currentFeatureType = getFeatureTypeAtLine(this.featureTypeSegments, estLine) ?? undefined;
+            this.currentFeatureType = this.getFeatureTypeAtLine(estLine);
           }
         }
       }
@@ -1944,7 +1959,7 @@ export class WebGPUApp {
     this.controlPanel.setRealtimeMode();
 
     // Parse G-code metadata for analysis features
-    this.parseMetadataAndUpdate();
+    await this.parseMetadataAndUpdate();
 
     // Update info panel if visible
     this.updateInfoPanel();
@@ -2101,12 +2116,14 @@ export class WebGPUApp {
 
   /**
    * Filter the toolpath to show only pieces cut by a specific tool.
-   * Uses gcodeMetadata.blockTools to map block indices to tool numbers.
+   * Uses cached blockTools map derived from server gcodeMetadata.
    */
   /** Show probe point markers on the 3D view */
   private showProbeMarkers(): void {
-    // Client-side advanced G-code analysis removed; placeholder for future remote support
-    return;
+    if (!this.gcodeViewer || !this.probeEvents) return;
+    for (const e of this.probeEvents.events) {
+      this.gcodeViewer.highlightLine(e.lineNumber);
+    }
   }
 
   /** Hide probe point markers */
@@ -2117,8 +2134,10 @@ export class WebGPUApp {
 
   /** Show drilling cycle markers on the 3D view */
   private showDrillMarkers(): void {
-    // Client-side advanced G-code analysis removed; placeholder for future remote support
-    return;
+    if (!this.gcodeViewer || !this.drillingCycles) return;
+    for (const c of this.drillingCycles.cycles) {
+      this.gcodeViewer.highlightLine(c.lineNumber);
+    }
   }
 
   /** Hide drilling cycle markers */
@@ -2155,7 +2174,7 @@ export class WebGPUApp {
 
     // Filter NBP pieces to only those blocks with the selected tool
     const filteredPieces = this.currentNBP.pieces.filter((_, i) => {
-      return this.gcodeMetadata!.blockTools.get(i) === toolNumber;
+      return this.blockTools.get(i) === toolNumber;
     });
 
     if (filteredPieces.length === 0) {
@@ -2173,71 +2192,165 @@ export class WebGPUApp {
   }
 
   /**
-   * Parse G-code metadata from the loaded G-code text and update
-   * tool change markers, feed rates, and other analysis features.
+   * Fetch G-code metadata, feature types, probe events, drilling cycles,
+   * and the job summary from the server. Then update markers, color
+   * attributes, and cached block-state maps used during playback.
    */
-  private parseMetadataAndUpdate(): void {
-    if (!this.gcodeViewer || !this.gcodeViewer.allLines) return;
+  private async parseMetadataAndUpdate(): Promise<void> {
+    if (!this.gcodeViewer || !this.currentJobId) return;
 
     // Initialize bookmark manager for this file
     this.bookmarkManager = new BookmarkManager(this.gcodeViewer.filename || 'default');
 
-    // Get block line map from GcodeViewer (uses {start, end} format)
-    const blockLineRanges = this.gcodeViewer.blockLineRanges;
-    // Convert to the format expected by parseGcodeMetadata
-    const blockLineMap = new Map<number, [number, number]>();
-    for (const [idx, range] of blockLineRanges) {
-      blockLineMap.set(idx, [range.start, range.end]);
-    }
-    this.gcodeMetadata = parseGcodeMetadata(this.gcodeViewer.allLines, blockLineMap);
+    // Reset cached metadata
+    this.gcodeMetadata = null;
+    this.jobSummary = null;
+    this.probeEvents = null;
+    this.drillingCycles = null;
+    this.featureTypeSegments = [];
+    this.blockFeedRates.clear();
+    this.blockTools.clear();
+    this.blockSpindleRpms.clear();
 
-    // Parse slicer feature types for display during playback
-    this.featureTypeSegments = parseFeatureTypes(this.gcodeViewer.allLines);
+    try {
+      const [gcodeMetadata, featureTypes, probeEvents, drillingCycles, jobSummary] = await Promise.all([
+        this.rpcClient.getGcodeMetadata(this.currentJobId),
+        this.rpcClient.getFeatureTypes(this.currentJobId),
+        this.rpcClient.getProbeEvents(this.currentJobId),
+        this.rpcClient.getDrillingCycles(this.currentJobId),
+        this.rpcClient.getJobSummary(this.currentJobId),
+      ]);
 
-    // Update tool change markers with 3D positions
-    if (this.toolChangeMarkerRenderer && this.nurbsRenderer && this.currentNBP) {
-      const markers: { position: [number, number, number]; toolNumber: number }[] = [];
-      // Map tool change line numbers to piece positions
-      for (const tc of this.gcodeMetadata.toolChanges) {
-        // Find the block index for this line
-        const blockIdx = this.gcodeViewer.lineToBlockMap.get(tc.lineNumber);
-        if (blockIdx !== undefined && blockIdx < this.currentNBP.pieces.length) {
-          const piece = this.currentNBP.pieces[blockIdx];
-          if (piece.controlPoints.length >= 3) {
-            markers.push({
-              position: [piece.controlPoints[0], piece.controlPoints[1], piece.controlPoints[2]],
-              toolNumber: tc.toolNumber,
-            });
-          }
+      this.gcodeMetadata = gcodeMetadata;
+      this.featureTypeSegments = featureTypes.segments;
+      this.probeEvents = probeEvents;
+      this.drillingCycles = drillingCycles;
+      this.jobSummary = jobSummary;
+
+      // Cache block states for fast playback / overlay lookups
+      for (const s of gcodeMetadata.blockStates) {
+        this.blockFeedRates.set(s.blockIndex, s.feedRate);
+        this.blockTools.set(s.blockIndex, s.toolNumber);
+        this.blockSpindleRpms.set(s.blockIndex, s.spindleRpm);
+      }
+
+      // Enrich miniplot data with event line numbers if already loaded
+      if (this.miniplotData) {
+        this.miniplotData.toolChangeLines = gcodeMetadata.toolChanges.map(tc => tc.lineNumber);
+        this.miniplotData.tempChangeLines = gcodeMetadata.temperatureEvents.map(te => te.lineNumber);
+        this.miniplotData.fanChangeLines = gcodeMetadata.fanEvents.map(fe => fe.lineNumber);
+        this.miniplotData.coolantChangeLines = gcodeMetadata.coolantEvents.map(ce => ce.lineNumber);
+        if (this.miniplotRenderer) {
+          this.miniplotRenderer.setData(this.miniplotData);
+          this.updateMiniplotLabel();
         }
       }
-      this.toolChangeMarkerRenderer.updateMarkers(markers);
-    }
 
-    // Update feed rates for the feedRate color attribute
-    if (this.nurbsRenderer && this.currentNBP && this.gcodeMetadata) {
-      const feedRates: number[] = [];
-      const spindleRpms: number[] = [];
-      const toolNumbers: number[] = [];
-      for (let i = 0; i < this.currentNBP.pieces.length; i++) {
-        feedRates.push(this.gcodeMetadata.blockFeedRates.get(i) || 0);
-        spindleRpms.push(this.gcodeMetadata.blockSpindleRpm.get(i) || 0);
-        toolNumbers.push(this.gcodeMetadata.blockTools.get(i) || 0);
+      // Update tool change markers with 3D positions
+      if (this.toolChangeMarkerRenderer && this.nurbsRenderer && this.currentNBP) {
+        const markers: { position: [number, number, number]; toolNumber: number }[] = [];
+        for (const tc of gcodeMetadata.toolChanges) {
+          const blockIdx = this.gcodeViewer.lineToBlockMap.get(tc.lineNumber);
+          if (blockIdx !== undefined && blockIdx < this.currentNBP.pieces.length) {
+            const piece = this.currentNBP.pieces[blockIdx];
+            if (piece.controlPoints.length >= 3) {
+              markers.push({
+                position: [piece.controlPoints[0], piece.controlPoints[1], piece.controlPoints[2]],
+                toolNumber: tc.toolNumber,
+              });
+            }
+          }
+        }
+        this.toolChangeMarkerRenderer.updateMarkers(markers);
       }
-      this.nurbsRenderer.setFeedRates(feedRates);
-      this.nurbsRenderer.setSpindleRpms(spindleRpms);
-      this.nurbsRenderer.setToolNumbers(toolNumbers);
+
+      // Update feed rates for the feedRate color attribute
+      if (this.nurbsRenderer && this.currentNBP) {
+        const feedRates: number[] = [];
+        const spindleRpms: number[] = [];
+        const toolNumbers: number[] = [];
+        for (let i = 0; i < this.currentNBP.pieces.length; i++) {
+          feedRates.push(this.blockFeedRates.get(i) || 0);
+          spindleRpms.push(this.blockSpindleRpms.get(i) || 0);
+          toolNumbers.push(this.blockTools.get(i) || 0);
+        }
+        this.nurbsRenderer.setFeedRates(feedRates);
+        this.nurbsRenderer.setSpindleRpms(spindleRpms);
+        this.nurbsRenderer.setToolNumbers(toolNumbers);
+      }
+
+      // Update tool filter dropdown
+      if (gcodeMetadata.tools.length > 0) {
+        this.controlPanel.updateTools(gcodeMetadata.tools);
+      }
+
+      // Get total duration from job summary or miniplot data
+      if (jobSummary.printTimeEstimate) {
+        this.totalDuration = jobSummary.printTimeEstimate.estimatedTime;
+      } else if (this.miniplotData) {
+        this.totalDuration = this.miniplotData.totalTime;
+      }
+    } catch (e) {
+      console.error('Failed to fetch G-code metadata:', e);
+    }
+  }
+
+  /**
+   * Private helper: get the active machine state at a given 0-indexed line.
+   */
+  private getMachineStateAtLine(
+    gcodeMetadata: GetGcodeMetadataResponse,
+    lineNumber: number,
+  ): {
+    spindleRpm: number;
+    spindleDir: 'cw' | 'ccw' | 'off';
+    hotendTemp: number;
+    bedTemp: number;
+    chamberTemp: number;
+    fanSpeed: number;
+    coolantState: 'mist' | 'flood' | 'off';
+  } {
+    let spindleRpm = 0;
+    let spindleDir: 'cw' | 'ccw' | 'off' = 'off';
+    let hotendTemp = 0;
+    let bedTemp = 0;
+    let chamberTemp = 0;
+    let fanSpeed = 0;
+    let coolantState: 'mist' | 'flood' | 'off' = 'off';
+
+    for (const e of gcodeMetadata.spindleEvents) {
+      if (e.lineNumber > lineNumber) break;
+      spindleRpm = e.rpm;
+      spindleDir = e.direction as 'cw' | 'ccw' | 'off';
+    }
+    for (const e of gcodeMetadata.temperatureEvents) {
+      if (e.lineNumber > lineNumber) break;
+      if (e.hotend !== undefined) hotendTemp = e.hotend;
+      if (e.bed !== undefined) bedTemp = e.bed;
+      if (e.chamber !== undefined) chamberTemp = e.chamber;
+    }
+    for (const e of gcodeMetadata.fanEvents) {
+      if (e.lineNumber > lineNumber) break;
+      fanSpeed = e.speed;
+    }
+    for (const e of gcodeMetadata.coolantEvents) {
+      if (e.lineNumber > lineNumber) break;
+      coolantState = e.state as 'mist' | 'flood' | 'off';
     }
 
-    // Update tool filter dropdown
-    if (this.gcodeMetadata.tools.length > 0) {
-      this.controlPanel.updateTools(this.gcodeMetadata.tools);
-    }
+    return { spindleRpm, spindleDir, hotendTemp, bedTemp, chamberTemp, fanSpeed, coolantState };
+  }
 
-    // Get total duration from miniplot data or job status
-    if (this.miniplotData) {
-      this.totalDuration = this.miniplotData.totalTime;
+  /**
+   * Private helper: get the active feature type at a 0-indexed line.
+   */
+  private getFeatureTypeAtLine(lineNumber: number): string | undefined {
+    let active: string | undefined = undefined;
+    for (const seg of this.featureTypeSegments) {
+      if (seg.startLine > lineNumber) break;
+      active = seg.featureType;
     }
+    return active;
   }
 
   /**
@@ -2245,28 +2358,21 @@ export class WebGPUApp {
    */
   private updateInfoPanel(): void {
     if (!this.infoPanel || !this.infoPanel.visible) return;
-    if (!this.gcodeMetadata) return;
 
     const bounds = this.getCurrentFullBounds();
     if (!bounds) return;
 
-    // Compute material usage if we have NBP data
-    let materialUsage: { extrusionLength: number; volume: number; weight: number } | undefined;
-    if (this.currentNBP && this.miniplotData) {
-      const segmentTimes = this.miniplotData.segments.map(s => s.duration);
-      materialUsage = computeMaterialUsage(this.currentNBP.pieces, segmentTimes);
-    }
-
     this.infoPanel.update({
-      metadata: this.gcodeMetadata,
-      miniplotData: this.miniplotData,
+      gcodeMetadata: this.gcodeMetadata ?? undefined,
+      jobSummary: this.jobSummary ?? undefined,
+      featureTypeSegments: this.featureTypeSegments,
       zLayers: this.zLayers,
       totalDuration: this.totalDuration,
       pathLength: this.currentNBP?.header.totalLength ?? 0,
       bounds: { min: bounds.min as [number, number, number], max: bounds.max as [number, number, number] },
       sampleCount: this.currentData?.header.sampleCount ?? 0,
       pieceCount: this.currentNBP?.pieces.length ?? 0,
-      materialUsage,
+      materialUsage: this.jobSummary?.materialUsage,
       remoteSections: this.remoteAnalysisSections,
     });
   }
@@ -2275,25 +2381,15 @@ export class WebGPUApp {
    * Export a comprehensive analysis report as a JSON file download.
    */
   private exportReport(): void {
-    if (!this.gcodeMetadata) {
+    if (!this.gcodeMetadata || !this.jobSummary) {
       this.controlPanel.setStatus('No data loaded');
       return;
     }
 
     const bounds = this.getCurrentFullBounds();
-    const speedStats = this.miniplotData
-      ? computeSpeedStats(this.miniplotData.segments)
-      : { minSpeed: 0, maxSpeed: 0, meanSpeed: 0, medianSpeed: 0 };
-
-    const layerTimes = this.miniplotData
-      ? computeLayerTimes(this.zLayers, this.miniplotData.segments)
-      : [];
-
-    let materialUsage: { extrusionLength: number; volume: number; weight: number } | undefined;
-    if (this.currentNBP && this.miniplotData) {
-      const segmentTimes = this.miniplotData.segments.map(s => s.duration);
-      materialUsage = computeMaterialUsage(this.currentNBP.pieces, segmentTimes);
-    }
+    const speedStats = this.jobSummary.speedStats ?? { minSpeed: 0, maxSpeed: 0, meanSpeed: 0, medianSpeed: 0 };
+    const layerTimes = this.jobSummary.layerTimes ?? [];
+    const materialUsage = this.jobSummary.materialUsage;
 
     const report = {
       generated: new Date().toISOString(),
@@ -2314,23 +2410,25 @@ export class WebGPUApp {
           z: bounds.max[2] - bounds.min[2],
         },
       } : null,
-      speedStats,
-      layerCount: this.zLayers.length,
-      layerTimes: layerTimes.map(l => ({
-        layer: l.layerIndex,
-        zHeight: l.zHeight,
-        timeSeconds: l.timeSeconds,
-        timeFormatted: formatTime(l.timeSeconds),
-      })),
       tools: this.gcodeMetadata.tools,
       toolChanges: this.gcodeMetadata.toolChanges,
       spindleEvents: this.gcodeMetadata.spindleEvents,
       temperatureEvents: this.gcodeMetadata.temperatureEvents,
       fanEvents: this.gcodeMetadata.fanEvents,
       coolantEvents: this.gcodeMetadata.coolantEvents,
-      feedRateRange: this.gcodeMetadata.feedRateRange,
+      feedRateRange: { min: this.gcodeMetadata.minFeedRate, max: this.gcodeMetadata.maxFeedRate },
+      speedStats,
+      layerCount: layerTimes.length,
+      layerTimes: layerTimes.map(l => ({
+        layer: l.layerIndex,
+        zHeight: l.zHeight,
+        timeSeconds: l.timeSeconds,
+        timeFormatted: formatTime(l.timeSeconds),
+      })),
       materialUsage: materialUsage ?? null,
       featureTypes: this.featureTypeSegments,
+      gcodeMetadata: this.gcodeMetadata,
+      jobSummary: this.jobSummary,
       remoteAnalysis: this.remoteAnalysisSections,
     };
 

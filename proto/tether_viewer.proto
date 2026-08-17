@@ -54,6 +54,13 @@ message TetherViewerRequest {
     GetAnalysisRequest get_analysis = 19;
     GetAnalysisDetailsRequest get_analysis_details = 20;
 
+    // G-code metadata / viewer helpers
+    GetGcodeMetadataRequest get_gcode_metadata = 21;
+    GetFeatureTypesRequest get_feature_types = 22;
+    GetProbeEventsRequest get_probe_events = 23;
+    GetDrillingCyclesRequest get_drilling_cycles = 24;
+    GetJobSummaryRequest get_job_summary = 25;
+
     // Server info
     google.protobuf.Empty ping = 17;
     google.protobuf.Empty get_version = 18;
@@ -97,6 +104,13 @@ message TetherViewerResponse {
 
     // Server-side G-code analysis results
     AnalysisResultResponse analysis_result = 19;
+
+    // G-code metadata / viewer helper results
+    GetGcodeMetadataResponse get_gcode_metadata = 21;
+    GetFeatureTypesResponse get_feature_types = 22;
+    GetProbeEventsResponse get_probe_events = 23;
+    GetDrillingCyclesResponse get_drilling_cycles = 24;
+    GetJobSummaryResponse get_job_summary = 25;
   }
 }
 
@@ -439,4 +453,168 @@ message AnalysisResultResponse {
   // Sub-section / per-message error; the top-level TetherViewerResponse also
   // carries an error_message field for stream-level errors.
   string error_message = 6;
+}
+
+// ============================================================================
+// G-code metadata / viewer helper messages
+// ============================================================================
+
+message GetGcodeMetadataRequest {
+  string job_id = 1;
+}
+
+message ToolChange {
+  int32 line_number = 1;
+  int32 tool_number = 2;
+}
+
+message SpindleEvent {
+  int32 line_number = 1;
+  double rpm = 2;
+  string direction = 3;  // "cw", "ccw", "off"
+}
+
+message TemperatureEvent {
+  int32 line_number = 1;
+  optional double hotend = 2;
+  optional double bed = 3;
+  optional double chamber = 4;
+}
+
+message FanEvent {
+  int32 line_number = 1;
+  double speed = 2;
+}
+
+message CoolantEvent {
+  int32 line_number = 1;
+  string state = 2;  // "mist", "flood", "off"
+}
+
+message FeedRateChange {
+  int32 line_number = 1;
+  double feed_rate = 2;
+}
+
+message BlockState {
+  int32 block_index = 1;
+  double feed_rate = 2;
+  int32 tool_number = 3;
+  double spindle_rpm = 4;
+}
+
+message WorkCoordinate {
+  int32 line_number = 1;
+  string code = 2;  // e.g. "G54", "G55"
+}
+
+message StockDimensions {
+  double min_x = 1;
+  double min_y = 2;
+  double min_z = 3;
+  double max_x = 4;
+  double max_y = 5;
+  double max_z = 6;
+}
+
+message GetGcodeMetadataResponse {
+  repeated ToolChange tool_changes = 1;
+  repeated SpindleEvent spindle_events = 2;
+  repeated TemperatureEvent temperature_events = 3;
+  repeated FanEvent fan_events = 4;
+  repeated CoolantEvent coolant_events = 5;
+  repeated FeedRateChange feed_rate_changes = 6;
+  repeated int32 tools = 7;
+  double max_spindle_rpm = 8;
+  double max_hotend_temp = 9;
+  double max_bed_temp = 10;
+  double max_fan_speed = 11;
+  double min_feed_rate = 12;
+  double max_feed_rate = 13;
+  repeated BlockState block_states = 14;
+  repeated WorkCoordinate work_coordinate_systems = 15;
+  StockDimensions stock_dimensions = 16;
+}
+
+message FeatureTypeSegment {
+  int32 start_line = 1;
+  int32 end_line = 2;
+  string feature_type = 3;
+  string slicer = 4;
+}
+
+message GetFeatureTypesRequest {
+  string job_id = 1;
+}
+
+message GetFeatureTypesResponse {
+  repeated FeatureTypeSegment segments = 1;
+}
+
+message ProbeEvent {
+  int32 line_number = 1;
+  double x = 2;
+  double y = 3;
+  double z = 4;
+}
+
+message GetProbeEventsRequest {
+  string job_id = 1;
+}
+
+message GetProbeEventsResponse {
+  repeated ProbeEvent events = 1;
+}
+
+message DrillingCycle {
+  int32 line_number = 1;
+  string cycle_type = 2;  // "G81", "G82", "G83", ...
+  double x = 3;
+  double y = 4;
+  double z = 5;
+  double r = 6;
+}
+
+message GetDrillingCyclesRequest {
+  string job_id = 1;
+}
+
+message GetDrillingCyclesResponse {
+  repeated DrillingCycle cycles = 1;
+}
+
+message MaterialUsage {
+  double extrusion_length = 1;
+  double volume = 2;
+  double weight = 3;
+}
+
+message SpeedStats {
+  double min_speed = 1;
+  double max_speed = 2;
+  double mean_speed = 3;
+  double median_speed = 4;
+}
+
+message LayerTime {
+  uint32 layer_index = 1;
+  double z_height = 2;
+  double time_seconds = 3;
+}
+
+message TimeEstimate {
+  double estimated_time = 1;
+  uint32 move_count = 2;
+  string method = 3;
+}
+
+message GetJobSummaryRequest {
+  string job_id = 1;
+}
+
+message GetJobSummaryResponse {
+  MaterialUsage material_usage = 1;
+  SpeedStats speed_stats = 2;
+  repeated LayerTime layer_times = 3;
+  TimeEstimate print_time_estimate = 4;
 }

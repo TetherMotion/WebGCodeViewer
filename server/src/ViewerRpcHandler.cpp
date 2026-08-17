@@ -13,10 +13,17 @@
 
 #include <drogon/WebSocketConnection.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cmath>
+#include <limits>
+#include <numbers>
+#include <numeric>
+#include <set>
 #include <sstream>
+#include <string_view>
 #include <thread>
 
 namespace tether::web {
@@ -34,6 +41,139 @@ namespace {
 
     // TTHR flags (must match frontend)
     constexpr uint32_t TTHR_ALL = 0x007F;
+
+    // In-place uppercase conversion for case-insensitive G-code matching.
+    std::string toUpper(std::string_view s) {
+        std::string out;
+        out.reserve(s.size());
+        for (char c : s) {
+            out.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+        }
+        return out;
+    }
+
+    // Remove inline comments (; and (...)). Returns the cleaned line and leaves
+    // it otherwise intact so tokens like G1X10 are still parseable.
+    std::string stripInlineComments(std::string_view line) {
+        std::string out;
+        out.reserve(line.size());
+        bool inParen = false;
+        for (size_t i = 0; i < line.size(); ++i) {
+            char c = line[i];
+            if (inParen) {
+                if (c == ')') inParen = false;
+                continue;
+            }
+            if (c == ';') break;
+            if (c == '(') { inParen = true; continue; }
+            out.push_back(c);
+        }
+        return out;
+    }
+
+    // Returns true if the line is empty or all whitespace after comment removal.
+    bool isBlank(std::string_view line) {
+        for (char c : line) {
+            if (!std::isspace(static_cast<unsigned char>(c))) return false;
+        }
+        return true;
+    }
+
+    // Tokenize a G-code line into (word, value) pairs. Handles spaced words
+    // ("G1 X10") and unspaced words ("G1X10Y20").
+    std::vector<std::pair<char, std::string>> tokenizeGcode(const std::string& line) {
+        std::vector<std::pair<char, std::string>> out;
+        size_t i = 0;
+        while (i < line.size()) {
+            char c = line[i];
+            if (std::isspace(static_cast<unsigned char>(c)) || c == '\r' || c == '\n') {
+                ++i;
+                continue;
+            }
+            if (std::isalpha(static_cast<unsigned char>(c))) {
+                char letter = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                size_t start = i + 1;
+                size_t end = start;
+                // Allow leading sign for the numeric part
+                if (end < line.size() && (line[end] == '+' || line[end] == '-')) ++end;
+                bool dotSeen = false;
+                while (end < line.size()) {
+                    char d = line[end];
+                    if (std::isdigit(static_cast<unsigned char>(d))) {
+                        ++end;
+                    } else if (d == '.' && !dotSeen) {
+                        dotSeen = true;
+                        ++end;
+                    } else {
+                        break;
+                    }
+                }
+                if (end > start) {
+                    out.emplace_back(letter, line.substr(start, end - start));
+                }
+                i = end;
+            } else {
+                ++i;
+            }
+        }
+        return out;
+    }
+
+    double parseDoubleOrZero(const std::string& s) {
+        if (s.empty()) return 0.0;
+        try {
+            return std::stod(s);
+        } catch (...) {
+            return 0.0;
+        }
+    }
+
+    int32_t parseIntOrZero(const std::string& s) {
+        if (s.empty()) return 0;
+        try {
+            return std::stoi(s);
+        } catch (...) {
+            return 0;
+        }
+    }
+
+    // Convert a comment value such as ";STOCK_X:123.4" into a double.
+    double parseCommentValue(std::string_view line, std::string_view prefix) {
+        auto pos = line.find(prefix);
+        if (pos == std::string_view::npos) return std::numeric_limits<double>::quiet_NaN();
+        pos += prefix.size();
+        while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos]))) ++pos;
+        size_t end = pos;
+        while (end < line.size() && !std::isspace(static_cast<unsigned char>(line[end])) &&
+               line[end] != '\r' && line[end] != '\n' && line[end] != ';' && line[end] != '(') {
+            ++end;
+        }
+        if (end <= pos) return std::numeric_limits<double>::quiet_NaN();
+        try {
+            return std::stod(std::string(line.substr(pos, end - pos)));
+        } catch (...) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+    }
+
+    // Check whether the tokenized words contain a G/M code value.
+    bool hasCode(const std::vector<std::pair<char, std::string>>& words, char letter, double code) {
+        for (const auto& [l, v] : words) {
+            if (l == letter) {
+                double cv = parseDoubleOrZero(v);
+                if (std::abs(cv - code) < 1e-6) return true;
+            }
+        }
+        return false;
+    }
+
+    // Extract the value for a given word letter, or empty if not present.
+    const std::string* wordValue(const std::vector<std::pair<char, std::string>>& words, char letter) {
+        for (const auto& [l, v] : words) {
+            if (l == letter) return &v;
+        }
+        return nullptr;
+    }
 }
 
 ViewerRpcHandler::ViewerRpcHandler(std::shared_ptr<JobManager> jobManager)
@@ -162,6 +302,26 @@ void ViewerRpcHandler::handleEnvelope(const drogon::WebSocketConnectionPtr& conn
                 requestCaseStr = "get_analysis";
                 streaming = true;
                 break;
+            case TetherViewerRequest::kGetGcodeMetadata:
+                responseBytes = handleGetGcodeMetadata(req.get_gcode_metadata().SerializeAsString());
+                requestCaseStr = "get_gcode_metadata";
+                break;
+            case TetherViewerRequest::kGetFeatureTypes:
+                responseBytes = handleGetFeatureTypes(req.get_feature_types().SerializeAsString());
+                requestCaseStr = "get_feature_types";
+                break;
+            case TetherViewerRequest::kGetProbeEvents:
+                responseBytes = handleGetProbeEvents(req.get_probe_events().SerializeAsString());
+                requestCaseStr = "get_probe_events";
+                break;
+            case TetherViewerRequest::kGetDrillingCycles:
+                responseBytes = handleGetDrillingCycles(req.get_drilling_cycles().SerializeAsString());
+                requestCaseStr = "get_drilling_cycles";
+                break;
+            case TetherViewerRequest::kGetJobSummary:
+                responseBytes = handleGetJobSummary(req.get_job_summary().SerializeAsString());
+                requestCaseStr = "get_job_summary";
+                break;
             default:
                 sendErrorResponse(conn, callId, RPC_NOT_FOUND, "No handler for request case");
                 return;
@@ -216,6 +376,16 @@ void ViewerRpcHandler::sendResponse(const drogon::WebSocketConnectionPtr& conn,
             parsed = response->mutable_get_version()->ParseFromString(responseBytes);
         } else if (requestCase == "get_analysis") {
             parsed = response->mutable_analysis_result()->ParseFromString(responseBytes);
+        } else if (requestCase == "get_gcode_metadata") {
+            parsed = response->mutable_get_gcode_metadata()->ParseFromString(responseBytes);
+        } else if (requestCase == "get_feature_types") {
+            parsed = response->mutable_get_feature_types()->ParseFromString(responseBytes);
+        } else if (requestCase == "get_probe_events") {
+            parsed = response->mutable_get_probe_events()->ParseFromString(responseBytes);
+        } else if (requestCase == "get_drilling_cycles") {
+            parsed = response->mutable_get_drilling_cycles()->ParseFromString(responseBytes);
+        } else if (requestCase == "get_job_summary") {
+            parsed = response->mutable_get_job_summary()->ParseFromString(responseBytes);
         }
 
         if (!parsed) {
@@ -791,6 +961,486 @@ ViewerRpcHandler::computeZLayers(const std::string& jobId, double zTolerance) {
     }
 
     return {};
+}
+
+// ── New RPC handlers ─────────────────────────────────────────────────────────
+
+std::string ViewerRpcHandler::handleGetGcodeMetadata(const std::string& requestBytes) {
+    using namespace ::tether::viewer::v1;
+
+    GetGcodeMetadataRequest req;
+    if (!req.ParseFromString(requestBytes)) {
+        throw std::runtime_error("Failed to parse GetGcodeMetadataRequest");
+    }
+
+    std::string gcodeText = jobManager_->getGcodeText(req.job_id());
+    if (gcodeText.empty()) {
+        throw std::runtime_error("Job not found or has no G-code");
+    }
+
+    const auto* result = jobManager_->getResult(req.job_id());
+    const auto& blocks = result ? result->gcodeBlocks : std::vector<GCode::BlockMetadata>{};
+
+    GetGcodeMetadataResponse resp;
+
+    int32_t currentTool = 0;
+    int32_t pendingTool = -1;
+    double currentFeedRate = 0.0;
+    double currentSpindleRpm = 0.0;
+    std::string currentSpindleDir = "off";
+    double currentFanSpeed = 0.0;
+    std::string currentCoolantState = "off";
+
+    double maxSpindleRpm = 0.0;
+    double maxHotendTemp = 0.0;
+    double maxBedTemp = 0.0;
+    double maxFanSpeed = 0.0;
+    double minFeedRate = std::numeric_limits<double>::max();
+    double maxFeedRate = 0.0;
+
+    std::set<int32_t> toolSet;
+    size_t blockIdx = 0;
+
+    bool hasStock = false;
+    double stockMinX = 0.0, stockMinY = 0.0, stockMinZ = 0.0;
+    double stockW = 0.0, stockD = 0.0, stockH = 0.0;
+
+    auto tryStock = [&](std::string_view raw, std::string_view key, double& out) {
+        double v = parseCommentValue(raw, key);
+        if (!std::isnan(v)) { out = v; hasStock = true; }
+    };
+
+    size_t pos = 0;
+    for (int32_t lineNum = 0; pos < gcodeText.size(); ++lineNum) {
+        size_t nl = gcodeText.find('\n', pos);
+        std::string_view rawLine = (nl == std::string::npos)
+            ? std::string_view(gcodeText.data() + pos)
+            : std::string_view(gcodeText.data() + pos, nl - pos);
+
+        std::string clean = stripInlineComments(rawLine);
+        std::string upperRaw = toUpper(std::string(rawLine));
+
+        tryStock(upperRaw, ";STOCK_X:", stockMinX);
+        tryStock(upperRaw, ";STOCK_Y:", stockMinY);
+        tryStock(upperRaw, ";STOCK_Z:", stockMinZ);
+        tryStock(upperRaw, ";STOCK_WIDTH:", stockW);
+        tryStock(upperRaw, ";STOCK_DEPTH:", stockD);
+        tryStock(upperRaw, ";STOCK_HEIGHT:", stockH);
+        tryStock(upperRaw, ";SIZE_X:", stockW);
+        tryStock(upperRaw, ";SIZE_Y:", stockD);
+        tryStock(upperRaw, ";SIZE_Z:", stockH);
+
+        if (!isBlank(clean)) {
+            auto words = tokenizeGcode(clean);
+            const std::string* sWord = wordValue(words, 'S');
+            const std::string* fWord = wordValue(words, 'F');
+            const std::string* tWord = wordValue(words, 'T');
+
+            if (tWord) {
+                pendingTool = parseIntOrZero(*tWord);
+                toolSet.insert(pendingTool);
+            }
+
+            if (fWord) {
+                currentFeedRate = parseDoubleOrZero(*fWord);
+                auto* e = resp.add_feed_rate_changes();
+                e->set_line_number(lineNum);
+                e->set_feed_rate(currentFeedRate);
+                minFeedRate = std::min(minFeedRate, currentFeedRate);
+                maxFeedRate = std::max(maxFeedRate, currentFeedRate);
+            }
+
+            // Tool change
+            if (hasCode(words, 'M', 6.0)) {
+                int32_t toolNum = (pendingTool >= 0) ? pendingTool : currentTool;
+                currentTool = toolNum;
+                pendingTool = -1;
+                auto* e = resp.add_tool_changes();
+                e->set_line_number(lineNum);
+                e->set_tool_number(toolNum);
+            }
+
+            // Spindle
+            double sVal = sWord ? parseDoubleOrZero(*sWord) : currentSpindleRpm;
+            if (hasCode(words, 'M', 3.0)) {
+                currentSpindleDir = "cw";
+                currentSpindleRpm = sVal;
+                auto* e = resp.add_spindle_events();
+                e->set_line_number(lineNum);
+                e->set_rpm(currentSpindleRpm);
+                e->set_direction(currentSpindleDir);
+                maxSpindleRpm = std::max(maxSpindleRpm, currentSpindleRpm);
+            } else if (hasCode(words, 'M', 4.0)) {
+                currentSpindleDir = "ccw";
+                currentSpindleRpm = sVal;
+                auto* e = resp.add_spindle_events();
+                e->set_line_number(lineNum);
+                e->set_rpm(currentSpindleRpm);
+                e->set_direction(currentSpindleDir);
+                maxSpindleRpm = std::max(maxSpindleRpm, currentSpindleRpm);
+            } else if (hasCode(words, 'M', 5.0)) {
+                currentSpindleDir = "off";
+                currentSpindleRpm = 0.0;
+                auto* e = resp.add_spindle_events();
+                e->set_line_number(lineNum);
+                e->set_rpm(0.0);
+                e->set_direction("off");
+            }
+
+            // Temperature
+            bool setHotend = false, setBed = false, setChamber = false;
+            double hotend = 0.0, bed = 0.0, chamber = 0.0;
+            if ((hasCode(words, 'M', 104.0) || hasCode(words, 'M', 109.0)) && sWord) {
+                hotend = parseDoubleOrZero(*sWord);
+                setHotend = true;
+                maxHotendTemp = std::max(maxHotendTemp, hotend);
+            }
+            if ((hasCode(words, 'M', 140.0) || hasCode(words, 'M', 190.0)) && sWord) {
+                bed = parseDoubleOrZero(*sWord);
+                setBed = true;
+                maxBedTemp = std::max(maxBedTemp, bed);
+            }
+            if ((hasCode(words, 'M', 141.0) || hasCode(words, 'M', 191.0)) && sWord) {
+                chamber = parseDoubleOrZero(*sWord);
+                setChamber = true;
+            }
+            if (setHotend || setBed || setChamber) {
+                auto* e = resp.add_temperature_events();
+                e->set_line_number(lineNum);
+                if (setHotend) e->set_hotend(hotend);
+                if (setBed) e->set_bed(bed);
+                if (setChamber) e->set_chamber(chamber);
+            }
+
+            // Fan
+            if (hasCode(words, 'M', 106.0)) {
+                double speed = sWord ? parseDoubleOrZero(*sWord) : 255.0;
+                currentFanSpeed = speed;
+                maxFanSpeed = std::max(maxFanSpeed, speed);
+                auto* e = resp.add_fan_events();
+                e->set_line_number(lineNum);
+                e->set_speed(speed);
+            } else if (hasCode(words, 'M', 107.0)) {
+                currentFanSpeed = 0.0;
+                auto* e = resp.add_fan_events();
+                e->set_line_number(lineNum);
+                e->set_speed(0.0);
+            }
+
+            // Coolant
+            if (hasCode(words, 'M', 7.0)) {
+                currentCoolantState = "mist";
+                auto* e = resp.add_coolant_events();
+                e->set_line_number(lineNum);
+                e->set_state("mist");
+            } else if (hasCode(words, 'M', 8.0)) {
+                currentCoolantState = "flood";
+                auto* e = resp.add_coolant_events();
+                e->set_line_number(lineNum);
+                e->set_state("flood");
+            } else if (hasCode(words, 'M', 9.0)) {
+                currentCoolantState = "off";
+                auto* e = resp.add_coolant_events();
+                e->set_line_number(lineNum);
+                e->set_state("off");
+            }
+
+            // Work coordinate systems
+            static const std::vector<std::pair<double, std::string>> wcCodes = {
+                {54.0, "G54"}, {55.0, "G55"}, {56.0, "G56"}, {57.0, "G57"},
+                {58.0, "G58"}, {59.0, "G59"},
+                {59.1, "G59.1"}, {59.2, "G59.2"}, {59.3, "G59.3"}
+            };
+            for (const auto& [code, name] : wcCodes) {
+                if (hasCode(words, 'G', code)) {
+                    auto* e = resp.add_work_coordinate_systems();
+                    e->set_line_number(lineNum);
+                    e->set_code(name);
+                }
+            }
+
+            // Record per-block state for any block on this line
+            while (blockIdx < blocks.size() &&
+                   static_cast<int32_t>(blocks[blockIdx].lineNumber) == lineNum) {
+                auto* b = resp.add_block_states();
+                b->set_block_index(blocks[blockIdx].blockIndex);
+                b->set_feed_rate(currentFeedRate);
+                b->set_tool_number(currentTool);
+                b->set_spindle_rpm(currentSpindleRpm);
+                ++blockIdx;
+            }
+        }
+
+        pos = (nl == std::string::npos) ? gcodeText.size() : nl + 1;
+    }
+
+    for (int32_t t : toolSet) resp.add_tools(t);
+    resp.set_max_spindle_rpm(maxSpindleRpm);
+    resp.set_max_hotend_temp(maxHotendTemp);
+    resp.set_max_bed_temp(maxBedTemp);
+    resp.set_max_fan_speed(maxFanSpeed);
+    resp.set_min_feed_rate(minFeedRate == std::numeric_limits<double>::max() ? 0.0 : minFeedRate);
+    resp.set_max_feed_rate(maxFeedRate);
+
+    if (hasStock) {
+        auto* s = resp.mutable_stock_dimensions();
+        s->set_min_x(stockMinX);
+        s->set_min_y(stockMinY);
+        s->set_min_z(stockMinZ);
+        s->set_max_x(stockMinX + stockW);
+        s->set_max_y(stockMinY + stockD);
+        s->set_max_z(stockMinZ + stockH);
+    }
+
+    return resp.SerializeAsString();
+}
+
+std::string ViewerRpcHandler::handleGetFeatureTypes(const std::string& requestBytes) {
+    using namespace ::tether::viewer::v1;
+
+    GetFeatureTypesRequest req;
+    if (!req.ParseFromString(requestBytes)) {
+        throw std::runtime_error("Failed to parse GetFeatureTypesRequest");
+    }
+
+    auto lines = jobManager_->getGcodeLines(req.job_id());
+    if (lines.empty()) {
+        throw std::runtime_error("Job not found or has no G-code");
+    }
+
+    std::string slicer = "unknown";
+    for (size_t i = 0; i < std::min<size_t>(lines.size(), 200); ++i) {
+        std::string u = toUpper(lines[i]);
+        if (u.find("CURA") != std::string::npos) { slicer = "Cura"; break; }
+        if (u.find("PRUSASLICER") != std::string::npos) { slicer = "PrusaSlicer"; break; }
+        if (u.find("ORCASLICER") != std::string::npos) { slicer = "OrcaSlicer"; break; }
+        if (u.find("BAMBUSTUDIO") != std::string::npos) { slicer = "BambuStudio"; break; }
+        if (u.find("SIMPLIFY3D") != std::string::npos) { slicer = "Simplify3D"; break; }
+    }
+
+    GetFeatureTypesResponse resp;
+    std::string activeType = "UNKNOWN";
+
+    auto trimFeature = [](std::string s) -> std::string {
+        auto end = s.find_first_of(" \t\r\n;");
+        if (end != std::string::npos) s = s.substr(0, end);
+        while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
+        return s;
+    };
+
+    int32_t lastLine = static_cast<int32_t>(lines.size()) - 1;
+
+    for (int32_t i = 0; i < static_cast<int32_t>(lines.size()); ++i) {
+        const std::string& rawLine = lines[i];
+        std::string upper = toUpper(rawLine);
+        std::string_view sv(upper);
+
+        size_t pos = std::string_view::npos;
+        std::string newType;
+        bool found = false;
+
+        pos = sv.find(";TYPE:");
+        if (pos != std::string_view::npos) {
+            newType = std::string(sv.substr(pos + 6));
+            found = true;
+        } else {
+            pos = sv.find(";FEATURE:");
+            if (pos != std::string_view::npos) {
+                newType = std::string(sv.substr(pos + 9));
+                found = true;
+            } else {
+                pos = sv.find(";MESH:");
+                if (pos != std::string_view::npos) {
+                    newType = std::string(sv.substr(pos + 6));
+                    found = true;
+                }
+            }
+        }
+
+        if (found) {
+            newType = trimFeature(newType);
+            if (newType != activeType) {
+                if (resp.segments_size() > 0) {
+                    resp.mutable_segments(resp.segments_size() - 1)->set_end_line(i - 1);
+                }
+                activeType = newType;
+                auto* seg = resp.add_segments();
+                seg->set_start_line(i);
+                seg->set_end_line(lastLine);
+                seg->set_feature_type(activeType);
+                seg->set_slicer(slicer);
+            }
+        }
+    }
+
+    if (resp.segments_size() == 0) {
+        auto* seg = resp.add_segments();
+        seg->set_start_line(0);
+        seg->set_end_line(lastLine);
+        seg->set_feature_type(activeType);
+        seg->set_slicer(slicer);
+    } else {
+        resp.mutable_segments(resp.segments_size() - 1)->set_end_line(lastLine);
+    }
+
+    return resp.SerializeAsString();
+}
+
+std::string ViewerRpcHandler::handleGetProbeEvents(const std::string& requestBytes) {
+    using namespace ::tether::viewer::v1;
+
+    GetProbeEventsRequest req;
+    if (!req.ParseFromString(requestBytes)) {
+        throw std::runtime_error("Failed to parse GetProbeEventsRequest");
+    }
+
+    auto lines = jobManager_->getGcodeLines(req.job_id());
+    GetProbeEventsResponse resp;
+
+    for (int32_t i = 0; i < static_cast<int32_t>(lines.size()); ++i) {
+        std::string clean = stripInlineComments(lines[i]);
+        if (isBlank(clean)) continue;
+
+        auto words = tokenizeGcode(clean);
+        bool isProbe = hasCode(words, 'G', 38.2) || hasCode(words, 'G', 38.3) ||
+                       hasCode(words, 'G', 38.4) || hasCode(words, 'G', 38.5);
+        if (!isProbe) continue;
+
+        auto* e = resp.add_events();
+        e->set_line_number(i);
+        const std::string* xv = wordValue(words, 'X');
+        const std::string* yv = wordValue(words, 'Y');
+        const std::string* zv = wordValue(words, 'Z');
+        e->set_x(xv ? parseDoubleOrZero(*xv) : 0.0);
+        e->set_y(yv ? parseDoubleOrZero(*yv) : 0.0);
+        e->set_z(zv ? parseDoubleOrZero(*zv) : 0.0);
+    }
+
+    return resp.SerializeAsString();
+}
+
+std::string ViewerRpcHandler::handleGetDrillingCycles(const std::string& requestBytes) {
+    using namespace ::tether::viewer::v1;
+
+    GetDrillingCyclesRequest req;
+    if (!req.ParseFromString(requestBytes)) {
+        throw std::runtime_error("Failed to parse GetDrillingCyclesRequest");
+    }
+
+    auto lines = jobManager_->getGcodeLines(req.job_id());
+    GetDrillingCyclesResponse resp;
+
+    for (int32_t i = 0; i < static_cast<int32_t>(lines.size()); ++i) {
+        std::string clean = stripInlineComments(lines[i]);
+        if (isBlank(clean)) continue;
+
+        auto words = tokenizeGcode(clean);
+        std::string cycleType;
+        if (hasCode(words, 'G', 81.0)) cycleType = "G81";
+        else if (hasCode(words, 'G', 82.0)) cycleType = "G82";
+        else if (hasCode(words, 'G', 83.0)) cycleType = "G83";
+        else if (hasCode(words, 'G', 73.0)) cycleType = "G73";
+        else if (hasCode(words, 'G', 85.0)) cycleType = "G85";
+        else if (hasCode(words, 'G', 86.0)) cycleType = "G86";
+        else if (hasCode(words, 'G', 89.0)) cycleType = "G89";
+        if (cycleType.empty()) continue;
+
+        auto* e = resp.add_cycles();
+        e->set_line_number(i);
+        e->set_cycle_type(cycleType);
+        const std::string* xv = wordValue(words, 'X');
+        const std::string* yv = wordValue(words, 'Y');
+        const std::string* zv = wordValue(words, 'Z');
+        const std::string* rv = wordValue(words, 'R');
+        e->set_x(xv ? parseDoubleOrZero(*xv) : 0.0);
+        e->set_y(yv ? parseDoubleOrZero(*yv) : 0.0);
+        e->set_z(zv ? parseDoubleOrZero(*zv) : 0.0);
+        e->set_r(rv ? parseDoubleOrZero(*rv) : 0.0);
+    }
+
+    return resp.SerializeAsString();
+}
+
+std::string ViewerRpcHandler::handleGetJobSummary(const std::string& requestBytes) {
+    using namespace ::tether::viewer::v1;
+
+    GetJobSummaryRequest req;
+    if (!req.ParseFromString(requestBytes)) {
+        throw std::runtime_error("Failed to parse GetJobSummaryRequest");
+    }
+
+    const auto* result = jobManager_->getResult(req.job_id());
+    if (!result) {
+        throw std::runtime_error("Job not ready or not found");
+    }
+
+    GetJobSummaryResponse resp;
+
+    // Material usage
+    double extrusionLength = 0.0;
+    if (result->extruderSpeeds.size() == result->segmentSpeeds.size()) {
+        for (size_t i = 0; i < result->extruderSpeeds.size(); ++i) {
+            extrusionLength += std::max(0.0, static_cast<double>(result->extruderSpeeds[i])) *
+                               result->segmentSpeeds[i].duration;
+        }
+    } else {
+        extrusionLength = result->pathLength;
+    }
+
+    double radius = 1.75 / 2.0;
+    double volume = extrusionLength * std::numbers::pi * radius * radius;
+    double weight = volume / 1000.0 * 1.24;
+    auto* mu = resp.mutable_material_usage();
+    mu->set_extrusion_length(extrusionLength);
+    mu->set_volume(volume);
+    mu->set_weight(weight);
+
+    // Speed stats
+    std::vector<double> speeds;
+    speeds.reserve(result->segmentSpeeds.size());
+    for (const auto& s : result->segmentSpeeds) {
+        if (s.speedLinear > 0.0) speeds.push_back(s.speedLinear);
+    }
+    if (!speeds.empty()) {
+        double minS = *std::min_element(speeds.begin(), speeds.end());
+        double maxS = *std::max_element(speeds.begin(), speeds.end());
+        double mean = std::accumulate(speeds.begin(), speeds.end(), 0.0) / static_cast<double>(speeds.size());
+        std::sort(speeds.begin(), speeds.end());
+        double median = (speeds.size() % 2 == 1)
+            ? speeds[speeds.size() / 2]
+            : (speeds[speeds.size() / 2 - 1] + speeds[speeds.size() / 2]) / 2.0;
+        auto* ss = resp.mutable_speed_stats();
+        ss->set_min_speed(minS);
+        ss->set_max_speed(maxS);
+        ss->set_mean_speed(mean);
+        ss->set_median_speed(median);
+    }
+
+    // Layer times
+    auto layers = computeZLayers(req.job_id(), 0.01);
+    for (const auto& layer : layers) {
+        double time = 0.0;
+        if (!result->segmentSpeeds.empty() && layer.sampleStart < result->segmentSpeeds.size()) {
+            uint32_t end = std::min<uint32_t>(
+                layer.sampleEnd,
+                static_cast<uint32_t>(result->segmentSpeeds.size()) - 1);
+            for (uint32_t i = layer.sampleStart; i <= end; ++i) {
+                time += result->segmentSpeeds[i].duration;
+            }
+        }
+        auto* lt = resp.add_layer_times();
+        lt->set_layer_index(layer.layerIndex);
+        lt->set_z_height(layer.zHeight);
+        lt->set_time_seconds(time);
+    }
+
+    // Print time estimate
+    auto* te = resp.mutable_print_time_estimate();
+    te->set_estimated_time(result->duration);
+    te->set_move_count(static_cast<uint32_t>(result->segmentSpeeds.size()));
+    te->set_method("analytical");
+
+    return resp.SerializeAsString();
 }
 
 } // namespace tether::web

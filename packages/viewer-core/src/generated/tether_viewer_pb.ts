@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file tether_viewer.proto.
  */
 export const file_tether_viewer: GenFile = /*@__PURE__*/
-  fileDesc("ChN0ZXRoZXJfdmlld2VyLnByb3RvEhB0ZXRoZXIudmlld2VyLnYxIhwKC0F1dGhSZXF1ZXN0Eg0KBXRva2VuGAEgASgJIiAKDUNhbmNlbFJlcXVlc3QSDwoHY2FsbF9pZBgBIAEoDSL6AQoUVGV0aGVyVmlld2VyRW52ZWxvcGUSLQoEYXV0aBgBIAEoCzIdLnRldGhlci52aWV3ZXIudjEuQXV0aFJlcXVlc3RIABI4CgdyZXF1ZXN0GAIgASgLMiUudGV0aGVyLnZpZXdlci52MS5UZXRoZXJWaWV3ZXJSZXF1ZXN0SAASOgoIcmVzcG9uc2UYAyABKAsyJi50ZXRoZXIudmlld2VyLnYxLlRldGhlclZpZXdlclJlc3BvbnNlSAASMQoGY2FuY2VsGAQgASgLMh8udGV0aGVyLnZpZXdlci52MS5DYW5jZWxSZXF1ZXN0SABCCgoIZW52ZWxvcGUijAgKE1RldGhlclZpZXdlclJlcXVlc3QSDwoHY2FsbF9pZBgBIAEoDRI8Cgx1cGxvYWRfZ2NvZGUYBSABKAsyJC50ZXRoZXIudmlld2VyLnYxLlVwbG9hZEdjb2RlUmVxdWVzdEgAEjoKC3Byb2Nlc3Nfam9iGAYgASgLMiMudGV0aGVyLnZpZXdlci52MS5Qcm9jZXNzSm9iUmVxdWVzdEgAEj8KDmdldF9qb2Jfc3RhdHVzGAcgASgLMiUudGV0aGVyLnZpZXdlci52MS5HZXRKb2JTdGF0dXNSZXF1ZXN0SAASOAoKZ2V0X2JpbmFyeRgIIAEoCzIiLnRldGhlci52aWV3ZXIudjEuR2V0QmluYXJ5UmVxdWVzdEgAEjgKCmdldF9ibG9ja3MYCSABKAsyIi50ZXRoZXIudmlld2VyLnYxLkdldEJsb2Nrc1JlcXVlc3RIABJACg5nZXRfc3RhdGlzdGljcxgKIAEoCzImLnRldGhlci52aWV3ZXIudjEuR2V0U3RhdGlzdGljc1JlcXVlc3RIABI8CgxnZXRfc2VnbWVudHMYCyABKAsyJC50ZXRoZXIudmlld2VyLnYxLkdldFNlZ21lbnRzUmVxdWVzdEgAEjYKCWxpc3Rfam9icxgMIAEoCzIhLnRldGhlci52aWV3ZXIudjEuTGlzdEpvYnNSZXF1ZXN0SAASOAoKZGVsZXRlX2pvYhgNIAEoCzIiLnRldGhlci52aWV3ZXIudjEuRGVsZXRlSm9iUmVxdWVzdEgAEjsKDGdldF96X2xheWVycxgOIAEoCzIjLnRldGhlci52aWV3ZXIudjEuR2V0WkxheWVyc1JlcXVlc3RIABJGChJnZXRfel9sYXllcl9iaW5hcnkYDyABKAsyKC50ZXRoZXIudmlld2VyLnYxLkdldFpMYXllckJpbmFyeVJlcXVlc3RIABJRChhnZXRfel9sYXllcl9yYW5nZV9iaW5hcnkYECABKAsyLS50ZXRoZXIudmlld2VyLnYxLkdldFpMYXllclJhbmdlQmluYXJ5UmVxdWVzdEgAEjwKDGdldF9hbmFseXNpcxgTIAEoCzIkLnRldGhlci52aWV3ZXIudjEuR2V0QW5hbHlzaXNSZXF1ZXN0SAASSwoUZ2V0X2FuYWx5c2lzX2RldGFpbHMYFCABKAsyKy50ZXRoZXIudmlld2VyLnYxLkdldEFuYWx5c2lzRGV0YWlsc1JlcXVlc3RIABImCgRwaW5nGBEgASgLMhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5SAASLQoLZ2V0X3ZlcnNpb24YEiABKAsyFi5nb29nbGUucHJvdG9idWYuRW1wdHlIAEIJCgdyZXF1ZXN0IqgBCgxTZXJ2ZXJUaW1pbmcSEAoIdG90YWxfbXMYASABKAESGQoRZW52ZWxvcGVfZGVzZXJfbXMYAiABKAESGQoRaGFuZGxlcl9sb29rdXBfbXMYAyABKAESGAoQcmVxdWVzdF9kZXNlcl9tcxgEIAEoARIYChBoYW5kbGVyX3RvdGFsX21zGAUgASgBEhwKFHJlc3BvbnNlX3Nlcl9zZW5kX21zGAYgASgBIsoIChRUZXRoZXJWaWV3ZXJSZXNwb25zZRIPCgdjYWxsX2lkGAEgASgNEgwKBGRvbmUYAiABKAgSFQoNZXJyb3JfbWVzc2FnZRgDIAEoCRISCgplcnJvcl9jb2RlGAQgASgNEjYKDXNlcnZlcl90aW1pbmcYtwEgASgLMh4udGV0aGVyLnZpZXdlci52MS5TZXJ2ZXJUaW1pbmcSPQoMdXBsb2FkX2djb2RlGAUgASgLMiUudGV0aGVyLnZpZXdlci52MS5VcGxvYWRHY29kZVJlc3BvbnNlSAASOwoLcHJvY2Vzc19qb2IYBiABKAsyJC50ZXRoZXIudmlld2VyLnYxLlByb2Nlc3NKb2JSZXNwb25zZUgAEkAKDmdldF9qb2Jfc3RhdHVzGAcgASgLMiYudGV0aGVyLnZpZXdlci52MS5HZXRKb2JTdGF0dXNSZXNwb25zZUgAEjoKCmdldF9iaW5hcnkYCCABKAsyJC50ZXRoZXIudmlld2VyLnYxLkJpbmFyeURhdGFSZXNwb25zZUgAEjkKCmdldF9ibG9ja3MYCSABKAsyIy50ZXRoZXIudmlld2VyLnYxLkdldEJsb2Nrc1Jlc3BvbnNlSAASQQoOZ2V0X3N0YXRpc3RpY3MYCiABKAsyJy50ZXRoZXIudmlld2VyLnYxLkdldFN0YXRpc3RpY3NSZXNwb25zZUgAEj0KDGdldF9zZWdtZW50cxgLIAEoCzIlLnRldGhlci52aWV3ZXIudjEuR2V0U2VnbWVudHNSZXNwb25zZUgAEjcKCWxpc3Rfam9icxgMIAEoCzIiLnRldGhlci52aWV3ZXIudjEuTGlzdEpvYnNSZXNwb25zZUgAEjkKCmRlbGV0ZV9qb2IYDSABKAsyIy50ZXRoZXIudmlld2VyLnYxLkRlbGV0ZUpvYlJlc3BvbnNlSAASPAoMZ2V0X3pfbGF5ZXJzGA4gASgLMiQudGV0aGVyLnZpZXdlci52MS5HZXRaTGF5ZXJzUmVzcG9uc2VIABJCChJnZXRfel9sYXllcl9iaW5hcnkYDyABKAsyJC50ZXRoZXIudmlld2VyLnYxLkJpbmFyeURhdGFSZXNwb25zZUgAEkgKGGdldF96X2xheWVyX3JhbmdlX2JpbmFyeRgQIAEoCzIkLnRldGhlci52aWV3ZXIudjEuQmluYXJ5RGF0YVJlc3BvbnNlSAASLgoEcGluZxgRIAEoCzIeLnRldGhlci52aWV3ZXIudjEuUGluZ1Jlc3BvbnNlSAASOAoLZ2V0X3ZlcnNpb24YEiABKAsyIS50ZXRoZXIudmlld2VyLnYxLlZlcnNpb25SZXNwb25zZUgAEkMKD2FuYWx5c2lzX3Jlc3VsdBgTIAEoCzIoLnRldGhlci52aWV3ZXIudjEuQW5hbHlzaXNSZXN1bHRSZXNwb25zZUgAQgoKCHJlc3BvbnNlIjoKElVwbG9hZEdjb2RlUmVxdWVzdBISCgpnY29kZV90ZXh0GAEgASgJEhAKCGZpbGVuYW1lGAIgASgJIkYKE1VwbG9hZEdjb2RlUmVzcG9uc2USDgoGam9iX2lkGAEgASgJEhAKCGZpbGVuYW1lGAIgASgJEg0KBXN0YXRlGAMgASgJIowBChFQcm9jZXNzSm9iUmVxdWVzdBIOCgZqb2JfaWQYASABKAkSEwoLc2FtcGxlX3JhdGUYAiABKAESFAoMbWF4X3ZlbG9jaXR5GAMgASgBEhgKEG1heF9hY2NlbGVyYXRpb24YBCABKAESEAoIbWF4X2plcmsYBSABKAESEAoIc3RyYXRlZ3kYBiABKAkiMwoSUHJvY2Vzc0pvYlJlc3BvbnNlEg4KBmpvYl9pZBgBIAEoCRINCgVzdGF0ZRgCIAEoCSIlChNHZXRKb2JTdGF0dXNSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSKsAQoUR2V0Sm9iU3RhdHVzUmVzcG9uc2USDgoGam9iX2lkGAEgASgJEg0KBXN0YXRlGAIgASgJEhAKCHByb2dyZXNzGAMgASgBEhQKDHNhbXBsZV9jb3VudBgEIAEoDRIQCghkdXJhdGlvbhgFIAEoARITCgtwYXRoX2xlbmd0aBgGIAEoARIVCg1lcnJvcl9tZXNzYWdlGAcgASgJEg8KB3dhcm5pbmcYCCABKAkinwEKEUJpbmFyeURhdGFSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCRIOCgZmaWVsZHMYAiABKA0SDAoEYXhlcxgDIAEoDRISCgpzdGFydF90aW1lGAQgASgBEhAKCGVuZF90aW1lGAUgASgBEhEKCXNlZ19zdGFydBgGIAEoERIPCgdzZWdfZW5kGAcgASgREhIKCmRvd25zYW1wbGUYCCABKA0ingEKEEdldEJpbmFyeVJlcXVlc3QSDgoGam9iX2lkGAEgASgJEg4KBmZpZWxkcxgCIAEoDRIMCgRheGVzGAMgASgNEhIKCnN0YXJ0X3RpbWUYBCABKAESEAoIZW5kX3RpbWUYBSABKAESEQoJc2VnX3N0YXJ0GAYgASgREg8KB3NlZ19lbmQYByABKBESEgoKZG93bnNhbXBsZRgIIAEoDSIiChJCaW5hcnlEYXRhUmVzcG9uc2USDAoEZGF0YRgBIAEoDCIiChBHZXRCbG9ja3NSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSJjCg5HY29kZUJsb2NrSW5mbxITCgtibG9ja19pbmRleBgBIAEoERITCgtsaW5lX251bWJlchgCIAEoERITCgttb3Rpb25fdHlwZRgDIAEoDRISCgpnY29kZV90ZXh0GAQgASgJIkUKEUdldEJsb2Nrc1Jlc3BvbnNlEjAKBmJsb2NrcxgBIAMoCzIgLnRldGhlci52aWV3ZXIudjEuR2NvZGVCbG9ja0luZm8iJgoUR2V0U3RhdGlzdGljc1JlcXVlc3QSDgoGam9iX2lkGAEgASgJInkKCUF4aXNTdGF0cxIUCgxtaW5fcG9zaXRpb24YASABKAESFAoMbWF4X3Bvc2l0aW9uGAIgASgBEhQKDG1heF92ZWxvY2l0eRgDIAEoARIYChBtYXhfYWNjZWxlcmF0aW9uGAQgASgBEhAKCG1heF9qZXJrGAUgASgBIt4CChVHZXRTdGF0aXN0aWNzUmVzcG9uc2USEAoIZHVyYXRpb24YASABKAESEwoLcGF0aF9sZW5ndGgYAiABKAESFAoMc2FtcGxlX2NvdW50GAMgASgNEhsKE21heF9saW5lYXJfdmVsb2NpdHkYBCABKAESHwoXbWF4X2xpbmVhcl9hY2NlbGVyYXRpb24YBSABKAESFwoPbWF4X2xpbmVhcl9qZXJrGAYgASgBEhUKDW1heF9jdXJ2YXR1cmUYByABKAESHQoVbWF4X2NlbnRyaXBldGFsX2FjY2VsGAggASgBEhoKEnRvdGFsX2Nvcm5lcl9lcnJvchgJIAEoARIYChBtYXhfY29ybmVyX2Vycm9yGAogASgBEhQKDG1lZXRzX2xpbWl0cxgLIAEoCBIvCgpheGlzX3N0YXRzGAwgAygLMhsudGV0aGVyLnZpZXdlci52MS5BeGlzU3RhdHMiJAoSR2V0U2VnbWVudHNSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSKFAQoLU2VnbWVudEluZm8SFQoNc2VnbWVudF9pbmRleBgBIAEoERISCgpzdGFydF90aW1lGAIgASgBEhAKCGVuZF90aW1lGAMgASgBEhIKCnN0YXJ0X3BhdGgYBCABKAESEAoIZW5kX3BhdGgYBSABKAESEwoLbW90aW9uX3R5cGUYBiABKA0iRgoTR2V0U2VnbWVudHNSZXNwb25zZRIvCghzZWdtZW50cxgBIAMoCzIdLnRldGhlci52aWV3ZXIudjEuU2VnbWVudEluZm8iEQoPTGlzdEpvYnNSZXF1ZXN0IogBCgpKb2JTdW1tYXJ5EgoKAmlkGAEgASgJEhAKCGZpbGVuYW1lGAIgASgJEg0KBXN0YXRlGAMgASgJEhAKCHByb2dyZXNzGAQgASgBEhQKDHNhbXBsZV9jb3VudBgFIAEoDRIQCghkdXJhdGlvbhgGIAEoARITCgtwYXRoX2xlbmd0aBgHIAEoASI+ChBMaXN0Sm9ic1Jlc3BvbnNlEioKBGpvYnMYASADKAsyHC50ZXRoZXIudmlld2VyLnYxLkpvYlN1bW1hcnkiIgoQRGVsZXRlSm9iUmVxdWVzdBIOCgZqb2JfaWQYASABKAkiJAoRRGVsZXRlSm9iUmVzcG9uc2USDwoHZGVsZXRlZBgBIAEoCCI4ChFHZXRaTGF5ZXJzUmVxdWVzdBIOCgZqb2JfaWQYASABKAkSEwoLel90b2xlcmFuY2UYAiABKAEiiAEKClpMYXllckluZm8SEwoLbGF5ZXJfaW5kZXgYASABKA0SEAoIel9oZWlnaHQYAiABKAESFAoMc2FtcGxlX3N0YXJ0GAMgASgNEhIKCnNhbXBsZV9lbmQYBCABKA0SFAoMc2FtcGxlX2NvdW50GAUgASgNEhMKC3BhdGhfbGVuZ3RoGAYgASgBIowBChJHZXRaTGF5ZXJzUmVzcG9uc2USLAoGbGF5ZXJzGAEgAygLMhwudGV0aGVyLnZpZXdlci52MS5aTGF5ZXJJbmZvEhQKDHRvdGFsX2xheWVycxgCIAEoDRINCgVtaW5fehgDIAEoARINCgVtYXhfehgEIAEoARIUCgxsYXllcl9oZWlnaHQYBSABKAEiWwoWR2V0WkxheWVyQmluYXJ5UmVxdWVzdBIOCgZqb2JfaWQYASABKAkSEwoLbGF5ZXJfaW5kZXgYAiABKA0SDgoGZmllbGRzGAMgASgNEgwKBGF4ZXMYBCABKA0icwobR2V0WkxheWVyUmFuZ2VCaW5hcnlSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCRITCgtzdGFydF9sYXllchgCIAEoDRIRCgllbmRfbGF5ZXIYAyABKA0SDgoGZmllbGRzGAQgASgNEgwKBGF4ZXMYBSABKA0iDQoLUGluZ1JlcXVlc3QiIQoMUGluZ1Jlc3BvbnNlEhEKCXRpbWVzdGFtcBgBIAEoASI8Cg9WZXJzaW9uUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIYChBwcm90b2NvbF92ZXJzaW9uGAIgASgJIoMBCg5BbmFseXNpc01ldHJpYxILCgNrZXkYASABKAkSFgoMZG91YmxlX3ZhbHVlGAIgASgBSAASFQoLaW50NjRfdmFsdWUYAyABKANIABIUCgpib29sX3ZhbHVlGAQgASgISAASFgoMc3RyaW5nX3ZhbHVlGAUgASgJSABCBwoFdmFsdWUitwEKDUFuYWx5c2lzRXZlbnQSCgoCaWQYASABKAkSEwoLbGluZV9udW1iZXIYAiABKAUSEgoKZXZlbnRfdHlwZRgDIAEoCRI0CghzZXZlcml0eRgEIAEoDjIiLnRldGhlci52aWV3ZXIudjEuQW5hbHlzaXNTZXZlcml0eRIPCgdtZXNzYWdlGAUgASgJEhQKDG1ldHJpY192YWx1ZRgGIAEoARIUCgxkZXRhaWxzX2pzb24YByABKAkigQIKD0FuYWx5c2lzU2VjdGlvbhIUCgxzZWN0aW9uX25hbWUYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJEjEKB21ldHJpY3MYAyADKAsyIC50ZXRoZXIudmlld2VyLnYxLkFuYWx5c2lzTWV0cmljEjMKCnRvcF9ldmVudHMYBCADKAsyHy50ZXRoZXIudmlld2VyLnYxLkFuYWx5c2lzRXZlbnQSFwoPcmVjb21tZW5kYXRpb25zGAUgAygJEg0KBXNjb3JlGAYgASgBEhkKEXRvdGFsX2V2ZW50X2NvdW50GAcgASgNEhcKD2hhc19tb3JlX2V2ZW50cxgIIAEoCCKTAQoSR2V0QW5hbHlzaXNSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCRIVCg1hbmFseXplcl9tYXNrGAIgASgNEhcKD3RvcF9ldmVudF9saW1pdBgDIAEoDRIUCgxkZXRhaWxfbGV2ZWwYBCABKAkSDgoGc3RyZWFtGAUgASgIEhcKD21heF9ldmVudF9saW1pdBgGIAEoDSJ0ChlHZXRBbmFseXNpc0RldGFpbHNSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCRIUCgxzZWN0aW9uX25hbWUYAiABKAkSEgoKZXZlbnRfdHlwZRgDIAEoCRIOCgZvZmZzZXQYBCABKA0SDQoFbGltaXQYBSABKA0igQEKF0FuYWx5c2lzRGV0YWlsc1Jlc3BvbnNlEhQKDHNlY3Rpb25fbmFtZRgBIAEoCRIvCgZldmVudHMYAiADKAsyHy50ZXRoZXIudmlld2VyLnYxLkFuYWx5c2lzRXZlbnQSDQoFdG90YWwYAyABKA0SEAoIaGFzX21vcmUYBCABKAgiWAoWQW5hbHlzaXNQcm9ncmVzc1VwZGF0ZRIUCgxzZWN0aW9uX25hbWUYASABKAkSGAoQcHJvZ3Jlc3NfcGVyY2VudBgCIAEoDRIOCgZzdGF0dXMYAyABKAkiswIKFkFuYWx5c2lzUmVzdWx0UmVzcG9uc2USPAoIcHJvZ3Jlc3MYASABKAsyKC50ZXRoZXIudmlld2VyLnYxLkFuYWx5c2lzUHJvZ3Jlc3NVcGRhdGVIABI0CgdzZWN0aW9uGAIgASgLMiEudGV0aGVyLnZpZXdlci52MS5BbmFseXNpc1NlY3Rpb25IABI8CgdkZXRhaWxzGAMgASgLMikudGV0aGVyLnZpZXdlci52MS5BbmFseXNpc0RldGFpbHNSZXNwb25zZUgAEhAKCGNvbXBsZXRlGAQgASgIEjMKCHNlY3Rpb25zGAUgAygLMiEudGV0aGVyLnZpZXdlci52MS5BbmFseXNpc1NlY3Rpb24SFQoNZXJyb3JfbWVzc2FnZRgGIAEoCUIJCgdwYXlsb2FkKqYBChBBbmFseXNpc1NldmVyaXR5EiEKHUFOQUxZU0lTX1NFVkVSSVRZX1VOU1BFQ0lGSUVEEAASGgoWQU5BTFlTSVNfU0VWRVJJVFlfSU5GTxABEhkKFUFOQUxZU0lTX1NFVkVSSVRZX0xPVxACEhwKGEFOQUxZU0lTX1NFVkVSSVRZX01FRElVTRADEhoKFkFOQUxZU0lTX1NFVkVSSVRZX0hJR0gQBGIGcHJvdG8z", [file_google_protobuf_empty]);
+  fileDesc("ChN0ZXRoZXJfdmlld2VyLnByb3RvEhB0ZXRoZXIudmlld2VyLnYxIhwKC0F1dGhSZXF1ZXN0Eg0KBXRva2VuGAEgASgJIiAKDUNhbmNlbFJlcXVlc3QSDwoHY2FsbF9pZBgBIAEoDSL6AQoUVGV0aGVyVmlld2VyRW52ZWxvcGUSLQoEYXV0aBgBIAEoCzIdLnRldGhlci52aWV3ZXIudjEuQXV0aFJlcXVlc3RIABI4CgdyZXF1ZXN0GAIgASgLMiUudGV0aGVyLnZpZXdlci52MS5UZXRoZXJWaWV3ZXJSZXF1ZXN0SAASOgoIcmVzcG9uc2UYAyABKAsyJi50ZXRoZXIudmlld2VyLnYxLlRldGhlclZpZXdlclJlc3BvbnNlSAASMQoGY2FuY2VsGAQgASgLMh8udGV0aGVyLnZpZXdlci52MS5DYW5jZWxSZXF1ZXN0SABCCgoIZW52ZWxvcGUi7woKE1RldGhlclZpZXdlclJlcXVlc3QSDwoHY2FsbF9pZBgBIAEoDRI8Cgx1cGxvYWRfZ2NvZGUYBSABKAsyJC50ZXRoZXIudmlld2VyLnYxLlVwbG9hZEdjb2RlUmVxdWVzdEgAEjoKC3Byb2Nlc3Nfam9iGAYgASgLMiMudGV0aGVyLnZpZXdlci52MS5Qcm9jZXNzSm9iUmVxdWVzdEgAEj8KDmdldF9qb2Jfc3RhdHVzGAcgASgLMiUudGV0aGVyLnZpZXdlci52MS5HZXRKb2JTdGF0dXNSZXF1ZXN0SAASOAoKZ2V0X2JpbmFyeRgIIAEoCzIiLnRldGhlci52aWV3ZXIudjEuR2V0QmluYXJ5UmVxdWVzdEgAEjgKCmdldF9ibG9ja3MYCSABKAsyIi50ZXRoZXIudmlld2VyLnYxLkdldEJsb2Nrc1JlcXVlc3RIABJACg5nZXRfc3RhdGlzdGljcxgKIAEoCzImLnRldGhlci52aWV3ZXIudjEuR2V0U3RhdGlzdGljc1JlcXVlc3RIABI8CgxnZXRfc2VnbWVudHMYCyABKAsyJC50ZXRoZXIudmlld2VyLnYxLkdldFNlZ21lbnRzUmVxdWVzdEgAEjYKCWxpc3Rfam9icxgMIAEoCzIhLnRldGhlci52aWV3ZXIudjEuTGlzdEpvYnNSZXF1ZXN0SAASOAoKZGVsZXRlX2pvYhgNIAEoCzIiLnRldGhlci52aWV3ZXIudjEuRGVsZXRlSm9iUmVxdWVzdEgAEjsKDGdldF96X2xheWVycxgOIAEoCzIjLnRldGhlci52aWV3ZXIudjEuR2V0WkxheWVyc1JlcXVlc3RIABJGChJnZXRfel9sYXllcl9iaW5hcnkYDyABKAsyKC50ZXRoZXIudmlld2VyLnYxLkdldFpMYXllckJpbmFyeVJlcXVlc3RIABJRChhnZXRfel9sYXllcl9yYW5nZV9iaW5hcnkYECABKAsyLS50ZXRoZXIudmlld2VyLnYxLkdldFpMYXllclJhbmdlQmluYXJ5UmVxdWVzdEgAEjwKDGdldF9hbmFseXNpcxgTIAEoCzIkLnRldGhlci52aWV3ZXIudjEuR2V0QW5hbHlzaXNSZXF1ZXN0SAASSwoUZ2V0X2FuYWx5c2lzX2RldGFpbHMYFCABKAsyKy50ZXRoZXIudmlld2VyLnYxLkdldEFuYWx5c2lzRGV0YWlsc1JlcXVlc3RIABJHChJnZXRfZ2NvZGVfbWV0YWRhdGEYFSABKAsyKS50ZXRoZXIudmlld2VyLnYxLkdldEdjb2RlTWV0YWRhdGFSZXF1ZXN0SAASRQoRZ2V0X2ZlYXR1cmVfdHlwZXMYFiABKAsyKC50ZXRoZXIudmlld2VyLnYxLkdldEZlYXR1cmVUeXBlc1JlcXVlc3RIABJDChBnZXRfcHJvYmVfZXZlbnRzGBcgASgLMicudGV0aGVyLnZpZXdlci52MS5HZXRQcm9iZUV2ZW50c1JlcXVlc3RIABJJChNnZXRfZHJpbGxpbmdfY3ljbGVzGBggASgLMioudGV0aGVyLnZpZXdlci52MS5HZXREcmlsbGluZ0N5Y2xlc1JlcXVlc3RIABJBCg9nZXRfam9iX3N1bW1hcnkYGSABKAsyJi50ZXRoZXIudmlld2VyLnYxLkdldEpvYlN1bW1hcnlSZXF1ZXN0SAASJgoEcGluZxgRIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eUgAEi0KC2dldF92ZXJzaW9uGBIgASgLMhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5SABCCQoHcmVxdWVzdCKoAQoMU2VydmVyVGltaW5nEhAKCHRvdGFsX21zGAEgASgBEhkKEWVudmVsb3BlX2Rlc2VyX21zGAIgASgBEhkKEWhhbmRsZXJfbG9va3VwX21zGAMgASgBEhgKEHJlcXVlc3RfZGVzZXJfbXMYBCABKAESGAoQaGFuZGxlcl90b3RhbF9tcxgFIAEoARIcChRyZXNwb25zZV9zZXJfc2VuZF9tcxgGIAEoASKyCwoUVGV0aGVyVmlld2VyUmVzcG9uc2USDwoHY2FsbF9pZBgBIAEoDRIMCgRkb25lGAIgASgIEhUKDWVycm9yX21lc3NhZ2UYAyABKAkSEgoKZXJyb3JfY29kZRgEIAEoDRI2Cg1zZXJ2ZXJfdGltaW5nGLcBIAEoCzIeLnRldGhlci52aWV3ZXIudjEuU2VydmVyVGltaW5nEj0KDHVwbG9hZF9nY29kZRgFIAEoCzIlLnRldGhlci52aWV3ZXIudjEuVXBsb2FkR2NvZGVSZXNwb25zZUgAEjsKC3Byb2Nlc3Nfam9iGAYgASgLMiQudGV0aGVyLnZpZXdlci52MS5Qcm9jZXNzSm9iUmVzcG9uc2VIABJACg5nZXRfam9iX3N0YXR1cxgHIAEoCzImLnRldGhlci52aWV3ZXIudjEuR2V0Sm9iU3RhdHVzUmVzcG9uc2VIABI6CgpnZXRfYmluYXJ5GAggASgLMiQudGV0aGVyLnZpZXdlci52MS5CaW5hcnlEYXRhUmVzcG9uc2VIABI5CgpnZXRfYmxvY2tzGAkgASgLMiMudGV0aGVyLnZpZXdlci52MS5HZXRCbG9ja3NSZXNwb25zZUgAEkEKDmdldF9zdGF0aXN0aWNzGAogASgLMicudGV0aGVyLnZpZXdlci52MS5HZXRTdGF0aXN0aWNzUmVzcG9uc2VIABI9CgxnZXRfc2VnbWVudHMYCyABKAsyJS50ZXRoZXIudmlld2VyLnYxLkdldFNlZ21lbnRzUmVzcG9uc2VIABI3CglsaXN0X2pvYnMYDCABKAsyIi50ZXRoZXIudmlld2VyLnYxLkxpc3RKb2JzUmVzcG9uc2VIABI5CgpkZWxldGVfam9iGA0gASgLMiMudGV0aGVyLnZpZXdlci52MS5EZWxldGVKb2JSZXNwb25zZUgAEjwKDGdldF96X2xheWVycxgOIAEoCzIkLnRldGhlci52aWV3ZXIudjEuR2V0WkxheWVyc1Jlc3BvbnNlSAASQgoSZ2V0X3pfbGF5ZXJfYmluYXJ5GA8gASgLMiQudGV0aGVyLnZpZXdlci52MS5CaW5hcnlEYXRhUmVzcG9uc2VIABJIChhnZXRfel9sYXllcl9yYW5nZV9iaW5hcnkYECABKAsyJC50ZXRoZXIudmlld2VyLnYxLkJpbmFyeURhdGFSZXNwb25zZUgAEi4KBHBpbmcYESABKAsyHi50ZXRoZXIudmlld2VyLnYxLlBpbmdSZXNwb25zZUgAEjgKC2dldF92ZXJzaW9uGBIgASgLMiEudGV0aGVyLnZpZXdlci52MS5WZXJzaW9uUmVzcG9uc2VIABJDCg9hbmFseXNpc19yZXN1bHQYEyABKAsyKC50ZXRoZXIudmlld2VyLnYxLkFuYWx5c2lzUmVzdWx0UmVzcG9uc2VIABJIChJnZXRfZ2NvZGVfbWV0YWRhdGEYFSABKAsyKi50ZXRoZXIudmlld2VyLnYxLkdldEdjb2RlTWV0YWRhdGFSZXNwb25zZUgAEkYKEWdldF9mZWF0dXJlX3R5cGVzGBYgASgLMikudGV0aGVyLnZpZXdlci52MS5HZXRGZWF0dXJlVHlwZXNSZXNwb25zZUgAEkQKEGdldF9wcm9iZV9ldmVudHMYFyABKAsyKC50ZXRoZXIudmlld2VyLnYxLkdldFByb2JlRXZlbnRzUmVzcG9uc2VIABJKChNnZXRfZHJpbGxpbmdfY3ljbGVzGBggASgLMisudGV0aGVyLnZpZXdlci52MS5HZXREcmlsbGluZ0N5Y2xlc1Jlc3BvbnNlSAASQgoPZ2V0X2pvYl9zdW1tYXJ5GBkgASgLMicudGV0aGVyLnZpZXdlci52MS5HZXRKb2JTdW1tYXJ5UmVzcG9uc2VIAEIKCghyZXNwb25zZSI6ChJVcGxvYWRHY29kZVJlcXVlc3QSEgoKZ2NvZGVfdGV4dBgBIAEoCRIQCghmaWxlbmFtZRgCIAEoCSJGChNVcGxvYWRHY29kZVJlc3BvbnNlEg4KBmpvYl9pZBgBIAEoCRIQCghmaWxlbmFtZRgCIAEoCRINCgVzdGF0ZRgDIAEoCSKMAQoRUHJvY2Vzc0pvYlJlcXVlc3QSDgoGam9iX2lkGAEgASgJEhMKC3NhbXBsZV9yYXRlGAIgASgBEhQKDG1heF92ZWxvY2l0eRgDIAEoARIYChBtYXhfYWNjZWxlcmF0aW9uGAQgASgBEhAKCG1heF9qZXJrGAUgASgBEhAKCHN0cmF0ZWd5GAYgASgJIjMKElByb2Nlc3NKb2JSZXNwb25zZRIOCgZqb2JfaWQYASABKAkSDQoFc3RhdGUYAiABKAkiJQoTR2V0Sm9iU3RhdHVzUmVxdWVzdBIOCgZqb2JfaWQYASABKAkirAEKFEdldEpvYlN0YXR1c1Jlc3BvbnNlEg4KBmpvYl9pZBgBIAEoCRINCgVzdGF0ZRgCIAEoCRIQCghwcm9ncmVzcxgDIAEoARIUCgxzYW1wbGVfY291bnQYBCABKA0SEAoIZHVyYXRpb24YBSABKAESEwoLcGF0aF9sZW5ndGgYBiABKAESFQoNZXJyb3JfbWVzc2FnZRgHIAEoCRIPCgd3YXJuaW5nGAggASgJIp8BChFCaW5hcnlEYXRhUmVxdWVzdBIOCgZqb2JfaWQYASABKAkSDgoGZmllbGRzGAIgASgNEgwKBGF4ZXMYAyABKA0SEgoKc3RhcnRfdGltZRgEIAEoARIQCghlbmRfdGltZRgFIAEoARIRCglzZWdfc3RhcnQYBiABKBESDwoHc2VnX2VuZBgHIAEoERISCgpkb3duc2FtcGxlGAggASgNIp4BChBHZXRCaW5hcnlSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCRIOCgZmaWVsZHMYAiABKA0SDAoEYXhlcxgDIAEoDRISCgpzdGFydF90aW1lGAQgASgBEhAKCGVuZF90aW1lGAUgASgBEhEKCXNlZ19zdGFydBgGIAEoERIPCgdzZWdfZW5kGAcgASgREhIKCmRvd25zYW1wbGUYCCABKA0iIgoSQmluYXJ5RGF0YVJlc3BvbnNlEgwKBGRhdGEYASABKAwiIgoQR2V0QmxvY2tzUmVxdWVzdBIOCgZqb2JfaWQYASABKAkiYwoOR2NvZGVCbG9ja0luZm8SEwoLYmxvY2tfaW5kZXgYASABKBESEwoLbGluZV9udW1iZXIYAiABKBESEwoLbW90aW9uX3R5cGUYAyABKA0SEgoKZ2NvZGVfdGV4dBgEIAEoCSJFChFHZXRCbG9ja3NSZXNwb25zZRIwCgZibG9ja3MYASADKAsyIC50ZXRoZXIudmlld2VyLnYxLkdjb2RlQmxvY2tJbmZvIiYKFEdldFN0YXRpc3RpY3NSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSJ5CglBeGlzU3RhdHMSFAoMbWluX3Bvc2l0aW9uGAEgASgBEhQKDG1heF9wb3NpdGlvbhgCIAEoARIUCgxtYXhfdmVsb2NpdHkYAyABKAESGAoQbWF4X2FjY2VsZXJhdGlvbhgEIAEoARIQCghtYXhfamVyaxgFIAEoASLeAgoVR2V0U3RhdGlzdGljc1Jlc3BvbnNlEhAKCGR1cmF0aW9uGAEgASgBEhMKC3BhdGhfbGVuZ3RoGAIgASgBEhQKDHNhbXBsZV9jb3VudBgDIAEoDRIbChNtYXhfbGluZWFyX3ZlbG9jaXR5GAQgASgBEh8KF21heF9saW5lYXJfYWNjZWxlcmF0aW9uGAUgASgBEhcKD21heF9saW5lYXJfamVyaxgGIAEoARIVCg1tYXhfY3VydmF0dXJlGAcgASgBEh0KFW1heF9jZW50cmlwZXRhbF9hY2NlbBgIIAEoARIaChJ0b3RhbF9jb3JuZXJfZXJyb3IYCSABKAESGAoQbWF4X2Nvcm5lcl9lcnJvchgKIAEoARIUCgxtZWV0c19saW1pdHMYCyABKAgSLwoKYXhpc19zdGF0cxgMIAMoCzIbLnRldGhlci52aWV3ZXIudjEuQXhpc1N0YXRzIiQKEkdldFNlZ21lbnRzUmVxdWVzdBIOCgZqb2JfaWQYASABKAkihQEKC1NlZ21lbnRJbmZvEhUKDXNlZ21lbnRfaW5kZXgYASABKBESEgoKc3RhcnRfdGltZRgCIAEoARIQCghlbmRfdGltZRgDIAEoARISCgpzdGFydF9wYXRoGAQgASgBEhAKCGVuZF9wYXRoGAUgASgBEhMKC21vdGlvbl90eXBlGAYgASgNIkYKE0dldFNlZ21lbnRzUmVzcG9uc2USLwoIc2VnbWVudHMYASADKAsyHS50ZXRoZXIudmlld2VyLnYxLlNlZ21lbnRJbmZvIhEKD0xpc3RKb2JzUmVxdWVzdCKIAQoKSm9iU3VtbWFyeRIKCgJpZBgBIAEoCRIQCghmaWxlbmFtZRgCIAEoCRINCgVzdGF0ZRgDIAEoCRIQCghwcm9ncmVzcxgEIAEoARIUCgxzYW1wbGVfY291bnQYBSABKA0SEAoIZHVyYXRpb24YBiABKAESEwoLcGF0aF9sZW5ndGgYByABKAEiPgoQTGlzdEpvYnNSZXNwb25zZRIqCgRqb2JzGAEgAygLMhwudGV0aGVyLnZpZXdlci52MS5Kb2JTdW1tYXJ5IiIKEERlbGV0ZUpvYlJlcXVlc3QSDgoGam9iX2lkGAEgASgJIiQKEURlbGV0ZUpvYlJlc3BvbnNlEg8KB2RlbGV0ZWQYASABKAgiOAoRR2V0WkxheWVyc1JlcXVlc3QSDgoGam9iX2lkGAEgASgJEhMKC3pfdG9sZXJhbmNlGAIgASgBIogBCgpaTGF5ZXJJbmZvEhMKC2xheWVyX2luZGV4GAEgASgNEhAKCHpfaGVpZ2h0GAIgASgBEhQKDHNhbXBsZV9zdGFydBgDIAEoDRISCgpzYW1wbGVfZW5kGAQgASgNEhQKDHNhbXBsZV9jb3VudBgFIAEoDRITCgtwYXRoX2xlbmd0aBgGIAEoASKMAQoSR2V0WkxheWVyc1Jlc3BvbnNlEiwKBmxheWVycxgBIAMoCzIcLnRldGhlci52aWV3ZXIudjEuWkxheWVySW5mbxIUCgx0b3RhbF9sYXllcnMYAiABKA0SDQoFbWluX3oYAyABKAESDQoFbWF4X3oYBCABKAESFAoMbGF5ZXJfaGVpZ2h0GAUgASgBIlsKFkdldFpMYXllckJpbmFyeVJlcXVlc3QSDgoGam9iX2lkGAEgASgJEhMKC2xheWVyX2luZGV4GAIgASgNEg4KBmZpZWxkcxgDIAEoDRIMCgRheGVzGAQgASgNInMKG0dldFpMYXllclJhbmdlQmluYXJ5UmVxdWVzdBIOCgZqb2JfaWQYASABKAkSEwoLc3RhcnRfbGF5ZXIYAiABKA0SEQoJZW5kX2xheWVyGAMgASgNEg4KBmZpZWxkcxgEIAEoDRIMCgRheGVzGAUgASgNIg0KC1BpbmdSZXF1ZXN0IiEKDFBpbmdSZXNwb25zZRIRCgl0aW1lc3RhbXAYASABKAEiPAoPVmVyc2lvblJlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSGAoQcHJvdG9jb2xfdmVyc2lvbhgCIAEoCSKDAQoOQW5hbHlzaXNNZXRyaWMSCwoDa2V5GAEgASgJEhYKDGRvdWJsZV92YWx1ZRgCIAEoAUgAEhUKC2ludDY0X3ZhbHVlGAMgASgDSAASFAoKYm9vbF92YWx1ZRgEIAEoCEgAEhYKDHN0cmluZ192YWx1ZRgFIAEoCUgAQgcKBXZhbHVlIrcBCg1BbmFseXNpc0V2ZW50EgoKAmlkGAEgASgJEhMKC2xpbmVfbnVtYmVyGAIgASgFEhIKCmV2ZW50X3R5cGUYAyABKAkSNAoIc2V2ZXJpdHkYBCABKA4yIi50ZXRoZXIudmlld2VyLnYxLkFuYWx5c2lzU2V2ZXJpdHkSDwoHbWVzc2FnZRgFIAEoCRIUCgxtZXRyaWNfdmFsdWUYBiABKAESFAoMZGV0YWlsc19qc29uGAcgASgJIoECCg9BbmFseXNpc1NlY3Rpb24SFAoMc2VjdGlvbl9uYW1lGAEgASgJEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIxCgdtZXRyaWNzGAMgAygLMiAudGV0aGVyLnZpZXdlci52MS5BbmFseXNpc01ldHJpYxIzCgp0b3BfZXZlbnRzGAQgAygLMh8udGV0aGVyLnZpZXdlci52MS5BbmFseXNpc0V2ZW50EhcKD3JlY29tbWVuZGF0aW9ucxgFIAMoCRINCgVzY29yZRgGIAEoARIZChF0b3RhbF9ldmVudF9jb3VudBgHIAEoDRIXCg9oYXNfbW9yZV9ldmVudHMYCCABKAgikwEKEkdldEFuYWx5c2lzUmVxdWVzdBIOCgZqb2JfaWQYASABKAkSFQoNYW5hbHl6ZXJfbWFzaxgCIAEoDRIXCg90b3BfZXZlbnRfbGltaXQYAyABKA0SFAoMZGV0YWlsX2xldmVsGAQgASgJEg4KBnN0cmVhbRgFIAEoCBIXCg9tYXhfZXZlbnRfbGltaXQYBiABKA0idAoZR2V0QW5hbHlzaXNEZXRhaWxzUmVxdWVzdBIOCgZqb2JfaWQYASABKAkSFAoMc2VjdGlvbl9uYW1lGAIgASgJEhIKCmV2ZW50X3R5cGUYAyABKAkSDgoGb2Zmc2V0GAQgASgNEg0KBWxpbWl0GAUgASgNIoEBChdBbmFseXNpc0RldGFpbHNSZXNwb25zZRIUCgxzZWN0aW9uX25hbWUYASABKAkSLwoGZXZlbnRzGAIgAygLMh8udGV0aGVyLnZpZXdlci52MS5BbmFseXNpc0V2ZW50Eg0KBXRvdGFsGAMgASgNEhAKCGhhc19tb3JlGAQgASgIIlgKFkFuYWx5c2lzUHJvZ3Jlc3NVcGRhdGUSFAoMc2VjdGlvbl9uYW1lGAEgASgJEhgKEHByb2dyZXNzX3BlcmNlbnQYAiABKA0SDgoGc3RhdHVzGAMgASgJIrMCChZBbmFseXNpc1Jlc3VsdFJlc3BvbnNlEjwKCHByb2dyZXNzGAEgASgLMigudGV0aGVyLnZpZXdlci52MS5BbmFseXNpc1Byb2dyZXNzVXBkYXRlSAASNAoHc2VjdGlvbhgCIAEoCzIhLnRldGhlci52aWV3ZXIudjEuQW5hbHlzaXNTZWN0aW9uSAASPAoHZGV0YWlscxgDIAEoCzIpLnRldGhlci52aWV3ZXIudjEuQW5hbHlzaXNEZXRhaWxzUmVzcG9uc2VIABIQCghjb21wbGV0ZRgEIAEoCBIzCghzZWN0aW9ucxgFIAMoCzIhLnRldGhlci52aWV3ZXIudjEuQW5hbHlzaXNTZWN0aW9uEhUKDWVycm9yX21lc3NhZ2UYBiABKAlCCQoHcGF5bG9hZCIpChdHZXRHY29kZU1ldGFkYXRhUmVxdWVzdBIOCgZqb2JfaWQYASABKAkiNgoKVG9vbENoYW5nZRITCgtsaW5lX251bWJlchgBIAEoBRITCgt0b29sX251bWJlchgCIAEoBSJDCgxTcGluZGxlRXZlbnQSEwoLbGluZV9udW1iZXIYASABKAUSCwoDcnBtGAIgASgBEhEKCWRpcmVjdGlvbhgDIAEoCSKDAQoQVGVtcGVyYXR1cmVFdmVudBITCgtsaW5lX251bWJlchgBIAEoBRITCgZob3RlbmQYAiABKAFIAIgBARIQCgNiZWQYAyABKAFIAYgBARIUCgdjaGFtYmVyGAQgASgBSAKIAQFCCQoHX2hvdGVuZEIGCgRfYmVkQgoKCF9jaGFtYmVyIi4KCEZhbkV2ZW50EhMKC2xpbmVfbnVtYmVyGAEgASgFEg0KBXNwZWVkGAIgASgBIjIKDENvb2xhbnRFdmVudBITCgtsaW5lX251bWJlchgBIAEoBRINCgVzdGF0ZRgCIAEoCSI4Cg5GZWVkUmF0ZUNoYW5nZRITCgtsaW5lX251bWJlchgBIAEoBRIRCglmZWVkX3JhdGUYAiABKAEiXgoKQmxvY2tTdGF0ZRITCgtibG9ja19pbmRleBgBIAEoBRIRCglmZWVkX3JhdGUYAiABKAESEwoLdG9vbF9udW1iZXIYAyABKAUSEwoLc3BpbmRsZV9ycG0YBCABKAEiMwoOV29ya0Nvb3JkaW5hdGUSEwoLbGluZV9udW1iZXIYASABKAUSDAoEY29kZRgCIAEoCSJrCg9TdG9ja0RpbWVuc2lvbnMSDQoFbWluX3gYASABKAESDQoFbWluX3kYAiABKAESDQoFbWluX3oYAyABKAESDQoFbWF4X3gYBCABKAESDQoFbWF4X3kYBSABKAESDQoFbWF4X3oYBiABKAEiuwUKGEdldEdjb2RlTWV0YWRhdGFSZXNwb25zZRIyCgx0b29sX2NoYW5nZXMYASADKAsyHC50ZXRoZXIudmlld2VyLnYxLlRvb2xDaGFuZ2USNgoOc3BpbmRsZV9ldmVudHMYAiADKAsyHi50ZXRoZXIudmlld2VyLnYxLlNwaW5kbGVFdmVudBI+ChJ0ZW1wZXJhdHVyZV9ldmVudHMYAyADKAsyIi50ZXRoZXIudmlld2VyLnYxLlRlbXBlcmF0dXJlRXZlbnQSLgoKZmFuX2V2ZW50cxgEIAMoCzIaLnRldGhlci52aWV3ZXIudjEuRmFuRXZlbnQSNgoOY29vbGFudF9ldmVudHMYBSADKAsyHi50ZXRoZXIudmlld2VyLnYxLkNvb2xhbnRFdmVudBI7ChFmZWVkX3JhdGVfY2hhbmdlcxgGIAMoCzIgLnRldGhlci52aWV3ZXIudjEuRmVlZFJhdGVDaGFuZ2USDQoFdG9vbHMYByADKAUSFwoPbWF4X3NwaW5kbGVfcnBtGAggASgBEhcKD21heF9ob3RlbmRfdGVtcBgJIAEoARIUCgxtYXhfYmVkX3RlbXAYCiABKAESFQoNbWF4X2Zhbl9zcGVlZBgLIAEoARIVCg1taW5fZmVlZF9yYXRlGAwgASgBEhUKDW1heF9mZWVkX3JhdGUYDSABKAESMgoMYmxvY2tfc3RhdGVzGA4gAygLMhwudGV0aGVyLnZpZXdlci52MS5CbG9ja1N0YXRlEkEKF3dvcmtfY29vcmRpbmF0ZV9zeXN0ZW1zGA8gAygLMiAudGV0aGVyLnZpZXdlci52MS5Xb3JrQ29vcmRpbmF0ZRI7ChBzdG9ja19kaW1lbnNpb25zGBAgASgLMiEudGV0aGVyLnZpZXdlci52MS5TdG9ja0RpbWVuc2lvbnMiYAoSRmVhdHVyZVR5cGVTZWdtZW50EhIKCnN0YXJ0X2xpbmUYASABKAUSEAoIZW5kX2xpbmUYAiABKAUSFAoMZmVhdHVyZV90eXBlGAMgASgJEg4KBnNsaWNlchgEIAEoCSIoChZHZXRGZWF0dXJlVHlwZXNSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSJRChdHZXRGZWF0dXJlVHlwZXNSZXNwb25zZRI2CghzZWdtZW50cxgBIAMoCzIkLnRldGhlci52aWV3ZXIudjEuRmVhdHVyZVR5cGVTZWdtZW50IkIKClByb2JlRXZlbnQSEwoLbGluZV9udW1iZXIYASABKAUSCQoBeBgCIAEoARIJCgF5GAMgASgBEgkKAXoYBCABKAEiJwoVR2V0UHJvYmVFdmVudHNSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSJGChZHZXRQcm9iZUV2ZW50c1Jlc3BvbnNlEiwKBmV2ZW50cxgBIAMoCzIcLnRldGhlci52aWV3ZXIudjEuUHJvYmVFdmVudCJkCg1EcmlsbGluZ0N5Y2xlEhMKC2xpbmVfbnVtYmVyGAEgASgFEhIKCmN5Y2xlX3R5cGUYAiABKAkSCQoBeBgDIAEoARIJCgF5GAQgASgBEgkKAXoYBSABKAESCQoBchgGIAEoASIqChhHZXREcmlsbGluZ0N5Y2xlc1JlcXVlc3QSDgoGam9iX2lkGAEgASgJIkwKGUdldERyaWxsaW5nQ3ljbGVzUmVzcG9uc2USLwoGY3ljbGVzGAEgAygLMh8udGV0aGVyLnZpZXdlci52MS5EcmlsbGluZ0N5Y2xlIkkKDU1hdGVyaWFsVXNhZ2USGAoQZXh0cnVzaW9uX2xlbmd0aBgBIAEoARIOCgZ2b2x1bWUYAiABKAESDgoGd2VpZ2h0GAMgASgBIlwKClNwZWVkU3RhdHMSEQoJbWluX3NwZWVkGAEgASgBEhEKCW1heF9zcGVlZBgCIAEoARISCgptZWFuX3NwZWVkGAMgASgBEhQKDG1lZGlhbl9zcGVlZBgEIAEoASJICglMYXllclRpbWUSEwoLbGF5ZXJfaW5kZXgYASABKA0SEAoIel9oZWlnaHQYAiABKAESFAoMdGltZV9zZWNvbmRzGAMgASgBIkoKDFRpbWVFc3RpbWF0ZRIWCg5lc3RpbWF0ZWRfdGltZRgBIAEoARISCgptb3ZlX2NvdW50GAIgASgNEg4KBm1ldGhvZBgDIAEoCSImChRHZXRKb2JTdW1tYXJ5UmVxdWVzdBIOCgZqb2JfaWQYASABKAki8gEKFUdldEpvYlN1bW1hcnlSZXNwb25zZRI3Cg5tYXRlcmlhbF91c2FnZRgBIAEoCzIfLnRldGhlci52aWV3ZXIudjEuTWF0ZXJpYWxVc2FnZRIxCgtzcGVlZF9zdGF0cxgCIAEoCzIcLnRldGhlci52aWV3ZXIudjEuU3BlZWRTdGF0cxIwCgtsYXllcl90aW1lcxgDIAMoCzIbLnRldGhlci52aWV3ZXIudjEuTGF5ZXJUaW1lEjsKE3ByaW50X3RpbWVfZXN0aW1hdGUYBCABKAsyHi50ZXRoZXIudmlld2VyLnYxLlRpbWVFc3RpbWF0ZSqmAQoQQW5hbHlzaXNTZXZlcml0eRIhCh1BTkFMWVNJU19TRVZFUklUWV9VTlNQRUNJRklFRBAAEhoKFkFOQUxZU0lTX1NFVkVSSVRZX0lORk8QARIZChVBTkFMWVNJU19TRVZFUklUWV9MT1cQAhIcChhBTkFMWVNJU19TRVZFUklUWV9NRURJVU0QAxIaChZBTkFMWVNJU19TRVZFUklUWV9ISUdIEARiBnByb3RvMw", [file_google_protobuf_empty]);
 
 /**
  * @generated from message tether.viewer.v1.AuthRequest
@@ -191,6 +191,38 @@ export type TetherViewerRequest = Message<"tether.viewer.v1.TetherViewerRequest"
      */
     value: GetAnalysisDetailsRequest;
     case: "getAnalysisDetails";
+  } | {
+    /**
+     * G-code metadata / viewer helpers
+     *
+     * @generated from field: tether.viewer.v1.GetGcodeMetadataRequest get_gcode_metadata = 21;
+     */
+    value: GetGcodeMetadataRequest;
+    case: "getGcodeMetadata";
+  } | {
+    /**
+     * @generated from field: tether.viewer.v1.GetFeatureTypesRequest get_feature_types = 22;
+     */
+    value: GetFeatureTypesRequest;
+    case: "getFeatureTypes";
+  } | {
+    /**
+     * @generated from field: tether.viewer.v1.GetProbeEventsRequest get_probe_events = 23;
+     */
+    value: GetProbeEventsRequest;
+    case: "getProbeEvents";
+  } | {
+    /**
+     * @generated from field: tether.viewer.v1.GetDrillingCyclesRequest get_drilling_cycles = 24;
+     */
+    value: GetDrillingCyclesRequest;
+    case: "getDrillingCycles";
+  } | {
+    /**
+     * @generated from field: tether.viewer.v1.GetJobSummaryRequest get_job_summary = 25;
+     */
+    value: GetJobSummaryRequest;
+    case: "getJobSummary";
   } | {
     /**
      * Server info
@@ -381,6 +413,38 @@ export type TetherViewerResponse = Message<"tether.viewer.v1.TetherViewerRespons
      */
     value: AnalysisResultResponse;
     case: "analysisResult";
+  } | {
+    /**
+     * G-code metadata / viewer helper results
+     *
+     * @generated from field: tether.viewer.v1.GetGcodeMetadataResponse get_gcode_metadata = 21;
+     */
+    value: GetGcodeMetadataResponse;
+    case: "getGcodeMetadata";
+  } | {
+    /**
+     * @generated from field: tether.viewer.v1.GetFeatureTypesResponse get_feature_types = 22;
+     */
+    value: GetFeatureTypesResponse;
+    case: "getFeatureTypes";
+  } | {
+    /**
+     * @generated from field: tether.viewer.v1.GetProbeEventsResponse get_probe_events = 23;
+     */
+    value: GetProbeEventsResponse;
+    case: "getProbeEvents";
+  } | {
+    /**
+     * @generated from field: tether.viewer.v1.GetDrillingCyclesResponse get_drilling_cycles = 24;
+     */
+    value: GetDrillingCyclesResponse;
+    case: "getDrillingCycles";
+  } | {
+    /**
+     * @generated from field: tether.viewer.v1.GetJobSummaryResponse get_job_summary = 25;
+     */
+    value: GetJobSummaryResponse;
+    case: "getJobSummary";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1691,6 +1755,736 @@ export type AnalysisResultResponse = Message<"tether.viewer.v1.AnalysisResultRes
  */
 export const AnalysisResultResponseSchema: GenMessage<AnalysisResultResponse> = /*@__PURE__*/
   messageDesc(file_tether_viewer, 44);
+
+/**
+ * @generated from message tether.viewer.v1.GetGcodeMetadataRequest
+ */
+export type GetGcodeMetadataRequest = Message<"tether.viewer.v1.GetGcodeMetadataRequest"> & {
+  /**
+   * @generated from field: string job_id = 1;
+   */
+  jobId: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.GetGcodeMetadataRequest.
+ * Use `create(GetGcodeMetadataRequestSchema)` to create a new message.
+ */
+export const GetGcodeMetadataRequestSchema: GenMessage<GetGcodeMetadataRequest> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 45);
+
+/**
+ * @generated from message tether.viewer.v1.ToolChange
+ */
+export type ToolChange = Message<"tether.viewer.v1.ToolChange"> & {
+  /**
+   * @generated from field: int32 line_number = 1;
+   */
+  lineNumber: number;
+
+  /**
+   * @generated from field: int32 tool_number = 2;
+   */
+  toolNumber: number;
+};
+
+/**
+ * Describes the message tether.viewer.v1.ToolChange.
+ * Use `create(ToolChangeSchema)` to create a new message.
+ */
+export const ToolChangeSchema: GenMessage<ToolChange> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 46);
+
+/**
+ * @generated from message tether.viewer.v1.SpindleEvent
+ */
+export type SpindleEvent = Message<"tether.viewer.v1.SpindleEvent"> & {
+  /**
+   * @generated from field: int32 line_number = 1;
+   */
+  lineNumber: number;
+
+  /**
+   * @generated from field: double rpm = 2;
+   */
+  rpm: number;
+
+  /**
+   * "cw", "ccw", "off"
+   *
+   * @generated from field: string direction = 3;
+   */
+  direction: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.SpindleEvent.
+ * Use `create(SpindleEventSchema)` to create a new message.
+ */
+export const SpindleEventSchema: GenMessage<SpindleEvent> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 47);
+
+/**
+ * @generated from message tether.viewer.v1.TemperatureEvent
+ */
+export type TemperatureEvent = Message<"tether.viewer.v1.TemperatureEvent"> & {
+  /**
+   * @generated from field: int32 line_number = 1;
+   */
+  lineNumber: number;
+
+  /**
+   * @generated from field: optional double hotend = 2;
+   */
+  hotend?: number | undefined;
+
+  /**
+   * @generated from field: optional double bed = 3;
+   */
+  bed?: number | undefined;
+
+  /**
+   * @generated from field: optional double chamber = 4;
+   */
+  chamber?: number | undefined;
+};
+
+/**
+ * Describes the message tether.viewer.v1.TemperatureEvent.
+ * Use `create(TemperatureEventSchema)` to create a new message.
+ */
+export const TemperatureEventSchema: GenMessage<TemperatureEvent> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 48);
+
+/**
+ * @generated from message tether.viewer.v1.FanEvent
+ */
+export type FanEvent = Message<"tether.viewer.v1.FanEvent"> & {
+  /**
+   * @generated from field: int32 line_number = 1;
+   */
+  lineNumber: number;
+
+  /**
+   * @generated from field: double speed = 2;
+   */
+  speed: number;
+};
+
+/**
+ * Describes the message tether.viewer.v1.FanEvent.
+ * Use `create(FanEventSchema)` to create a new message.
+ */
+export const FanEventSchema: GenMessage<FanEvent> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 49);
+
+/**
+ * @generated from message tether.viewer.v1.CoolantEvent
+ */
+export type CoolantEvent = Message<"tether.viewer.v1.CoolantEvent"> & {
+  /**
+   * @generated from field: int32 line_number = 1;
+   */
+  lineNumber: number;
+
+  /**
+   * "mist", "flood", "off"
+   *
+   * @generated from field: string state = 2;
+   */
+  state: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.CoolantEvent.
+ * Use `create(CoolantEventSchema)` to create a new message.
+ */
+export const CoolantEventSchema: GenMessage<CoolantEvent> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 50);
+
+/**
+ * @generated from message tether.viewer.v1.FeedRateChange
+ */
+export type FeedRateChange = Message<"tether.viewer.v1.FeedRateChange"> & {
+  /**
+   * @generated from field: int32 line_number = 1;
+   */
+  lineNumber: number;
+
+  /**
+   * @generated from field: double feed_rate = 2;
+   */
+  feedRate: number;
+};
+
+/**
+ * Describes the message tether.viewer.v1.FeedRateChange.
+ * Use `create(FeedRateChangeSchema)` to create a new message.
+ */
+export const FeedRateChangeSchema: GenMessage<FeedRateChange> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 51);
+
+/**
+ * @generated from message tether.viewer.v1.BlockState
+ */
+export type BlockState = Message<"tether.viewer.v1.BlockState"> & {
+  /**
+   * @generated from field: int32 block_index = 1;
+   */
+  blockIndex: number;
+
+  /**
+   * @generated from field: double feed_rate = 2;
+   */
+  feedRate: number;
+
+  /**
+   * @generated from field: int32 tool_number = 3;
+   */
+  toolNumber: number;
+
+  /**
+   * @generated from field: double spindle_rpm = 4;
+   */
+  spindleRpm: number;
+};
+
+/**
+ * Describes the message tether.viewer.v1.BlockState.
+ * Use `create(BlockStateSchema)` to create a new message.
+ */
+export const BlockStateSchema: GenMessage<BlockState> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 52);
+
+/**
+ * @generated from message tether.viewer.v1.WorkCoordinate
+ */
+export type WorkCoordinate = Message<"tether.viewer.v1.WorkCoordinate"> & {
+  /**
+   * @generated from field: int32 line_number = 1;
+   */
+  lineNumber: number;
+
+  /**
+   * e.g. "G54", "G55"
+   *
+   * @generated from field: string code = 2;
+   */
+  code: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.WorkCoordinate.
+ * Use `create(WorkCoordinateSchema)` to create a new message.
+ */
+export const WorkCoordinateSchema: GenMessage<WorkCoordinate> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 53);
+
+/**
+ * @generated from message tether.viewer.v1.StockDimensions
+ */
+export type StockDimensions = Message<"tether.viewer.v1.StockDimensions"> & {
+  /**
+   * @generated from field: double min_x = 1;
+   */
+  minX: number;
+
+  /**
+   * @generated from field: double min_y = 2;
+   */
+  minY: number;
+
+  /**
+   * @generated from field: double min_z = 3;
+   */
+  minZ: number;
+
+  /**
+   * @generated from field: double max_x = 4;
+   */
+  maxX: number;
+
+  /**
+   * @generated from field: double max_y = 5;
+   */
+  maxY: number;
+
+  /**
+   * @generated from field: double max_z = 6;
+   */
+  maxZ: number;
+};
+
+/**
+ * Describes the message tether.viewer.v1.StockDimensions.
+ * Use `create(StockDimensionsSchema)` to create a new message.
+ */
+export const StockDimensionsSchema: GenMessage<StockDimensions> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 54);
+
+/**
+ * @generated from message tether.viewer.v1.GetGcodeMetadataResponse
+ */
+export type GetGcodeMetadataResponse = Message<"tether.viewer.v1.GetGcodeMetadataResponse"> & {
+  /**
+   * @generated from field: repeated tether.viewer.v1.ToolChange tool_changes = 1;
+   */
+  toolChanges: ToolChange[];
+
+  /**
+   * @generated from field: repeated tether.viewer.v1.SpindleEvent spindle_events = 2;
+   */
+  spindleEvents: SpindleEvent[];
+
+  /**
+   * @generated from field: repeated tether.viewer.v1.TemperatureEvent temperature_events = 3;
+   */
+  temperatureEvents: TemperatureEvent[];
+
+  /**
+   * @generated from field: repeated tether.viewer.v1.FanEvent fan_events = 4;
+   */
+  fanEvents: FanEvent[];
+
+  /**
+   * @generated from field: repeated tether.viewer.v1.CoolantEvent coolant_events = 5;
+   */
+  coolantEvents: CoolantEvent[];
+
+  /**
+   * @generated from field: repeated tether.viewer.v1.FeedRateChange feed_rate_changes = 6;
+   */
+  feedRateChanges: FeedRateChange[];
+
+  /**
+   * @generated from field: repeated int32 tools = 7;
+   */
+  tools: number[];
+
+  /**
+   * @generated from field: double max_spindle_rpm = 8;
+   */
+  maxSpindleRpm: number;
+
+  /**
+   * @generated from field: double max_hotend_temp = 9;
+   */
+  maxHotendTemp: number;
+
+  /**
+   * @generated from field: double max_bed_temp = 10;
+   */
+  maxBedTemp: number;
+
+  /**
+   * @generated from field: double max_fan_speed = 11;
+   */
+  maxFanSpeed: number;
+
+  /**
+   * @generated from field: double min_feed_rate = 12;
+   */
+  minFeedRate: number;
+
+  /**
+   * @generated from field: double max_feed_rate = 13;
+   */
+  maxFeedRate: number;
+
+  /**
+   * @generated from field: repeated tether.viewer.v1.BlockState block_states = 14;
+   */
+  blockStates: BlockState[];
+
+  /**
+   * @generated from field: repeated tether.viewer.v1.WorkCoordinate work_coordinate_systems = 15;
+   */
+  workCoordinateSystems: WorkCoordinate[];
+
+  /**
+   * @generated from field: tether.viewer.v1.StockDimensions stock_dimensions = 16;
+   */
+  stockDimensions?: StockDimensions | undefined;
+};
+
+/**
+ * Describes the message tether.viewer.v1.GetGcodeMetadataResponse.
+ * Use `create(GetGcodeMetadataResponseSchema)` to create a new message.
+ */
+export const GetGcodeMetadataResponseSchema: GenMessage<GetGcodeMetadataResponse> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 55);
+
+/**
+ * @generated from message tether.viewer.v1.FeatureTypeSegment
+ */
+export type FeatureTypeSegment = Message<"tether.viewer.v1.FeatureTypeSegment"> & {
+  /**
+   * @generated from field: int32 start_line = 1;
+   */
+  startLine: number;
+
+  /**
+   * @generated from field: int32 end_line = 2;
+   */
+  endLine: number;
+
+  /**
+   * @generated from field: string feature_type = 3;
+   */
+  featureType: string;
+
+  /**
+   * @generated from field: string slicer = 4;
+   */
+  slicer: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.FeatureTypeSegment.
+ * Use `create(FeatureTypeSegmentSchema)` to create a new message.
+ */
+export const FeatureTypeSegmentSchema: GenMessage<FeatureTypeSegment> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 56);
+
+/**
+ * @generated from message tether.viewer.v1.GetFeatureTypesRequest
+ */
+export type GetFeatureTypesRequest = Message<"tether.viewer.v1.GetFeatureTypesRequest"> & {
+  /**
+   * @generated from field: string job_id = 1;
+   */
+  jobId: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.GetFeatureTypesRequest.
+ * Use `create(GetFeatureTypesRequestSchema)` to create a new message.
+ */
+export const GetFeatureTypesRequestSchema: GenMessage<GetFeatureTypesRequest> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 57);
+
+/**
+ * @generated from message tether.viewer.v1.GetFeatureTypesResponse
+ */
+export type GetFeatureTypesResponse = Message<"tether.viewer.v1.GetFeatureTypesResponse"> & {
+  /**
+   * @generated from field: repeated tether.viewer.v1.FeatureTypeSegment segments = 1;
+   */
+  segments: FeatureTypeSegment[];
+};
+
+/**
+ * Describes the message tether.viewer.v1.GetFeatureTypesResponse.
+ * Use `create(GetFeatureTypesResponseSchema)` to create a new message.
+ */
+export const GetFeatureTypesResponseSchema: GenMessage<GetFeatureTypesResponse> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 58);
+
+/**
+ * @generated from message tether.viewer.v1.ProbeEvent
+ */
+export type ProbeEvent = Message<"tether.viewer.v1.ProbeEvent"> & {
+  /**
+   * @generated from field: int32 line_number = 1;
+   */
+  lineNumber: number;
+
+  /**
+   * @generated from field: double x = 2;
+   */
+  x: number;
+
+  /**
+   * @generated from field: double y = 3;
+   */
+  y: number;
+
+  /**
+   * @generated from field: double z = 4;
+   */
+  z: number;
+};
+
+/**
+ * Describes the message tether.viewer.v1.ProbeEvent.
+ * Use `create(ProbeEventSchema)` to create a new message.
+ */
+export const ProbeEventSchema: GenMessage<ProbeEvent> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 59);
+
+/**
+ * @generated from message tether.viewer.v1.GetProbeEventsRequest
+ */
+export type GetProbeEventsRequest = Message<"tether.viewer.v1.GetProbeEventsRequest"> & {
+  /**
+   * @generated from field: string job_id = 1;
+   */
+  jobId: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.GetProbeEventsRequest.
+ * Use `create(GetProbeEventsRequestSchema)` to create a new message.
+ */
+export const GetProbeEventsRequestSchema: GenMessage<GetProbeEventsRequest> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 60);
+
+/**
+ * @generated from message tether.viewer.v1.GetProbeEventsResponse
+ */
+export type GetProbeEventsResponse = Message<"tether.viewer.v1.GetProbeEventsResponse"> & {
+  /**
+   * @generated from field: repeated tether.viewer.v1.ProbeEvent events = 1;
+   */
+  events: ProbeEvent[];
+};
+
+/**
+ * Describes the message tether.viewer.v1.GetProbeEventsResponse.
+ * Use `create(GetProbeEventsResponseSchema)` to create a new message.
+ */
+export const GetProbeEventsResponseSchema: GenMessage<GetProbeEventsResponse> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 61);
+
+/**
+ * @generated from message tether.viewer.v1.DrillingCycle
+ */
+export type DrillingCycle = Message<"tether.viewer.v1.DrillingCycle"> & {
+  /**
+   * @generated from field: int32 line_number = 1;
+   */
+  lineNumber: number;
+
+  /**
+   * "G81", "G82", "G83", ...
+   *
+   * @generated from field: string cycle_type = 2;
+   */
+  cycleType: string;
+
+  /**
+   * @generated from field: double x = 3;
+   */
+  x: number;
+
+  /**
+   * @generated from field: double y = 4;
+   */
+  y: number;
+
+  /**
+   * @generated from field: double z = 5;
+   */
+  z: number;
+
+  /**
+   * @generated from field: double r = 6;
+   */
+  r: number;
+};
+
+/**
+ * Describes the message tether.viewer.v1.DrillingCycle.
+ * Use `create(DrillingCycleSchema)` to create a new message.
+ */
+export const DrillingCycleSchema: GenMessage<DrillingCycle> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 62);
+
+/**
+ * @generated from message tether.viewer.v1.GetDrillingCyclesRequest
+ */
+export type GetDrillingCyclesRequest = Message<"tether.viewer.v1.GetDrillingCyclesRequest"> & {
+  /**
+   * @generated from field: string job_id = 1;
+   */
+  jobId: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.GetDrillingCyclesRequest.
+ * Use `create(GetDrillingCyclesRequestSchema)` to create a new message.
+ */
+export const GetDrillingCyclesRequestSchema: GenMessage<GetDrillingCyclesRequest> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 63);
+
+/**
+ * @generated from message tether.viewer.v1.GetDrillingCyclesResponse
+ */
+export type GetDrillingCyclesResponse = Message<"tether.viewer.v1.GetDrillingCyclesResponse"> & {
+  /**
+   * @generated from field: repeated tether.viewer.v1.DrillingCycle cycles = 1;
+   */
+  cycles: DrillingCycle[];
+};
+
+/**
+ * Describes the message tether.viewer.v1.GetDrillingCyclesResponse.
+ * Use `create(GetDrillingCyclesResponseSchema)` to create a new message.
+ */
+export const GetDrillingCyclesResponseSchema: GenMessage<GetDrillingCyclesResponse> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 64);
+
+/**
+ * @generated from message tether.viewer.v1.MaterialUsage
+ */
+export type MaterialUsage = Message<"tether.viewer.v1.MaterialUsage"> & {
+  /**
+   * @generated from field: double extrusion_length = 1;
+   */
+  extrusionLength: number;
+
+  /**
+   * @generated from field: double volume = 2;
+   */
+  volume: number;
+
+  /**
+   * @generated from field: double weight = 3;
+   */
+  weight: number;
+};
+
+/**
+ * Describes the message tether.viewer.v1.MaterialUsage.
+ * Use `create(MaterialUsageSchema)` to create a new message.
+ */
+export const MaterialUsageSchema: GenMessage<MaterialUsage> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 65);
+
+/**
+ * @generated from message tether.viewer.v1.SpeedStats
+ */
+export type SpeedStats = Message<"tether.viewer.v1.SpeedStats"> & {
+  /**
+   * @generated from field: double min_speed = 1;
+   */
+  minSpeed: number;
+
+  /**
+   * @generated from field: double max_speed = 2;
+   */
+  maxSpeed: number;
+
+  /**
+   * @generated from field: double mean_speed = 3;
+   */
+  meanSpeed: number;
+
+  /**
+   * @generated from field: double median_speed = 4;
+   */
+  medianSpeed: number;
+};
+
+/**
+ * Describes the message tether.viewer.v1.SpeedStats.
+ * Use `create(SpeedStatsSchema)` to create a new message.
+ */
+export const SpeedStatsSchema: GenMessage<SpeedStats> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 66);
+
+/**
+ * @generated from message tether.viewer.v1.LayerTime
+ */
+export type LayerTime = Message<"tether.viewer.v1.LayerTime"> & {
+  /**
+   * @generated from field: uint32 layer_index = 1;
+   */
+  layerIndex: number;
+
+  /**
+   * @generated from field: double z_height = 2;
+   */
+  zHeight: number;
+
+  /**
+   * @generated from field: double time_seconds = 3;
+   */
+  timeSeconds: number;
+};
+
+/**
+ * Describes the message tether.viewer.v1.LayerTime.
+ * Use `create(LayerTimeSchema)` to create a new message.
+ */
+export const LayerTimeSchema: GenMessage<LayerTime> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 67);
+
+/**
+ * @generated from message tether.viewer.v1.TimeEstimate
+ */
+export type TimeEstimate = Message<"tether.viewer.v1.TimeEstimate"> & {
+  /**
+   * @generated from field: double estimated_time = 1;
+   */
+  estimatedTime: number;
+
+  /**
+   * @generated from field: uint32 move_count = 2;
+   */
+  moveCount: number;
+
+  /**
+   * @generated from field: string method = 3;
+   */
+  method: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.TimeEstimate.
+ * Use `create(TimeEstimateSchema)` to create a new message.
+ */
+export const TimeEstimateSchema: GenMessage<TimeEstimate> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 68);
+
+/**
+ * @generated from message tether.viewer.v1.GetJobSummaryRequest
+ */
+export type GetJobSummaryRequest = Message<"tether.viewer.v1.GetJobSummaryRequest"> & {
+  /**
+   * @generated from field: string job_id = 1;
+   */
+  jobId: string;
+};
+
+/**
+ * Describes the message tether.viewer.v1.GetJobSummaryRequest.
+ * Use `create(GetJobSummaryRequestSchema)` to create a new message.
+ */
+export const GetJobSummaryRequestSchema: GenMessage<GetJobSummaryRequest> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 69);
+
+/**
+ * @generated from message tether.viewer.v1.GetJobSummaryResponse
+ */
+export type GetJobSummaryResponse = Message<"tether.viewer.v1.GetJobSummaryResponse"> & {
+  /**
+   * @generated from field: tether.viewer.v1.MaterialUsage material_usage = 1;
+   */
+  materialUsage?: MaterialUsage | undefined;
+
+  /**
+   * @generated from field: tether.viewer.v1.SpeedStats speed_stats = 2;
+   */
+  speedStats?: SpeedStats | undefined;
+
+  /**
+   * @generated from field: repeated tether.viewer.v1.LayerTime layer_times = 3;
+   */
+  layerTimes: LayerTime[];
+
+  /**
+   * @generated from field: tether.viewer.v1.TimeEstimate print_time_estimate = 4;
+   */
+  printTimeEstimate?: TimeEstimate | undefined;
+};
+
+/**
+ * Describes the message tether.viewer.v1.GetJobSummaryResponse.
+ * Use `create(GetJobSummaryResponseSchema)` to create a new message.
+ */
+export const GetJobSummaryResponseSchema: GenMessage<GetJobSummaryResponse> = /*@__PURE__*/
+  messageDesc(file_tether_viewer, 70);
 
 /**
  * @generated from enum tether.viewer.v1.AnalysisSeverity

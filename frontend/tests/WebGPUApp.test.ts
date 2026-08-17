@@ -579,7 +579,8 @@ describe('WebGPUApp', () => {
 
     it('resets to full data when toolNumber is -1', () => {
       (app as any).currentNBP = makeNBPData(4);
-      (app as any).gcodeMetadata = { blockTools: new Map() };
+      (app as any).gcodeMetadata = { tools: [] };
+      (app as any).blockTools = new Map();
       const nurbsRenderer = { updateData: vi.fn(), setProgress: vi.fn(), getPositionAt: vi.fn().mockReturnValue(null) };
       (app as any).nurbsRenderer = nurbsRenderer;
       (app as any).applyToolFilter(-1);
@@ -594,7 +595,8 @@ describe('WebGPUApp', () => {
       blockTools.set(2, 2);
       blockTools.set(3, 2);
       blockTools.set(4, 1);
-      (app as any).gcodeMetadata = { blockTools };
+      (app as any).gcodeMetadata = { tools: [] };
+      (app as any).blockTools = blockTools;
       const nurbsRenderer = { updateData: vi.fn(), setProgress: vi.fn(), getPositionAt: vi.fn().mockReturnValue(null) };
       (app as any).nurbsRenderer = nurbsRenderer;
       (app as any).applyToolFilter(2);
@@ -606,7 +608,8 @@ describe('WebGPUApp', () => {
 
     it('sets status and does not update renderer when no pieces match', () => {
       (app as any).currentNBP = makeNBPData(2);
-      (app as any).gcodeMetadata = { blockTools: new Map([[0, 1], [1, 1]]) };
+      (app as any).gcodeMetadata = { tools: [] };
+      (app as any).blockTools = new Map([[0, 1], [1, 1]]);
       const nurbsRenderer = { updateData: vi.fn(), setProgress: vi.fn(), getPositionAt: vi.fn().mockReturnValue(null) };
       (app as any).nurbsRenderer = nurbsRenderer;
       const cp = (app as any).controlPanel;
@@ -850,13 +853,17 @@ describe('WebGPUApp', () => {
 
     it('exports a JSON report when metadata is available', () => {
       (app as any).gcodeMetadata = {
-        tools: [{ number: 1, name: 'T1' }],
+        tools: [1],
         toolChanges: [],
         spindleEvents: [],
         temperatureEvents: [],
         fanEvents: [],
         coolantEvents: [],
-        feedRateRange: { min: 100, max: 200 },
+        minFeedRate: 100,
+        maxFeedRate: 200,
+      };
+      (app as any).jobSummary = {
+        layerTimes: [],
       };
       (app as any).currentNBP = makeNBPData(2);
       (app as any).zLayers = [];

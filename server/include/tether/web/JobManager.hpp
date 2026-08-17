@@ -158,6 +158,10 @@ public:
     /// @return Empty vector if job not found or gcode is empty.
     std::vector<std::string> getGcodeLines(const std::string& jobId) const;
 
+    /// @brief Get the original G-code text as a single string.
+    /// @return Empty string if job not found.
+    std::string getGcodeText(const std::string& jobId) const;
+
 private:
     /// @brief Generate a unique job ID.
     std::string generateId() const;

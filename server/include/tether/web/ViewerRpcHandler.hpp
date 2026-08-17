@@ -94,6 +94,12 @@ private:
                                   uint32_t callId,
                                   ConnectionState& state);
 
+    std::string handleGetGcodeMetadata(const std::string& requestBytes);
+    std::string handleGetFeatureTypes(const std::string& requestBytes);
+    std::string handleGetProbeEvents(const std::string& requestBytes);
+    std::string handleGetDrillingCycles(const std::string& requestBytes);
+    std::string handleGetJobSummary(const std::string& requestBytes);
+
     // Z-layer computation
     struct ZLayer {
         uint32_t layerIndex;

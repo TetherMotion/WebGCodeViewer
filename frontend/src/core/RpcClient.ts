@@ -32,6 +32,16 @@ import {
   GetZLayerRangeBinaryRequestSchema,
   GetAnalysisRequestSchema,
   GetAnalysisDetailsRequestSchema,
+  GetGcodeMetadataRequestSchema,
+  GetGcodeMetadataResponseSchema,
+  GetFeatureTypesRequestSchema,
+  GetFeatureTypesResponseSchema,
+  GetProbeEventsRequestSchema,
+  GetProbeEventsResponseSchema,
+  GetDrillingCyclesRequestSchema,
+  GetDrillingCyclesResponseSchema,
+  GetJobSummaryRequestSchema,
+  GetJobSummaryResponseSchema,
   PingResponseSchema,
   VersionResponseSchema,
   type UploadGcodeResponse,
@@ -48,6 +58,11 @@ import {
   type VersionResponse,
   type AnalysisResultResponse,
   type AnalysisDetailsResponse,
+  type GetGcodeMetadataResponse,
+  type GetFeatureTypesResponse,
+  type GetProbeEventsResponse,
+  type GetDrillingCyclesResponse,
+  type GetJobSummaryResponse,
 } from "@tether/viewer-core/generated";
 
 export interface ProcessJobOptions {
@@ -368,6 +383,41 @@ export class RpcClient {
     )) {
       yield msg as AnalysisResultResponse;
     }
+  }
+
+  async getGcodeMetadata(jobId: string): Promise<GetGcodeMetadataResponse> {
+    return this.transport.unary(
+      'getGcodeMetadata',
+      create(GetGcodeMetadataRequestSchema, { jobId }),
+    );
+  }
+
+  async getFeatureTypes(jobId: string): Promise<GetFeatureTypesResponse> {
+    return this.transport.unary(
+      'getFeatureTypes',
+      create(GetFeatureTypesRequestSchema, { jobId }),
+    );
+  }
+
+  async getProbeEvents(jobId: string): Promise<GetProbeEventsResponse> {
+    return this.transport.unary(
+      'getProbeEvents',
+      create(GetProbeEventsRequestSchema, { jobId }),
+    );
+  }
+
+  async getDrillingCycles(jobId: string): Promise<GetDrillingCyclesResponse> {
+    return this.transport.unary(
+      'getDrillingCycles',
+      create(GetDrillingCyclesRequestSchema, { jobId }),
+    );
+  }
+
+  async getJobSummary(jobId: string): Promise<GetJobSummaryResponse> {
+    return this.transport.unary(
+      'getJobSummary',
+      create(GetJobSummaryRequestSchema, { jobId }),
+    );
   }
 
   close(): void {
