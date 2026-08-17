@@ -276,7 +276,7 @@ test.describe('Interactions', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const searchBar = page.locator('.gcode-search-bar');
+    const searchBar = page.locator('.gcode-search-bar').first();
     await expect(searchBar).not.toBeVisible();
 
     // Press Ctrl+F

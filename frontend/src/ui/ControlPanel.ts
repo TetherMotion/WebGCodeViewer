@@ -566,13 +566,6 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     this.statusEl.textContent = 'Ready';
     statusGroup.appendChild(this.statusEl);
     this.element.appendChild(statusGroup);
-
-    // In automated test environments (Playwright/webdriver), keep the top menus
-    // expanded so that buttons are directly visible/clickable without having to
-    // simulate hover or repeated menu opens.
-    if (navigator.webdriver) {
-      for (const m of openMenus) m.classList.add('open');
-    }
   }
 
   updateJobStatus(status: GetJobStatusResponse): void {

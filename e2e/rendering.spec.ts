@@ -100,9 +100,16 @@ async function uploadAndProcess(request: APIRequestContext, gcode: string, filen
   return { jobId, status };
 }
 
-/** Open a dropdown menu by clicking its trigger button. */
+/** Open a dropdown menu by clicking its trigger button (idempotent). */
 async function openMenu(page: Page, label: string) {
-  await page.locator('#top-panel .menu-trigger', { hasText: label }).click();
+  await page.evaluate((menuLabel) => {
+    const triggers = [...document.querySelectorAll('#top-panel .menu-trigger')];
+    const trigger = triggers.find(el => el.textContent?.includes(menuLabel));
+    const dropdown = trigger?.parentElement?.querySelector('.menu-dropdown') as HTMLElement | null;
+    if (trigger && dropdown && !dropdown.classList.contains('open')) {
+      (trigger as HTMLButtonElement).click();
+    }
+  }, label);
 }
 
 // ─── Helper: console message collector ─────────────────────────────────
@@ -1187,6 +1194,7 @@ test.describe('Cross-section rendering', () => {
     await page.waitForTimeout(2000);
 
     // Toggle cross-section
+    await openMenu(page, 'View');
     const crossBtn = page.locator('button', { hasText: /cross/i });
     if (await crossBtn.count() > 0) {
       await crossBtn.click();
@@ -1320,6 +1328,7 @@ test.describe('Travel move visualization (Feature #1)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
+    await openMenu(page, 'View');
     const travelsBtn = page.locator('#top-panel button', { hasText: 'Travels' });
     await expect(travelsBtn).toBeVisible();
     await expect(travelsBtn).toHaveClass(/active/);
@@ -1402,6 +1411,7 @@ test.describe('Extrusion width visualization (Feature #2)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
+    await openMenu(page, 'View');
     const slider = page.locator('.width-slider');
     await expect(slider).toBeVisible();
     await expect(slider).toHaveValue('2');
@@ -1472,6 +1482,7 @@ test.describe('Retraction markers (Feature #3)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
+    await openMenu(page, 'View');
     const btn = page.locator('#top-panel button', { hasText: 'Retractions' });
     await expect(btn).toBeVisible();
     // Should not be active by default
@@ -1550,6 +1561,7 @@ test.describe('Dark/Light theme toggle (Feature #66)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
+    await openMenu(page, '⋯');
     const themeBtn = page.locator('#top-panel button', { hasText: 'Theme' });
     await expect(themeBtn).toBeVisible();
   });
@@ -1772,7 +1784,8 @@ test.describe('Screenshot export (Feature #72)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const exportBtn = page.locator('#top-panel button', { hasText: 'Export' });
+    await openMenu(page, 'File');
+    const exportBtn = page.locator('#top-panel button', { hasText: 'Export Image' });
     await expect(exportBtn).toBeVisible();
   });
 
@@ -1790,7 +1803,7 @@ test.describe('Screenshot export (Feature #72)', () => {
 
     // Click export
     await openMenu(page, 'File');
-    await page.locator('#top-panel button', { hasText: 'Export' }).click();
+    await page.locator('#top-panel button', { hasText: 'Export Image' }).click();
 
     const download = await downloadPromise;
     // Download may or may not trigger in headless mode, but no errors should occur
@@ -1927,6 +1940,7 @@ test.describe('Fullscreen mode (Feature #73)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
+    await openMenu(page, 'View');
     const btn = page.locator('#top-panel button', { hasText: 'Fullscreen' });
     await expect(btn).toBeVisible();
   });
@@ -1976,9 +1990,10 @@ test.describe('Render statistics (Feature #120)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
+    await openMenu(page, '⋯');
     const btn = page.locator('#top-panel button', { hasText: 'Stats' });
     await expect(btn).toBeVisible();
-    expect(await btn.getAttribute('class')).not.toContain('active');
+    expect(await btn.getAttribute('class') || '').not.toContain('active');
   });
 
   test('clicking stats button shows stats overlay', async ({ page }) => {
@@ -2065,6 +2080,7 @@ test.describe('Bounding box dimensions (Feature #48)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
+    await openMenu(page, 'View');
     const btn = page.locator('#top-panel button', { hasText: 'BBox' });
     await expect(btn).toBeVisible();
     expect(await btn.getAttribute('class') || '').not.toContain('active');
@@ -2245,7 +2261,8 @@ test.describe('Colorblind-friendly color maps (Feature #126)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const mapSelect = page.locator('.control-group select').nth(1);
+    await openMenu(page, 'Color');
+    const mapSelect = page.locator('#top-panel .menu-dropdown.open select').nth(1);
     const options = await mapSelect.locator('option').allTextContents();
     expect(options).toContain('cividis');
   });
@@ -2255,7 +2272,8 @@ test.describe('Colorblind-friendly color maps (Feature #126)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const mapSelect = page.locator('.control-group select').nth(1);
+    await openMenu(page, 'Color');
+    const mapSelect = page.locator('#top-panel .menu-dropdown.open select').nth(1);
     const options = await mapSelect.locator('option').allTextContents();
     expect(options).toContain('coolwarm');
   });
@@ -2269,7 +2287,8 @@ test.describe('Colorblind-friendly color maps (Feature #126)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    const mapSelect = page.locator('.control-group select').nth(1);
+    await openMenu(page, 'Color');
+    const mapSelect = page.locator('#top-panel .menu-dropdown.open select').nth(1);
     await mapSelect.selectOption('cividis');
     await page.waitForTimeout(500);
 
@@ -2285,7 +2304,8 @@ test.describe('Colorblind-friendly color maps (Feature #126)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    const mapSelect = page.locator('.control-group select').nth(1);
+    await openMenu(page, 'Color');
+    const mapSelect = page.locator('#top-panel .menu-dropdown.open select').nth(1);
     await mapSelect.selectOption('coolwarm');
     await page.waitForTimeout(500);
 
@@ -2297,7 +2317,8 @@ test.describe('Colorblind-friendly color maps (Feature #126)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const mapSelect = page.locator('.control-group select').nth(1);
+    await openMenu(page, 'Color');
+    const mapSelect = page.locator('#top-panel .menu-dropdown.open select').nth(1);
     const maps = ['viridis', 'plasma', 'jet', 'turbo', 'grayscale', 'rainbow', 'cividis', 'coolwarm'];
 
     for (const map of maps) {
@@ -2568,6 +2589,7 @@ test.describe('Copy view URL to clipboard (Feature #92)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
+    await openMenu(page, 'File');
     const btn = page.locator('#top-panel button', { hasText: 'Copy View URL' });
     await expect(btn).toBeVisible();
   });
@@ -2655,7 +2677,8 @@ test.describe('Layer count display (Feature #128)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#top-panel button', { hasText: 'Layers' });
+    await openMenu(page, 'View');
+    const btn = page.locator('#top-panel button', { hasText: 'Layer Count' });
     await expect(btn).toBeVisible();
     expect(await btn.getAttribute('class') || '').not.toContain('active');
   });
@@ -2665,7 +2688,7 @@ test.describe('Layer count display (Feature #128)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#top-panel button', { hasText: 'Layers' });
+    const btn = page.locator('#top-panel button', { hasText: 'Layer Count' });
     await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(300);
@@ -2684,7 +2707,7 @@ test.describe('Layer count display (Feature #128)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
-    const btn = page.locator('#top-panel button', { hasText: 'Layers' });
+    const btn = page.locator('#top-panel button', { hasText: 'Layer Count' });
     await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(500);
@@ -2703,7 +2726,7 @@ test.describe('Layer count display (Feature #128)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    const btn = page.locator('#top-panel button', { hasText: 'Layers' });
+    const btn = page.locator('#top-panel button', { hasText: 'Layer Count' });
     await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(300);
@@ -2723,7 +2746,7 @@ test.describe('Layer count display (Feature #128)', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    const btn = page.locator('#top-panel button', { hasText: 'Layers' });
+    const btn = page.locator('#top-panel button', { hasText: 'Layer Count' });
     await openMenu(page, 'View');
     await btn.click();
     await page.waitForTimeout(500);
@@ -2774,8 +2797,8 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(1000);
 
       const resetBtn = page.locator('#top-panel button', { hasText: 'Reset View' });
-      await expect(resetBtn).toBeVisible();
       await openMenu(page, 'View');
+      await expect(resetBtn).toBeVisible();
       await resetBtn.click();
       // No error means success — the button is wired up
     });
@@ -3043,12 +3066,13 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(1000);
 
       // Enable both overlays
-      const layersBtn = page.locator('#top-panel button', { hasText: 'Layers' });
+      const layersBtn = page.locator('#top-panel button', { hasText: 'Layer Count' });
       await openMenu(page, 'View');
       await layersBtn.click();
       await page.waitForTimeout(300);
 
       const bboxBtn = page.locator('#top-panel button', { hasText: 'BBox' });
+      await openMenu(page, 'View');
       await bboxBtn.click();
       await page.waitForTimeout(300);
 
@@ -3207,6 +3231,7 @@ test.describe('Bug fix regression tests', () => {
 
       // Now select a specific layer
       const slider = page.locator('.layer-slider');
+      await openMenu(page, 'Playback');
       await slider.fill('0');
       await page.waitForTimeout(200);
 
@@ -3274,7 +3299,7 @@ test.describe('Bug fix regression tests', () => {
       await page.waitForTimeout(200);
 
       // Enable Layers
-      const layersBtn = page.locator('#top-panel button', { hasText: 'Layers' });
+      const layersBtn = page.locator('#top-panel button', { hasText: 'Layer Count' });
       await openMenu(page, 'View');
       await layersBtn.click();
       await page.waitForTimeout(300);

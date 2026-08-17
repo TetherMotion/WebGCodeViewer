@@ -520,6 +520,7 @@ body {
     font-size: 14px;
     z-index: 100;
     box-shadow: var(--shadow);
+    pointer-events: none;
 }
 
 #loading-overlay {
@@ -1578,6 +1579,7 @@ input[type="checkbox"] {
     font-size: 14px;
     z-index: 1000;
     box-shadow: var(--shadow);
+    pointer-events: none;
 }
 
 /* Miniplot overlay */
