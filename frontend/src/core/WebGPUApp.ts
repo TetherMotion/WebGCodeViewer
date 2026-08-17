@@ -23,6 +23,7 @@ import { NurbsRenderer, NurbsColorAttribute } from '../renderers/NurbsRenderer';
 import { GpuPlot, PlotSeries } from '../ui/GpuPlot';
 import { PaControls, PaAlgorithmId } from '../ui/PaControls';
 import { MiniplotRenderer, MiniplotAxis, MiniplotData } from '../renderers/MiniplotRenderer';
+import { ComputeMiniplotRenderer } from '../renderers/ComputeMiniplotRenderer';
 import { GridLabels } from '../ui/GridLabels';
 import { GridLabelRenderer } from '../renderers/GridLabelRenderer';
 import { ToolChangeMarkerRenderer } from '../renderers/ToolChangeMarkerRenderer';
@@ -256,7 +257,7 @@ export class WebGPUApp {
   private nurbsRenderer: NurbsRenderer | null = null;
   private gridLabels: GridLabels | null = null;
   private gridLabelRenderer: GridLabelRenderer | null = null;
-  private miniplotRenderer: MiniplotRenderer | null = null;
+  private miniplotRenderer: ComputeMiniplotRenderer | MiniplotRenderer | null = null;
   private miniplotContainer: HTMLElement | null = null;
   private miniplotLabel: HTMLElement | null = null;
   private miniplotVisible: boolean = false;
@@ -866,10 +867,16 @@ export class WebGPUApp {
       this.gridLabelRenderer.updateLabels(this.gridRenderer.ticks);
     }
 
-    // Miniplot renderer (ChartGPU-backed speed plot)
-    if (this.miniplotContainer && this.device && this.adapter) {
-      this.miniplotRenderer = new MiniplotRenderer(this.miniplotContainer, this.device, this.adapter);
-      await this.miniplotRenderer.init();
+    // Miniplot renderer (compute-shader resampled speed plot, fallback to ChartGPU)
+    if (this.miniplotContainer && this.device) {
+      try {
+        this.miniplotRenderer = new ComputeMiniplotRenderer(this.miniplotContainer, this.device);
+        await this.miniplotRenderer.init();
+      } catch (err) {
+        console.warn('ComputeMiniplotRenderer init failed, falling back to ChartGPU:', err);
+        this.miniplotRenderer = new MiniplotRenderer(this.miniplotContainer, this.device, this.adapter!);
+        await this.miniplotRenderer.init();
+      }
       this.setupMiniplotInteraction(this.miniplotContainer);
     }
 
