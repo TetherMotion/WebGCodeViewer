@@ -1,6 +1,24 @@
 # Build
 build/
 cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+CTestTestfile.cmake
+Makefile
+cmake_install.cmake
+_deps/
+lib/
+bin/
+libwgv_server_shared.so
+*.cmake
+examples/CMakeFiles/
+examples/Makefile/
+examples/cmake_install.cmake/
+tests/CMakeFiles/
+tests/Makefile/
+tests/CTestTestfile.cmake/
+tests/wgv_tests*
+tests/cmake_test_discovery_*.json
 
 # IDE
 .vscode/
@@ -27,3 +45,5 @@ test-results/
 playwright-report/
 node_modules/
 frontend/coverage/
+web/
+test_webgpu.js
