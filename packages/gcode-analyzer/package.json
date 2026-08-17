@@ -13,10 +13,6 @@
     "./GcodeMetadata": {
       "import": "./src/GcodeMetadata.ts",
       "types": "./src/GcodeMetadata.ts"
-    },
-    "./GcodeAnalysis": {
-      "import": "./src/GcodeAnalysis.ts",
-      "types": "./src/GcodeAnalysis.ts"
     }
   },
   "scripts": {

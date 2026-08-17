@@ -3,13 +3,18 @@
  * @brief Side panel displaying G-code metadata, analysis statistics,
  * material usage, speed stats, and layer time info.
  *
- * Populated after G-code is loaded and metadata is parsed.
- * Analysis results are sourced from the server via `remoteSections`.
+ * G-code metadata and summary now come from the server via protobuf
+ * messages; this panel only renders the data. Server-side analysis
+ * results are still shown in `remoteSections`.
  */
 
-import { GcodeMetadata, computeSpeedStats, computeLayerTimes, formatTime } from "./GcodeMetadata";
-import { MiniplotData } from "@tether/viewer-core";
-import { type AnalysisSection } from "@tether/viewer-core/generated";
+import { formatTime } from "./GcodeMetadata";
+import {
+  type GetGcodeMetadataResponse,
+  type GetJobSummaryResponse,
+  type FeatureTypeSegment,
+  type AnalysisSection,
+} from "@tether/viewer-core/generated";
 
 export class InfoPanel {
   private element: HTMLElement;
@@ -39,41 +44,33 @@ export class InfoPanel {
 
   /**
    * Update the panel with all available data.
-   * `gcodeLines` is accepted for backward compatibility but is no longer used;
-   * all analysis results come from `remoteSections`.
    */
   update(data: {
-    metadata: GcodeMetadata;
-    miniplotData: MiniplotData | null;
+    gcodeMetadata?: GetGcodeMetadataResponse;
+    jobSummary?: GetJobSummaryResponse;
+    featureTypeSegments?: FeatureTypeSegment[];
     zLayers: { layerIndex: number; zHeight: number; pieceStart: number; pieceEnd: number }[];
     totalDuration: number;
     pathLength: number;
     bounds: { min: [number, number, number]; max: [number, number, number] };
     sampleCount: number;
     pieceCount: number;
-    gcodeLines?: string[];
     materialUsage?: { extrusionLength: number; volume: number; weight: number };
     remoteSections?: AnalysisSection[];
   }): void {
-    const { metadata, miniplotData, zLayers, totalDuration, pathLength, bounds, sampleCount, pieceCount, materialUsage, remoteSections } = data;
-
-    const speedStats = miniplotData
-      ? computeSpeedStats(miniplotData.segments)
-      : { minSpeed: 0, maxSpeed: 0, meanSpeed: 0, medianSpeed: 0 };
-
-    const layerTimes = miniplotData
-      ? computeLayerTimes(zLayers, miniplotData.segments)
-      : [];
-
-    const totalLayerTime = layerTimes.reduce((sum, l) => sum + l.timeSeconds, 0);
-    const maxLayerTime = layerTimes.reduce((max, l) => Math.max(max, l.timeSeconds), 0);
-    const avgLayerTime = layerTimes.length > 0 ? totalLayerTime / layerTimes.length : 0;
+    const { gcodeMetadata, jobSummary, zLayers, totalDuration, pathLength, bounds, sampleCount, pieceCount, materialUsage, remoteSections } = data;
 
     const dims = {
       x: bounds.max[0] - bounds.min[0],
       y: bounds.max[1] - bounds.min[1],
       z: bounds.max[2] - bounds.min[2],
     };
+
+    const speedStats = jobSummary?.speedStats;
+    const layerTimes = jobSummary?.layerTimes ?? [];
+    const totalLayerTime = layerTimes.reduce((sum, l) => sum + l.timeSeconds, 0);
+    const maxLayerTime = layerTimes.reduce((max, l) => Math.max(max, l.timeSeconds), 0);
+    const avgLayerTime = layerTimes.length > 0 ? totalLayerTime / layerTimes.length : 0;
 
     let html = '';
 
@@ -94,12 +91,19 @@ export class InfoPanel {
 
     // ── Speed Statistics ──
     html += '<div class="info-section"><h4>Speed Stats</h4>';
-    html += `<div class="info-row"><span>Min Feed</span><span>${speedStats.minSpeed.toFixed(1)} mm/s</span></div>`;
-    html += `<div class="info-row"><span>Max Feed</span><span>${speedStats.maxSpeed.toFixed(1)} mm/s</span></div>`;
-    html += `<div class="info-row"><span>Mean Feed</span><span>${speedStats.meanSpeed.toFixed(1)} mm/s</span></div>`;
-    html += `<div class="info-row"><span>Median Feed</span><span>${speedStats.medianSpeed.toFixed(1)} mm/s</span></div>`;
-    if (metadata.feedRateRange.max > 0) {
-      html += `<div class="info-row"><span>F Range</span><span>${metadata.feedRateRange.min.toFixed(0)}–${metadata.feedRateRange.max.toFixed(0)} mm/min</span></div>`;
+    if (speedStats) {
+      html += `<div class="info-row"><span>Min Feed</span><span>${speedStats.minSpeed.toFixed(1)} mm/s</span></div>`;
+      html += `<div class="info-row"><span>Max Feed</span><span>${speedStats.maxSpeed.toFixed(1)} mm/s</span></div>`;
+      html += `<div class="info-row"><span>Mean Feed</span><span>${speedStats.meanSpeed.toFixed(1)} mm/s</span></div>`;
+      html += `<div class="info-row"><span>Median Feed</span><span>${speedStats.medianSpeed.toFixed(1)} mm/s</span></div>`;
+    } else {
+      html += `<div class="info-row"><span>Min Feed</span><span>—</span></div>`;
+      html += `<div class="info-row"><span>Max Feed</span><span>—</span></div>`;
+      html += `<div class="info-row"><span>Mean Feed</span><span>—</span></div>`;
+      html += `<div class="info-row"><span>Median Feed</span><span>—</span></div>`;
+    }
+    if (gcodeMetadata && gcodeMetadata.maxFeedRate > 0) {
+      html += `<div class="info-row"><span>F Range</span><span>${gcodeMetadata.minFeedRate.toFixed(0)}–${gcodeMetadata.maxFeedRate.toFixed(0)} mm/min</span></div>`;
     }
     html += '</div>';
 
@@ -109,7 +113,6 @@ export class InfoPanel {
       html += `<div class="info-row"><span>Count</span><span>${layerTimes.length}</span></div>`;
       html += `<div class="info-row"><span>Avg Time</span><span>${formatTime(avgLayerTime)}</span></div>`;
       html += `<div class="info-row"><span>Max Time</span><span>${formatTime(maxLayerTime)}</span></div>`;
-      // Show slowest 3 layers
       const sorted = [...layerTimes].sort((a, b) => b.timeSeconds - a.timeSeconds).slice(0, 3);
       html += '<div class="info-sublabel">Slowest layers:</div>';
       for (const l of sorted) {
@@ -118,56 +121,80 @@ export class InfoPanel {
       html += '</div>';
     }
 
-    // ── Tools (CNC) ──
-    if (metadata.tools.length > 0) {
-      html += '<div class="info-section"><h4>Tools</h4>';
-      html += `<div class="info-row"><span>Tool Count</span><span>${metadata.tools.length}</span></div>`;
-      html += `<div class="info-row"><span>Tools</span><span>${metadata.tools.join(', ')}</span></div>`;
-      html += `<div class="info-row"><span>Changes</span><span>${metadata.toolChanges.length}</span></div>`;
-      html += '</div>';
-    }
-
-    // ── Spindle (CNC) ──
-    if (metadata.maxSpindleRpm > 0) {
-      html += '<div class="info-section"><h4>Spindle</h4>';
-      html += `<div class="info-row"><span>Max RPM</span><span>${metadata.maxSpindleRpm}</span></div>`;
-      html += `<div class="info-row"><span>Events</span><span>${metadata.spindleEvents.length}</span></div>`;
-      html += '</div>';
-    }
-
-    // ── Temperature (3DP) ──
-    if (metadata.maxHotendTemp > 0 || metadata.maxBedTemp > 0) {
-      html += '<div class="info-section"><h4>Temperature</h4>';
-      if (metadata.maxHotendTemp > 0) {
-        html += `<div class="info-row"><span>Max Hotend</span><span>${metadata.maxHotendTemp}°C</span></div>`;
+    if (gcodeMetadata) {
+      // ── Tools (CNC) ──
+      if (gcodeMetadata.tools.length > 0) {
+        html += '<div class="info-section"><h4>Tools</h4>';
+        html += `<div class="info-row"><span>Tool Count</span><span>${gcodeMetadata.tools.length}</span></div>`;
+        html += `<div class="info-row"><span>Tools</span><span>${gcodeMetadata.tools.join(', ')}</span></div>`;
+        html += `<div class="info-row"><span>Changes</span><span>${gcodeMetadata.toolChanges.length}</span></div>`;
+        html += '</div>';
       }
-      if (metadata.maxBedTemp > 0) {
-        html += `<div class="info-row"><span>Max Bed</span><span>${metadata.maxBedTemp}°C</span></div>`;
+
+      // ── Spindle (CNC) ──
+      if (gcodeMetadata.maxSpindleRpm > 0 || gcodeMetadata.spindleEvents.length > 0) {
+        html += '<div class="info-section"><h4>Spindle</h4>';
+        html += `<div class="info-row"><span>Max RPM</span><span>${gcodeMetadata.maxSpindleRpm.toFixed(0)}</span></div>`;
+        html += `<div class="info-row"><span>Events</span><span>${gcodeMetadata.spindleEvents.length}</span></div>`;
+        html += '</div>';
       }
-      html += '</div>';
-    }
 
-    // ── Fan (3DP) ──
-    if (metadata.fanEvents.length > 0) {
-      html += '<div class="info-section"><h4>Fan</h4>';
-      html += `<div class="info-row"><span>Max Speed</span><span>${metadata.maxFanSpeed}</span></div>`;
-      html += `<div class="info-row"><span>Events</span><span>${metadata.fanEvents.length}</span></div>`;
-      html += '</div>';
-    }
+      // ── Temperature (3DP) ──
+      if (gcodeMetadata.maxHotendTemp > 0 || gcodeMetadata.maxBedTemp > 0) {
+        html += '<div class="info-section"><h4>Temperature</h4>';
+        if (gcodeMetadata.maxHotendTemp > 0) {
+          html += `<div class="info-row"><span>Max Hotend</span><span>${gcodeMetadata.maxHotendTemp.toFixed(0)}°C</span></div>`;
+        }
+        if (gcodeMetadata.maxBedTemp > 0) {
+          html += `<div class="info-row"><span>Max Bed</span><span>${gcodeMetadata.maxBedTemp.toFixed(0)}°C</span></div>`;
+        }
+        html += '</div>';
+      }
 
-    // ── Coolant (CNC) ──
-    if (metadata.coolantEvents.length > 0) {
-      html += '<div class="info-section"><h4>Coolant</h4>';
-      html += `<div class="info-row"><span>Events</span><span>${metadata.coolantEvents.length}</span></div>`;
-      html += '</div>';
+      // ── Fan (3DP) ──
+      if (gcodeMetadata.fanEvents.length > 0) {
+        html += '<div class="info-section"><h4>Fan</h4>';
+        html += `<div class="info-row"><span>Max Speed</span><span>${gcodeMetadata.maxFanSpeed.toFixed(0)}</span></div>`;
+        html += `<div class="info-row"><span>Events</span><span>${gcodeMetadata.fanEvents.length}</span></div>`;
+        html += '</div>';
+      }
+
+      // ── Coolant (CNC) ──
+      if (gcodeMetadata.coolantEvents.length > 0) {
+        html += '<div class="info-section"><h4>Coolant</h4>';
+        html += `<div class="info-row"><span>Events</span><span>${gcodeMetadata.coolantEvents.length}</span></div>`;
+        html += '</div>';
+      }
+
+      // ── Work Coordinates ──
+      if (gcodeMetadata.workCoordinateSystems.length > 0) {
+        html += '<div class="info-section"><h4>Work Coordinates</h4>';
+        const codes = gcodeMetadata.workCoordinateSystems.map(w => w.code).join(', ');
+        html += `<div class="info-row"><span>Systems</span><span>${codes}</span></div>`;
+        html += '</div>';
+      }
+
+      // ── Stock / Bed ──
+      if (gcodeMetadata.stockDimensions) {
+        const s = gcodeMetadata.stockDimensions;
+        const sx = s.maxX - s.minX;
+        const sy = s.maxY - s.minY;
+        const sz = s.maxZ - s.minZ;
+        html += '<div class="info-section"><h4>Stock / Bed</h4>';
+        html += `<div class="info-row"><span>X</span><span>${sx.toFixed(2)} mm</span></div>`;
+        html += `<div class="info-row"><span>Y</span><span>${sy.toFixed(2)} mm</span></div>`;
+        html += `<div class="info-row"><span>Z</span><span>${sz.toFixed(2)} mm</span></div>`;
+        html += '</div>';
+      }
     }
 
     // ── Material Usage (3DP) ──
-    if (materialUsage && materialUsage.extrusionLength > 0) {
+    const mu = materialUsage ?? jobSummary?.materialUsage;
+    if (mu && mu.extrusionLength > 0) {
       html += '<div class="info-section"><h4>Material Usage</h4>';
-      html += `<div class="info-row"><span>Extrusion</span><span>${materialUsage.extrusionLength.toFixed(1)} mm</span></div>`;
-      html += `<div class="info-row"><span>Volume</span><span>${(materialUsage.volume / 1000).toFixed(2)} cm³</span></div>`;
-      html += `<div class="info-row"><span>Weight</span><span>${materialUsage.weight.toFixed(1)} g</span></div>`;
+      html += `<div class="info-row"><span>Extrusion</span><span>${mu.extrusionLength.toFixed(1)} mm</span></div>`;
+      html += `<div class="info-row"><span>Volume</span><span>${(mu.volume / 1000).toFixed(2)} cm³</span></div>`;
+      html += `<div class="info-row"><span>Weight</span><span>${mu.weight.toFixed(1)} g</span></div>`;
       html += '</div>';
     }
 
