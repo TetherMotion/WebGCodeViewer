@@ -5,6 +5,7 @@
 #include "tether/web/TrajectorySerializer.hpp"
 #include "AnalysisSerializer.hpp"
 #include "ProcessResultAnalyzer.hpp"
+#include "tether/gcode/analysis/GcodeDiffAnalyzer.hpp"
 
 #include "tether_viewer.pb.h"
 
@@ -322,6 +323,10 @@ void ViewerRpcHandler::handleEnvelope(const drogon::WebSocketConnectionPtr& conn
                 responseBytes = handleGetJobSummary(req.get_job_summary().SerializeAsString());
                 requestCaseStr = "get_job_summary";
                 break;
+            case TetherViewerRequest::kDiffGcode:
+                responseBytes = handleDiffGcode(req.diff_gcode().SerializeAsString());
+                requestCaseStr = "diff_gcode";
+                break;
             default:
                 sendErrorResponse(conn, callId, RPC_NOT_FOUND, "No handler for request case");
                 return;
@@ -386,6 +391,8 @@ void ViewerRpcHandler::sendResponse(const drogon::WebSocketConnectionPtr& conn,
             parsed = response->mutable_get_drilling_cycles()->ParseFromString(responseBytes);
         } else if (requestCase == "get_job_summary") {
             parsed = response->mutable_get_job_summary()->ParseFromString(responseBytes);
+        } else if (requestCase == "diff_gcode") {
+            parsed = response->mutable_diff_gcode()->ParseFromString(responseBytes);
         }
 
         if (!parsed) {
@@ -1440,6 +1447,70 @@ std::string ViewerRpcHandler::handleGetJobSummary(const std::string& requestByte
     te->set_move_count(static_cast<uint32_t>(result->segmentSpeeds.size()));
     te->set_method("analytical");
 
+    return resp.SerializeAsString();
+}
+
+namespace {
+    std::vector<std::string> splitLines(const std::string& text) {
+        std::vector<std::string> lines;
+        if (text.empty()) {
+            lines.emplace_back("");
+            return lines;
+        }
+        size_t start = 0;
+        for (size_t i = 0; i < text.size(); ++i) {
+            if (text[i] == '\n') {
+                lines.emplace_back(text.substr(start, i - start));
+                start = i + 1;
+            }
+        }
+        lines.emplace_back(text.substr(start));
+        return lines;
+    }
+}
+
+std::string ViewerRpcHandler::handleDiffGcode(const std::string& requestBytes) {
+    DiffGcodeRequest req;
+    if (!req.ParseFromString(requestBytes)) {
+        throw std::runtime_error("Failed to parse DiffGcodeRequest");
+    }
+
+    const auto oldLines = splitLines(req.old_text());
+    const auto newLines = splitLines(req.new_text());
+    const auto result = tether::gcode::analysis::GcodeDiffAnalyzer::diff(oldLines, newLines);
+
+    DiffGcodeResponse resp;
+    for (const auto& a : result.added) {
+        auto* line = resp.add_added();
+        line->set_line_number(a.lineNumber);
+        line->set_content(a.content);
+    }
+    for (const auto& r : result.removed) {
+        auto* line = resp.add_removed();
+        line->set_line_number(r.lineNumber);
+        line->set_content(r.content);
+    }
+    for (const auto& m : result.modified) {
+        auto* mod = resp.add_modified();
+        mod->set_old_line_number(m.oldLineNumber);
+        mod->set_new_line_number(m.newLineNumber);
+        mod->set_old_content(m.oldContent);
+        mod->set_new_content(m.newContent);
+    }
+    resp.set_unchanged(result.unchanged);
+    auto* summary = resp.mutable_summary();
+    summary->set_total_added(result.summary.totalAdded);
+    summary->set_total_removed(result.summary.totalRemoved);
+    summary->set_total_modified(result.summary.totalModified);
+    summary->set_total_unchanged(result.summary.totalUnchanged);
+    summary->set_similarity_score(result.summary.similarityScore);
+    for (const auto& w : result.wordChanges) {
+        auto* wc = resp.add_word_changes();
+        wc->set_line_number(w.lineNumber);
+        wc->set_word(w.word);
+        wc->set_old_value(w.oldValue);
+        wc->set_new_value(w.newValue);
+    }
     return resp.SerializeAsString();
 }
 

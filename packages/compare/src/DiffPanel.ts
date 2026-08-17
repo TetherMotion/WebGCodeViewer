@@ -15,7 +15,7 @@ export interface GcodeDiffResult {
   /** Lines that are identical */
   unchanged: number;
   /** Summary statistics */
-  summary: {
+  summary?: {
     totalAdded: number;
     totalRemoved: number;
     totalModified: number;
@@ -24,87 +24,6 @@ export interface GcodeDiffResult {
   };
   /** Changed G-code words (semantic diff) */
   wordChanges: { lineNumber: number; word: string; oldValue: string; newValue: string }[];
-}
-
-/**
- * Compare two G-code files and produce a structural diff.
- * Uses line-by-line comparison with semantic word-level change detection.
- *
- * @param oldLines Old G-code lines
- * @param newLines New G-code lines
- */
-export function diffGcode(oldLines: string[], newLines: string[]): GcodeDiffResult {
-  const added: { lineNumber: number; content: string }[] = [];
-  const removed: { lineNumber: number; content: string }[] = [];
-  const modified: { oldLineNumber: number; newLineNumber: number; oldContent: string; newContent: string }[] = [];
-  const wordChanges: { lineNumber: number; word: string; oldValue: string; newValue: string }[] = [];
-  let unchanged = 0;
-
-  const maxLen = Math.max(oldLines.length, newLines.length);
-  const minLen = Math.min(oldLines.length, newLines.length);
-
-  for (let i = 0; i < maxLen; i++) {
-    if (i < minLen) {
-      const oldLine = oldLines[i].trim();
-      const newLine = newLines[i].trim();
-      if (oldLine === newLine) {
-        unchanged++;
-      } else {
-        modified.push({
-          oldLineNumber: i,
-          newLineNumber: i,
-          oldContent: oldLines[i],
-          newContent: newLines[i],
-        });
-
-        const oldWords = oldLine.match(/([A-Za-z])(-?\d*\.?\d+)/g) || [];
-        const newWords = newLine.match(/([A-Za-z])(-?\d*\.?\d+)/g) || [];
-        const oldMap = new Map<string, string>();
-        const newMap = new Map<string, string>();
-        for (const w of oldWords) oldMap.set(w[0].toUpperCase(), w);
-        for (const w of newWords) newMap.set(w[0].toUpperCase(), w);
-
-        for (const key of new Set([...oldMap.keys(), ...newMap.keys()])) {
-          const oldVal = oldMap.get(key);
-          const newVal = newMap.get(key);
-          if (oldVal !== newVal) {
-            wordChanges.push({
-              lineNumber: i,
-              word: key,
-              oldValue: oldVal ?? '(none)',
-              newValue: newVal ?? '(none)',
-            });
-          }
-        }
-      }
-    } else if (i < newLines.length) {
-      added.push({ lineNumber: i, content: newLines[i] });
-    } else if (i < oldLines.length) {
-      removed.push({ lineNumber: i, content: oldLines[i] });
-    }
-  }
-
-  const totalAdded = added.length;
-  const totalRemoved = removed.length;
-  const totalModified = modified.length;
-  const totalUnchanged = unchanged;
-  const totalLines = maxLen;
-  const similarityScore = totalLines > 0 ? totalUnchanged / totalLines : 1;
-
-  return {
-    added,
-    removed,
-    modified,
-    unchanged,
-    summary: {
-      totalAdded,
-      totalRemoved,
-      totalModified,
-      totalUnchanged,
-      similarityScore,
-    },
-    wordChanges,
-  };
 }
 
 export interface DiffPanelEvents {
@@ -191,24 +110,34 @@ export class DiffPanel extends EventDispatcher<DiffPanelEvents> {
   /**
    * Display the diff results between two G-code files.
    */
-  displayDiff(oldLines: string[], newLines: string[], oldName: string, newName: string): void {
-    const diff = diffGcode(oldLines, newLines);
+  displayDiff(diff: GcodeDiffResult, oldName: string, newName: string): void {
+    const summary = diff.summary ?? {
+      totalAdded: 0,
+      totalRemoved: 0,
+      totalModified: 0,
+      totalUnchanged: 0,
+      similarityScore: 1,
+    };
+    const unchanged = diff.unchanged;
+    const modifiedCount = diff.modified.length;
+    const oldLineCount = unchanged + modifiedCount + diff.removed.length;
+    const newLineCount = unchanged + modifiedCount + diff.added.length;
 
     let html = '';
 
     // Summary
     html += '<div class="diff-summary">';
-    html += `<div class="diff-row"><span>Original:</span><span>${oldName} (${oldLines.length} lines)</span></div>`;
-    html += `<div class="diff-row"><span>Modified:</span><span>${newName} (${newLines.length} lines)</span></div>`;
-    html += `<div class="diff-row"><span>Similarity:</span><span>${(diff.summary.similarityScore * 100).toFixed(1)}%</span></div>`;
+    html += `<div class="diff-row"><span>Original:</span><span>${oldName} (${oldLineCount} lines)</span></div>`;
+    html += `<div class="diff-row"><span>Modified:</span><span>${newName} (${newLineCount} lines)</span></div>`;
+    html += `<div class="diff-row"><span>Similarity:</span><span>${(summary.similarityScore * 100).toFixed(1)}%</span></div>`;
     html += '</div>';
 
     // Statistics
     html += '<div class="diff-stats">';
-    html += `<div class="diff-stat diff-added">+${diff.summary.totalAdded} added</div>`;
-    html += `<div class="diff-stat diff-removed">-${diff.summary.totalRemoved} removed</div>`;
-    html += `<div class="diff-stat diff-modified">~${diff.summary.totalModified} modified</div>`;
-    html += `<div class="diff-stat diff-unchanged">=${diff.summary.totalUnchanged} unchanged</div>`;
+    html += `<div class="diff-stat diff-added">+${summary.totalAdded} added</div>`;
+    html += `<div class="diff-stat diff-removed">-${summary.totalRemoved} removed</div>`;
+    html += `<div class="diff-stat diff-modified">~${summary.totalModified} modified</div>`;
+    html += `<div class="diff-stat diff-unchanged">=${summary.totalUnchanged} unchanged</div>`;
     html += '</div>';
 
     // Word-level changes
@@ -273,7 +202,7 @@ export class DiffPanel extends EventDispatcher<DiffPanelEvents> {
       html += '</div>';
     }
 
-    if (diff.summary.totalAdded === 0 && diff.summary.totalRemoved === 0 && diff.summary.totalModified === 0) {
+    if (summary.totalAdded === 0 && summary.totalRemoved === 0 && summary.totalModified === 0) {
       html += '<div class="diff-identical">Files are identical</div>';
     }
 

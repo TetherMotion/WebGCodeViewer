@@ -722,13 +722,13 @@ export class WebGPUApp {
       this.diffPanel = new DiffPanel(gcodePanel);
       this.diffPanel.on('fileUploaded', async (file: File) => {
         try {
-          const text = await file.text();
-          const newLines = text.split('\n');
-          const oldLines = this.gcodeViewer?.allLines ?? [];
+          const newText = await file.text();
+          const oldText = this.gcodeViewer?.allLines.join('\n') ?? '';
           const oldName = this.gcodeViewer?.filename ?? 'current';
-          this.diffPanel?.displayDiff(oldLines, newLines, oldName, file.name);
+          const result = await this.rpcClient.diffGcode(oldText, newText);
+          this.diffPanel?.displayDiff(result, oldName, file.name);
         } catch (e) {
-          console.error('Failed to process diff file:', e);
+          console.error('Failed to diff G-code:', e);
         }
       });
     }

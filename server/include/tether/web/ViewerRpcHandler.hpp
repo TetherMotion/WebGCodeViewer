@@ -99,6 +99,7 @@ private:
     std::string handleGetProbeEvents(const std::string& requestBytes);
     std::string handleGetDrillingCycles(const std::string& requestBytes);
     std::string handleGetJobSummary(const std::string& requestBytes);
+    std::string handleDiffGcode(const std::string& requestBytes);
 
     // Z-layer computation
     struct ZLayer {

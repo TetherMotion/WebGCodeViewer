@@ -60,6 +60,7 @@ message TetherViewerRequest {
     GetProbeEventsRequest get_probe_events = 23;
     GetDrillingCyclesRequest get_drilling_cycles = 24;
     GetJobSummaryRequest get_job_summary = 25;
+    DiffGcodeRequest diff_gcode = 26;
 
     // Server info
     google.protobuf.Empty ping = 17;
@@ -111,6 +112,7 @@ message TetherViewerResponse {
     GetProbeEventsResponse get_probe_events = 23;
     GetDrillingCyclesResponse get_drilling_cycles = 24;
     GetJobSummaryResponse get_job_summary = 25;
+    DiffGcodeResponse diff_gcode = 26;
   }
 }
 
@@ -617,4 +619,46 @@ message GetJobSummaryResponse {
   SpeedStats speed_stats = 2;
   repeated LayerTime layer_times = 3;
   TimeEstimate print_time_estimate = 4;
+}
+
+// G-code diff
+message DiffGcodeRequest {
+  string old_text = 1;
+  string new_text = 2;
+}
+
+message DiffGcodeLine {
+  int32 line_number = 1;
+  string content = 2;
+}
+
+message DiffGcodeModified {
+  int32 old_line_number = 1;
+  int32 new_line_number = 2;
+  string old_content = 3;
+  string new_content = 4;
+}
+
+message DiffGcodeWordChange {
+  int32 line_number = 1;
+  string word = 2;
+  string old_value = 3;
+  string new_value = 4;
+}
+
+message DiffGcodeSummary {
+  int32 total_added = 1;
+  int32 total_removed = 2;
+  int32 total_modified = 3;
+  int32 total_unchanged = 4;
+  double similarity_score = 5;
+}
+
+message DiffGcodeResponse {
+  repeated DiffGcodeLine added = 1;
+  repeated DiffGcodeLine removed = 2;
+  repeated DiffGcodeModified modified = 3;
+  int32 unchanged = 4;
+  DiffGcodeSummary summary = 5;
+  repeated DiffGcodeWordChange word_changes = 6;
 }

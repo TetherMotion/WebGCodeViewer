@@ -42,6 +42,8 @@ import {
   GetDrillingCyclesResponseSchema,
   GetJobSummaryRequestSchema,
   GetJobSummaryResponseSchema,
+  DiffGcodeRequestSchema,
+  DiffGcodeResponseSchema,
   PingResponseSchema,
   VersionResponseSchema,
   type UploadGcodeResponse,
@@ -63,6 +65,7 @@ import {
   type GetProbeEventsResponse,
   type GetDrillingCyclesResponse,
   type GetJobSummaryResponse,
+  type DiffGcodeResponse,
 } from "@tether/viewer-core/generated";
 
 export interface ProcessJobOptions {
@@ -417,6 +420,13 @@ export class RpcClient {
     return this.transport.unary(
       'getJobSummary',
       create(GetJobSummaryRequestSchema, { jobId }),
+    );
+  }
+
+  async diffGcode(oldText: string, newText: string): Promise<DiffGcodeResponse> {
+    return this.transport.unary(
+      'diffGcode',
+      create(DiffGcodeRequestSchema, { oldText, newText }),
     );
   }
 
