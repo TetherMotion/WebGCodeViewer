@@ -4,6 +4,7 @@
 #include "ProcessResultAnalyzer.hpp"
 #include "analysis/OverhangAnalyzer.hpp"
 #include "analysis/ZSeamAnalyzer.hpp"
+#include "analysis/SelfIntersectionAnalyzer.hpp"
 #include "proto/tether_viewer.pb.h"
 
 #include <algorithm>
@@ -375,6 +376,7 @@ void appendProcessResultAnalysis(
 
     appendOverhangAnalysis(response, result, gcodeLines, request);
     appendZSeamAnalysis(response, result, gcodeLines, request);
+    appendSelfIntersectionAnalysis(response, result, gcodeLines, request);
 }
 
 } // namespace tether::web
