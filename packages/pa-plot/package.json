@@ -9,14 +9,6 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
-    },
-    "./GpuPlot": {
-      "import": "./src/GpuPlot.ts",
-      "types": "./src/GpuPlot.ts"
-    },
-    "./PaControls": {
-      "import": "./src/PaControls.ts",
-      "types": "./src/PaControls.ts"
     }
   },
   "scripts": {

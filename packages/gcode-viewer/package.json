@@ -9,22 +9,6 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
-    },
-    "./GcodeViewer": {
-      "import": "./src/GcodeViewer.ts",
-      "types": "./src/GcodeViewer.ts"
-    },
-    "./BookmarkManager": {
-      "import": "./src/BookmarkManager.ts",
-      "types": "./src/BookmarkManager.ts"
-    },
-    "./SegmentList": {
-      "import": "./src/SegmentList.ts",
-      "types": "./src/SegmentList.ts"
-    },
-    "./AttributePanel": {
-      "import": "./src/AttributePanel.ts",
-      "types": "./src/AttributePanel.ts"
     }
   },
   "scripts": {

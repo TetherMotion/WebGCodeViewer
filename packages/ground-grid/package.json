@@ -9,18 +9,6 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
-    },
-    "./GridRenderer": {
-      "import": "./src/GridRenderer.ts",
-      "types": "./src/GridRenderer.ts"
-    },
-    "./GridLabelRenderer": {
-      "import": "./src/GridLabelRenderer.ts",
-      "types": "./src/GridLabelRenderer.ts"
-    },
-    "./GridLabels": {
-      "import": "./src/GridLabels.ts",
-      "types": "./src/GridLabels.ts"
     }
   },
   "scripts": {

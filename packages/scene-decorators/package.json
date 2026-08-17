@@ -9,26 +9,6 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
-    },
-    "./PrintHeadMarker": {
-      "import": "./src/PrintHeadMarker.ts",
-      "types": "./src/PrintHeadMarker.ts"
-    },
-    "./PrinterFrameRenderer": {
-      "import": "./src/PrinterFrameRenderer.ts",
-      "types": "./src/PrinterFrameRenderer.ts"
-    },
-    "./ToolChangeMarkerRenderer": {
-      "import": "./src/ToolChangeMarkerRenderer.ts",
-      "types": "./src/ToolChangeMarkerRenderer.ts"
-    },
-    "./OverlayRenderer": {
-      "import": "./src/OverlayRenderer.ts",
-      "types": "./src/OverlayRenderer.ts"
-    },
-    "./MeasureTool": {
-      "import": "./src/MeasureTool.ts",
-      "types": "./src/MeasureTool.ts"
     }
   },
   "scripts": {

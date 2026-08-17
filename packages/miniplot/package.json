@@ -9,14 +9,6 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
-    },
-    "./MiniplotRenderer": {
-      "import": "./src/MiniplotRenderer.ts",
-      "types": "./src/MiniplotRenderer.ts"
-    },
-    "./ComputeMiniplotRenderer": {
-      "import": "./src/ComputeMiniplotRenderer.ts",
-      "types": "./src/ComputeMiniplotRenderer.ts"
     }
   },
   "scripts": {

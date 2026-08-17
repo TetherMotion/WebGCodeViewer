@@ -9,14 +9,6 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
-    },
-    "./CrossSectionRenderer": {
-      "import": "./src/CrossSectionRenderer.ts",
-      "types": "./src/CrossSectionRenderer.ts"
-    },
-    "./CutPlanePanel": {
-      "import": "./src/CutPlanePanel.ts",
-      "types": "./src/CutPlanePanel.ts"
     }
   },
   "scripts": {

@@ -20,7 +20,7 @@ import { parseTTHR, TTHRData, extractZLayer } from "@tether/viewer-core";
 import { parseNBP, NBPData } from "@tether/viewer-core";
 import { type AnalysisSection } from "@tether/viewer-core/generated";
 import { parseTSSP, StateProfileData, stateProfileToTrnp } from "@tether/viewer-core";
-import { parseTRNP, TRNPData, parseTRNPPa, TRNPPaData, PaAlgorithmEntry } from "@tether/viewer-core";
+import { parseTRNP, TRNPData, parseTRNPPa, TRNPPaData } from "@tether/viewer-core";
 import { ToolpathRenderer, ColorAttribute } from '../renderers/ToolpathRenderer';
 import { GridRenderer } from "@tether/ground-grid";
 import { CrossSectionRenderer } from "@tether/cross-section";

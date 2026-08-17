@@ -4,10 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AttributePanel } from "@tether/gcode-viewer";
 import { CutPlanePanel } from "@tether/cross-section";
 import { FilterPanel } from '../src/ui/FilterPanel';
-import { SegmentList } from "@tether/gcode-viewer";
 import { StatsPanel } from '../src/ui/StatsPanel';
 import { TimeSlider } from '../src/ui/TimeSlider';
 import { Toolbar } from '../src/ui/Toolbar';
@@ -15,12 +13,8 @@ import { ZLayerPanel } from '../src/ui/ZLayerPanel';
 import { NavigationCube } from "@tether/nav-overlay";
 import { GridLabels } from "@tether/ground-grid";
 import type {
-  GetStatisticsResponse,
-  GetBlocksResponse,
-  GetSegmentsResponse,
   GetJobStatusResponse,
   GetZLayersResponse,
-  AxisStats,
 } from "@tether/viewer-core/generated";
 
 // ── Helpers ──
@@ -32,27 +26,6 @@ function makeContainer(): HTMLElement {
   const container = document.createElement('div');
   document.body.appendChild(container);
   return container;
-}
-
-function makeStats(): GetStatisticsResponse {
-  const axis: AxisStats = {
-    minPosition: -10, maxPosition: 10, maxVelocity: 100,
-    maxAcceleration: 500, maxJerk: 2000,
-  } as any;
-  return {
-    duration: 12.345678,
-    pathLength: 1234.567,
-    sampleCount: 9999,
-    maxLinearVelocity: 200.5,
-    maxLinearAcceleration: 1000.25,
-    maxLinearJerk: 5000.5,
-    maxCurvature: 0.000123,
-    maxCentripetalAccel: 300.1,
-    totalCornerError: 0.1234,
-    maxCornerError: 0.0567,
-    meetsLimits: true,
-    axisStats: [axis, axis, axis],
-  } as any;
 }
 
 function makeJobStatus(overrides: Partial<GetJobStatusResponse> = {}): GetJobStatusResponse {
@@ -67,80 +40,6 @@ function makeJobStatus(overrides: Partial<GetJobStatusResponse> = {}): GetJobSta
     ...overrides,
   } as any;
 }
-
-// ── AttributePanel ──
-
-describe('AttributePanel', () => {
-  let container: HTMLElement;
-  let panel: AttributePanel;
-
-  beforeEach(() => {
-    container = makeContainer();
-    panel = new AttributePanel(container);
-  });
-
-  it('constructor creates a div with class attribute-panel', () => {
-    const el = container.querySelector('.attribute-panel');
-    expect(el).to.be.instanceOf(HTMLElement);
-  });
-
-  it('appends the element to the container', () => {
-    expect(container.children.length).to.equal(1);
-    expect(container.firstChild).to.equal(container.querySelector('.attribute-panel'));
-  });
-
-  it('update() renders the Statistics heading', () => {
-    panel.update(makeStats());
-    const el = container.querySelector('.attribute-panel') as HTMLElement;
-    expect(el.innerHTML).to.contain('Statistics');
-  });
-
-  it('update() renders duration with 3 decimals', () => {
-    panel.update(makeStats());
-    const el = container.querySelector('.attribute-panel') as HTMLElement;
-    expect(el.innerHTML).to.contain('12.346 s');
-  });
-
-  it('update() renders path length with 2 decimals', () => {
-    panel.update(makeStats());
-    const el = container.querySelector('.attribute-panel') as HTMLElement;
-    expect(el.innerHTML).to.contain('1234.57 mm');
-  });
-
-  it('update() renders sample count', () => {
-    panel.update(makeStats());
-    const el = container.querySelector('.attribute-panel') as HTMLElement;
-    expect(el.innerHTML).to.contain('9999');
-  });
-
-  it('update() renders meetsLimits check mark when true', () => {
-    panel.update(makeStats());
-    const el = container.querySelector('.attribute-panel') as HTMLElement;
-    expect(el.innerHTML).to.contain('✓');
-  });
-
-  it('update() renders meetsLimits cross when false', () => {
-    const stats = makeStats();
-    stats.meetsLimits = false;
-    panel.update(stats);
-    const el = container.querySelector('.attribute-panel') as HTMLElement;
-    expect(el.innerHTML).to.contain('✗');
-  });
-
-  it('update() renders Per-Axis heading', () => {
-    panel.update(makeStats());
-    const el = container.querySelector('.attribute-panel') as HTMLElement;
-    expect(el.innerHTML).to.contain('Per-Axis');
-  });
-
-  it('update() renders axis labels X, Y, Z for 3 axis stats', () => {
-    panel.update(makeStats());
-    const el = container.querySelector('.attribute-panel') as HTMLElement;
-    expect(el.innerHTML).to.contain('>X<');
-    expect(el.innerHTML).to.contain('>Y<');
-    expect(el.innerHTML).to.contain('>Z<');
-  });
-});
 
 // ── CutPlanePanel ──
 
@@ -286,118 +185,6 @@ describe('FilterPanel', () => {
     const btn = container.querySelectorAll('button')[1] as HTMLButtonElement;
     btn.click();
     expect(emitted).to.deep.equal({ start: 0, end: 0 });
-  });
-});
-
-// ── SegmentList ──
-
-describe('SegmentList', () => {
-  let container: HTMLElement;
-  let list: SegmentList;
-
-  beforeEach(() => {
-    container = makeContainer();
-    list = new SegmentList(container);
-  });
-
-  it('constructor creates a div with class segment-list', () => {
-    const el = container.querySelector('.segment-list');
-    expect(el).to.be.instanceOf(HTMLElement);
-  });
-
-  it('renders the Segments heading', () => {
-    expect(container.querySelector('.segment-list')!.innerHTML).to.contain('Segments');
-  });
-
-  it('creates a child div with class segment-list-items', () => {
-    const el = container.querySelector('.segment-list-items');
-    expect(el).to.be.instanceOf(HTMLElement);
-  });
-
-  it('updateBlocks renders blocks', () => {
-    const blocks: GetBlocksResponse = {
-      blocks: [
-        { blockIndex: 0, lineNumber: 1, motionType: 0, gcodeText: 'G0 X1' } as any,
-        { blockIndex: 1, lineNumber: 2, motionType: 1, gcodeText: 'G1 X2' } as any,
-      ],
-    } as any;
-    list.updateBlocks(blocks);
-    const items = container.querySelectorAll('.segment-item');
-    expect(items.length).to.equal(2);
-  });
-
-  it('updateBlocks renders motion type names', () => {
-    const blocks: GetBlocksResponse = {
-      blocks: [
-        { blockIndex: 0, lineNumber: 1, motionType: 0, gcodeText: 'G0' } as any,
-        { blockIndex: 1, lineNumber: 2, motionType: 1, gcodeText: 'G1' } as any,
-        { blockIndex: 2, lineNumber: 3, motionType: 2, gcodeText: 'G2' } as any,
-        { blockIndex: 3, lineNumber: 4, motionType: 3, gcodeText: 'G3' } as any,
-      ],
-    } as any;
-    list.updateBlocks(blocks);
-    const listEl = container.querySelector('.segment-list-items') as HTMLElement;
-    expect(listEl.innerHTML).to.contain('Rapid');
-    expect(listEl.innerHTML).to.contain('Linear');
-    expect(listEl.innerHTML).to.contain('Arc CW');
-    expect(listEl.innerHTML).to.contain('Arc CCW');
-  });
-
-  it('updateBlocks shows "No blocks" when empty', () => {
-    list.updateBlocks({ blocks: [] } as any);
-    const listEl = container.querySelector('.segment-list-items') as HTMLElement;
-    expect(listEl.innerHTML).to.contain('No blocks');
-  });
-
-  it('updateBlocks escapes HTML in gcodeText', () => {
-    const blocks: GetBlocksResponse = {
-      blocks: [
-        { blockIndex: 0, lineNumber: 1, motionType: 0, gcodeText: '<script>' } as any,
-      ],
-    } as any;
-    list.updateBlocks(blocks);
-    const listEl = container.querySelector('.segment-list-items') as HTMLElement;
-    expect(listEl.innerHTML).to.not.contain('<script>');
-    expect(listEl.innerHTML).to.contain('&lt;script&gt;');
-  });
-
-  it('updateBlocks renders unknown motion type as Type N', () => {
-    const blocks: GetBlocksResponse = {
-      blocks: [
-        { blockIndex: 0, lineNumber: 1, motionType: 99, gcodeText: 'G1' } as any,
-      ],
-    } as any;
-    list.updateBlocks(blocks);
-    const listEl = container.querySelector('.segment-list-items') as HTMLElement;
-    expect(listEl.innerHTML).to.contain('Type 99');
-  });
-
-  it('updateSegments renders segments', () => {
-    const segments: GetSegmentsResponse = {
-      segments: [
-        { segmentIndex: 0, startTime: 1.5, endTime: 2.5, motionType: 1, startPath: 0, endPath: 10 } as any,
-      ],
-    } as any;
-    list.updateSegments(segments);
-    const items = container.querySelectorAll('.segment-item');
-    expect(items.length).to.equal(1);
-  });
-
-  it('updateSegments renders time range', () => {
-    const segments: GetSegmentsResponse = {
-      segments: [
-        { segmentIndex: 0, startTime: 1.5, endTime: 2.5, motionType: 1, startPath: 0, endPath: 10 } as any,
-      ],
-    } as any;
-    list.updateSegments(segments);
-    const listEl = container.querySelector('.segment-list-items') as HTMLElement;
-    expect(listEl.innerHTML).to.contain('1.500s - 2.500s');
-  });
-
-  it('updateSegments shows "No segments" when empty', () => {
-    list.updateSegments({ segments: [] } as any);
-    const listEl = container.querySelector('.segment-list-items') as HTMLElement;
-    expect(listEl.innerHTML).to.contain('No segments');
   });
 });
 

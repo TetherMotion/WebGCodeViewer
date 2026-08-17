@@ -4,9 +4,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { DiffPanel, type GcodeDiffResult } from "@tether/compare";
+import { DiffPanel } from "@tether/compare";
+import type { DiffGcodeResponse } from "@tether/viewer-core/generated";
 
-function createDiffResult(partial: Partial<GcodeDiffResult>): GcodeDiffResult {
+function createDiffResult(partial: Partial<DiffGcodeResponse>): DiffGcodeResponse {
   const base = {
     added: [],
     removed: [],
@@ -20,7 +21,7 @@ function createDiffResult(partial: Partial<GcodeDiffResult>): GcodeDiffResult {
       similarityScore: 1,
     },
     wordChanges: [],
-  } as GcodeDiffResult;
+  } as DiffGcodeResponse;
   return {
     ...base,
     ...partial,
@@ -28,7 +29,7 @@ function createDiffResult(partial: Partial<GcodeDiffResult>): GcodeDiffResult {
       ...base.summary,
       ...(partial.summary ?? {}),
     },
-  };
+  } as DiffGcodeResponse;
 }
 
 describe('DiffPanel', () => {

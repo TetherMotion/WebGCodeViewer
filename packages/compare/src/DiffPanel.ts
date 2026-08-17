@@ -4,27 +4,7 @@
  */
 
 import { EventDispatcher } from "@tether/viewer-core";
-
-export interface GcodeDiffResult {
-  /** Lines added in the new file (not in old) */
-  added: { lineNumber: number; content: string }[];
-  /** Lines removed from the old file (not in new) */
-  removed: { lineNumber: number; content: string }[];
-  /** Lines modified (same position, different content) */
-  modified: { oldLineNumber: number; newLineNumber: number; oldContent: string; newContent: string }[];
-  /** Lines that are identical */
-  unchanged: number;
-  /** Summary statistics */
-  summary?: {
-    totalAdded: number;
-    totalRemoved: number;
-    totalModified: number;
-    totalUnchanged: number;
-    similarityScore: number; // 0..1
-  };
-  /** Changed G-code words (semantic diff) */
-  wordChanges: { lineNumber: number; word: string; oldValue: string; newValue: string }[];
-}
+import type { DiffGcodeResponse } from "@tether/viewer-core/generated";
 
 export interface DiffPanelEvents {
   closed: void;
@@ -110,7 +90,7 @@ export class DiffPanel extends EventDispatcher<DiffPanelEvents> {
   /**
    * Display the diff results between two G-code files.
    */
-  displayDiff(diff: GcodeDiffResult, oldName: string, newName: string): void {
+  displayDiff(diff: DiffGcodeResponse, oldName: string, newName: string): void {
     const summary = diff.summary ?? {
       totalAdded: 0,
       totalRemoved: 0,

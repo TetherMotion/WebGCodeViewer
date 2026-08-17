@@ -9,10 +9,6 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
-    },
-    "./NurbsRenderer": {
-      "import": "./src/NurbsRenderer.ts",
-      "types": "./src/NurbsRenderer.ts"
     }
   },
   "scripts": {

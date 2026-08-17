@@ -9,18 +9,6 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
-    },
-    "./NavigationCube": {
-      "import": "./src/NavigationCube.ts",
-      "types": "./src/NavigationCube.ts"
-    },
-    "./NavigationGizmo": {
-      "import": "./src/NavigationGizmo.ts",
-      "types": "./src/NavigationGizmo.ts"
-    },
-    "./DirectionCubeRenderer": {
-      "import": "./src/DirectionCubeRenderer.ts",
-      "types": "./src/DirectionCubeRenderer.ts"
     }
   },
   "scripts": {

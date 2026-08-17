@@ -9,18 +9,6 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
-    },
-    "./PointCloudRenderer": {
-      "import": "./src/PointCloudRenderer.ts",
-      "types": "./src/PointCloudRenderer.ts"
-    },
-    "./ComparisonPanel": {
-      "import": "./src/ComparisonPanel.ts",
-      "types": "./src/ComparisonPanel.ts"
-    },
-    "./DiffPanel": {
-      "import": "./src/DiffPanel.ts",
-      "types": "./src/DiffPanel.ts"
     }
   },
   "scripts": {
