@@ -275,6 +275,7 @@ TEST(ProcessResultAnalyzerTest, MaterialLayerAndFeatureSections) {
     EXPECT_EQ(response.sections(3).section_name(), "overhang_bridge_support");
     EXPECT_EQ(response.sections(4).section_name(), "z_seam");
     EXPECT_EQ(response.sections(5).section_name(), "path_intersections");
+    EXPECT_EQ(response.sections(6).section_name(), "volumetric_flow");
 
     const auto& material = response.sections(0);
     EXPECT_GT(material.metrics_size(), 0);
