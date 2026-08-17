@@ -61,9 +61,16 @@ async function uploadAndProcess(request: APIRequestContext, gcode: string, filen
   return { jobId, status };
 }
 
-/** Open a dropdown menu by clicking its trigger button. */
+/** Open a dropdown menu by clicking its trigger button (idempotent). */
 async function openMenu(page: Page, label: string) {
-  await page.locator('#top-panel .menu-trigger', { hasText: label }).click();
+  await page.evaluate((menuLabel) => {
+    const triggers = [...document.querySelectorAll('#top-panel .menu-trigger')];
+    const trigger = triggers.find(el => el.textContent?.includes(menuLabel));
+    const dropdown = trigger?.parentElement?.querySelector('.menu-dropdown') as HTMLElement | null;
+    if (trigger && dropdown && !dropdown.classList.contains('open')) {
+      (trigger as HTMLButtonElement).click();
+    }
+  }, label);
 }
 
 function setupMessageCollector(page: Page) {
@@ -445,8 +452,9 @@ test.describe('WebGPU feature interactions', () => {
     await page.locator('canvas[data-ready="true"]').waitFor({ timeout: 10000 });
     await page.waitForTimeout(2000);
 
-    // Switch color maps
-    const mapSelect = page.locator('select').nth(1);
+    // Switch color maps (Color menu)
+    await openMenu(page, 'Color');
+    const mapSelect = page.locator('#top-panel .menu-dropdown.open select').nth(1);
     for (const map of ['plasma', 'grayscale', 'cividis', 'viridis']) {
       await mapSelect.selectOption(map);
       await page.waitForTimeout(500);
@@ -465,14 +473,15 @@ test.describe('WebGPU feature interactions', () => {
     await page.locator('canvas[data-ready="true"]').waitFor({ timeout: 10000 });
     await page.waitForTimeout(2000);
 
-    // Change layer
-    const layerSlider = page.locator('.layer-slider');
+    // Change layer (Playback menu)
+    await openMenu(page, 'Playback');
+    const layerSlider = page.locator('#top-panel .menu-dropdown.open .layer-slider');
     await layerSlider.fill('0');
     await page.waitForTimeout(1000);
 
     // Reset to all layers
     await openMenu(page, 'Playback');
-    const allBtn = page.locator('#top-panel button', { hasText: 'All' });
+    const allBtn = page.locator('#top-panel .menu-dropdown.open button', { hasText: 'All' });
     await allBtn.click();
     await page.waitForTimeout(1000);
 

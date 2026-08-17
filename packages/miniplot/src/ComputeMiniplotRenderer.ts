@@ -210,6 +210,14 @@ export class ComputeMiniplotRenderer {
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
 
+    // Dummy segment buffer so the compute bind group can be created before
+    // any data is set. It will be replaced on the first setData() call.
+    this.segmentBuffer = this.device.createBuffer({
+      size: 40,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.segmentBuffer, 0, new Float32Array(10));
+
     // Line render pipeline.
     const renderShader = this.device.createShaderModule({
       code: `
@@ -277,6 +285,7 @@ export class ComputeMiniplotRenderer {
       layout: this.computePipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: this.computeUniformBuffer } },
+        { binding: 1, resource: { buffer: this.segmentBuffer } },
         { binding: 2, resource: { buffer: this.pointBuffer } },
       ],
     });

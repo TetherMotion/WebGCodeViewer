@@ -118,9 +118,10 @@ export class PrinterFrameRenderer {
     });
 
     // Pre-allocate dynamic buffer (worst-case size for gantry + carriage + nozzle)
-    // Gantry: 2 lines (4 verts), Carriage: 4 lines (8 verts), Nozzle: 8 lines (16 verts) = 28 verts
+    // Gantry: 2 lines (4 verts), drop: 1 line (2 verts)
+    // Carriage: 4+4+4 lines (24 verts), Nozzle: 4+4 lines (16 verts) = 44 verts
     this.dynamicBuffer = this.device.createBuffer({
-      size: 28 * 12, // 28 vertices × 12 bytes
+      size: 44 * 12, // 44 vertices × 12 bytes
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
   }

@@ -276,6 +276,9 @@ export class GpuPlot {
 
     pass.setPipeline(this.linePipeline);
 
+    // Temp buffers must outlive queue.submit(); collect them here.
+    const tempBuffers: GPUBuffer[] = [];
+
     // Render each visible series
     for (let i = 0; i < this.series.length; i++) {
       const s = this.series[i];
@@ -314,8 +317,8 @@ export class GpuPlot {
       pass.setVertexBuffer(0, pointBuffer);
       pass.draw(points.length / 2);
 
-      // Destroy temp buffer (will be garbage collected)
-      pointBuffer.destroy();
+      // Queue temp buffer for destruction after submit
+      tempBuffers.push(pointBuffer);
     }
 
     pass.end();
@@ -324,6 +327,7 @@ export class GpuPlot {
     // This is done in renderOverlay() after the GPU pass
 
     this.device.queue.submit([encoder.finish()]);
+    for (const b of tempBuffers) b.destroy();
   }
 
   /**

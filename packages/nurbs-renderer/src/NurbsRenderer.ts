@@ -71,12 +71,16 @@ export class NurbsRenderer {
   private pieceFeatureTypes: Float32Array | null = null;
   private maxFeatureType: number = 0;
 
-  // Sampled state profile (group 3) — 1D (t, v, a, j) texture sampled from WSS
+  // Sampled state profile (group 3) — 1D (t, v, a, j) texture loaded from WSS
   private stateTexture: GPUTexture | null = null;
-  private stateSampler: GPUSampler | null = null;
   private stateBindGroup: GPUBindGroup | null = null;
   private stateData: StateProfileData | null = null;
   private hasStateProfile: boolean = false;
+
+  // Resources destroyed during data updates are queued here and flushed at the
+  // start of render().  This avoids "used in submit while destroyed" warnings
+  // when the current render pass still references the old resources.
+  private staleResources: (GPUBuffer | GPUTexture)[] = [];
 
   // ReNURBS storage buffers (group 1) — for GPU-side velocity/accel/jerk evaluation
   private renurbsCpBuffer: GPUBuffer | null = null;       // all control points (f32)
@@ -120,6 +124,24 @@ export class NurbsRenderer {
 
   constructor(private device: GPUDevice) {}
 
+  /** Queue a GPU resource for destruction at the next render() boundary. */
+  private deferDestroy(resource: GPUBuffer | GPUTexture | null): void {
+    if (resource) this.staleResources.push(resource);
+  }
+
+  /** Destroy any resources that were replaced during data updates.
+   *  We wait until all work submitted before this point has finished so we
+   *  do not destroy a resource that is still referenced by a pending frame.
+   */
+  private flushStaleResources(): void {
+    const stale = this.staleResources;
+    this.staleResources = [];
+    if (stale.length === 0) return;
+    this.device.queue.onSubmittedWorkDone().then(() => {
+      for (const r of stale) r.destroy();
+    });
+  }
+
   async init(format: GPUTextureFormat): Promise<void> {
     const shader = this.device.createShaderModule({
       code: `
@@ -129,7 +151,7 @@ export class NurbsRenderer {
           colorMode: u32,     // 0=cpuColorValue, 1=velocity, 2=accel, 3=jerk, 4=time
           maxValue: f32,      // for normalization
           useStateTexture: u32,
-          _pad: f32,
+          _pad: array<f32, 4>,
         };
         @group(0) @binding(0) var<uniform> uniforms: Uniforms;
         @group(0) @binding(1) var colorLUT: texture_1d<f32>;
@@ -146,8 +168,8 @@ export class NurbsRenderer {
         @group(2) @binding(2) var<storage, read> paMeta: array<u32>;
 
         // Sampled 1D state profile (group 3) — (time, velocity, acceleration, jerk)
+        // Loaded with textureLoad because rgba32float is not filterable.
         @group(3) @binding(0) var stateTexture: texture_1d<f32>;
-        @group(3) @binding(1) var stateSampler: sampler;
 
         const MAX_CP: u32 = 64u;
 
@@ -243,6 +265,8 @@ export class NurbsRenderer {
           @builtin(position) clipPosition: vec4<f32>,
           @location(0) colorValue: f32,
           @location(1) dimmed: f32,
+          @location(2) localU: f32,
+          @location(3) segIndexX: f32,
         };
 
         @vertex
@@ -250,56 +274,11 @@ export class NurbsRenderer {
           var output: VertexOutput;
           output.clipPosition = uniforms.viewProj * vec4<f32>(input.position, 1.0);
 
-          // Select color source: CPU-computed, sampled state texture, or ReNURBS
-          var cv = input.colorValue;
-          if (uniforms.colorMode > 0u && uniforms.colorMode <= 4u) {
-            let localU = input.segIndexU.y;
-            var val: f32 = 0.0;
-            if (uniforms.useStateTexture != 0u) {
-              let texel = textureSample(stateTexture, stateSampler, localU);
-              // texel = (time, velocity, acceleration, jerk)
-              switch (uniforms.colorMode) {
-                case 1u: { val = texel.y; }        // velocity
-                case 2u: { val = abs(texel.z); }   // acceleration
-                case 3u: { val = abs(texel.w); }   // jerk
-                case 4u: { val = texel.x; }        // time
-                default: { val = 0.0; }
-              }
-            } else {
-              let segIdx = u32(input.segIndexU.x);
-              // Quantity index: colorMode 1=velocity(0), 2=accel(1), 3=jerk(2), 4=time(3)
-              let qtyIdx = uniforms.colorMode - 1u;
-              // Quantity metadata: 4 u32 per (segment, quantity): cpOffset, cpCount, knotOffset, degree
-              let metaBase = segIdx * 4u * 4u + qtyIdx * 4u;
-              let cpOffset = renurbsMeta[metaBase + 0u];
-              let cpCount = renurbsMeta[metaBase + 1u];
-              let knotOffset = renurbsMeta[metaBase + 2u];
-              let degree = renurbsMeta[metaBase + 3u];
-              val = evalBSpline1D(cpOffset, cpCount, knotOffset, degree, localU);
-            }
-            // Normalize to [0,1] using maxValue
-            cv = select(0.0, val / uniforms.maxValue, uniforms.maxValue > 0.0);
-          }
-          // PA color modes: 5=paOffset, 6=paVelocity
-          if (uniforms.colorMode >= 5u && uniforms.colorMode <= 6u) {
-            let segIdx = u32(input.segIndexU.x);
-            let localU = input.segIndexU.y;
-            // PA quantity: 0=pressure_offset (mode 5), 1=extruder_velocity (mode 6)
-            let qtyIdx = uniforms.colorMode - 5u;
-            // PA has 2 quantities per segment
-            let metaBase = segIdx * 2u * 4u + qtyIdx * 4u;
-            let cpOffset = paMeta[metaBase + 0u];
-            let cpCount = paMeta[metaBase + 1u];
-            let knotOffset = paMeta[metaBase + 2u];
-            let degree = paMeta[metaBase + 3u];
-            if (cpCount > 0u) {
-              let val = evalPaBSpline(cpOffset, cpCount, knotOffset, degree, localU);
-              cv = select(0.0, val / uniforms.maxValue, uniforms.maxValue > 0.0);
-            } else {
-              cv = 0.0;
-            }
-          }
-          output.colorValue = cv;
+          // Pass through the CPU-computed color value and the per-vertex parameters
+          // needed to evaluate the state/ReNURBS/PA color source in the fragment shader.
+          output.colorValue = input.colorValue;
+          output.localU = input.segIndexU.y;
+          output.segIndexX = input.segIndexU.x;
 
           let cutoff = uniforms.progress * f32(1000000.0);
           if (input.sampleIdx > cutoff) {
@@ -312,13 +291,70 @@ export class NurbsRenderer {
 
         @fragment
         fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-          // BUG 15 FIX: textureSample must be called from uniform control flow.
-          // The previous code had an if-branch before the textureSample call,
-          // which made the control flow non-uniform because input.colorValue
-          // is a per-vertex (non-uniform) value.
-          // Instead, always sample the texture and use mix() to select the color.
-          let sampled = textureSample(colorLUT, colorSampler, input.colorValue);
-          // Feature #3: Retraction highlight — colorValue < 0 means red
+          // Determine the color value used to sample the LUT.  For CPU color modes
+          // this is the input color value (negative means retraction highlight).
+          // For state/ReNURBS/PA color modes it is computed here in the fragment
+          // stage so that textureSample (which is not allowed in the vertex stage)
+          // can be used for the 1D state profile texture.
+          var cv = input.colorValue;
+
+          if (uniforms.colorMode > 0u && uniforms.colorMode <= 4u) {
+            var val: f32 = 0.0;
+            if (uniforms.useStateTexture != 0u) {
+              // rgba32float is not filterable, so we linearly interpolate by hand.
+              let width = f32(textureDimensions(stateTexture, 0));
+              let u = input.localU * (width - 1.0);
+              let x0 = u32(floor(u));
+              let x1 = min(x0 + 1u, u32(width) - 1u);
+              let frac = u - f32(x0);
+              let t0 = textureLoad(stateTexture, i32(x0), 0);
+              let t1 = textureLoad(stateTexture, i32(x1), 0);
+              let texel = mix(t0, t1, frac);
+              // texel = (time, velocity, acceleration, jerk)
+              switch (uniforms.colorMode) {
+                case 1u: { val = texel.y; }        // velocity
+                case 2u: { val = abs(texel.z); }   // acceleration
+                case 3u: { val = abs(texel.w); }   // jerk
+                case 4u: { val = texel.x; }        // time
+                default: { val = 0.0; }
+              }
+            } else {
+              let segIdx = u32(input.segIndexX);
+              // Quantity index: colorMode 1=velocity(0), 2=accel(1), 3=jerk(2), 4=time(3)
+              let qtyIdx = uniforms.colorMode - 1u;
+              // Quantity metadata: 4 u32 per (segment, quantity): cpOffset, cpCount, knotOffset, degree
+              let metaBase = segIdx * 4u * 4u + qtyIdx * 4u;
+              let cpOffset = renurbsMeta[metaBase + 0u];
+              let cpCount = renurbsMeta[metaBase + 1u];
+              let knotOffset = renurbsMeta[metaBase + 2u];
+              let degree = renurbsMeta[metaBase + 3u];
+              val = evalBSpline1D(cpOffset, cpCount, knotOffset, degree, input.localU);
+            }
+            // Normalize to [0,1] using maxValue
+            cv = select(0.0, val / uniforms.maxValue, uniforms.maxValue > 0.0);
+          }
+
+          // PA color modes: 5=paOffset, 6=paVelocity
+          if (uniforms.colorMode >= 5u && uniforms.colorMode <= 6u) {
+            let segIdx = u32(input.segIndexX);
+            // PA quantity: 0=pressure_offset (mode 5), 1=extruder_velocity (mode 6)
+            let qtyIdx = uniforms.colorMode - 5u;
+            // PA has 2 quantities per segment
+            let metaBase = segIdx * 2u * 4u + qtyIdx * 4u;
+            let cpOffset = paMeta[metaBase + 0u];
+            let cpCount = paMeta[metaBase + 1u];
+            let knotOffset = paMeta[metaBase + 2u];
+            let degree = paMeta[metaBase + 3u];
+            if (cpCount > 0u) {
+              let val = evalPaBSpline(cpOffset, cpCount, knotOffset, degree, input.localU);
+              cv = select(0.0, val / uniforms.maxValue, uniforms.maxValue > 0.0);
+            } else {
+              cv = 0.0;
+            }
+          }
+
+          let sampled = textureSample(colorLUT, colorSampler, cv);
+          // Feature #3: Retraction highlight — original CPU colorValue < 0 means red
           let retractionColor = vec3<f32>(1.0, 0.2, 0.1);
           let baseColor = mix(sampled.rgb, retractionColor,
                               select(0.0, 1.0, input.colorValue < 0.0));
@@ -338,12 +374,6 @@ export class NurbsRenderer {
     this.sampler = this.device.createSampler({
       magFilter: 'linear',
       minFilter: 'linear',
-    });
-
-    this.stateSampler = this.device.createSampler({
-      magFilter: 'linear',
-      minFilter: 'linear',
-      addressModeU: 'clamp-to-edge',
     });
 
     this.pipeline = this.device.createRenderPipeline({
@@ -384,7 +414,8 @@ export class NurbsRenderer {
     });
 
     this.uniformBuffer = this.device.createBuffer({
-      size: 80,
+      label: 'NurbsRenderer.uniformBuffer',
+      size: 96,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -423,12 +454,14 @@ export class NurbsRenderer {
     const dummyMeta = new Uint32Array(16);  // 4 quantities × 4 values
 
     this.renurbsCpBuffer = this.device.createBuffer({
+      label: 'NurbsRenderer.renurbsCpBuffer',
       size: NurbsRenderer.DUMMY_CP_SIZE,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.renurbsCpBuffer, 0, dummyCp);
 
     this.renurbsKnotBuffer = this.device.createBuffer({
+      label: 'NurbsRenderer.renurbsKnotBuffer',
       size: NurbsRenderer.DUMMY_KNOT_SIZE,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
@@ -520,7 +553,6 @@ export class NurbsRenderer {
         layout: stateLayout,
         entries: [
           { binding: 0, resource: this.stateTexture.createView() },
-          { binding: 1, resource: this.stateSampler! },
         ],
       });
     } catch {
@@ -541,7 +573,7 @@ export class NurbsRenderer {
     }
 
     if (this.stateTexture && (this.stateTexture.width < data.sampleCount || this.stateTexture.format !== 'rgba32float')) {
-      this.stateTexture.destroy();
+      this.deferDestroy(this.stateTexture);
       this.stateTexture = null;
     }
 
@@ -569,7 +601,6 @@ export class NurbsRenderer {
         layout: stateLayout,
         entries: [
           { binding: 0, resource: this.stateTexture.createView() },
-          { binding: 1, resource: this.stateSampler! },
         ],
       });
     } catch {
@@ -753,11 +784,11 @@ export class NurbsRenderer {
     // buffer with size 0 throws a validation error. Return early instead.
     if (allPositions.length === 0) {
       // Clear existing buffers so render() doesn't try to draw stale data
-      if (this.positionBuffer) { this.positionBuffer.destroy(); this.positionBuffer = null; }
-      if (this.colorBuffer) { this.colorBuffer.destroy(); this.colorBuffer = null; }
-      if (this.indexBuffer) { this.indexBuffer.destroy(); this.indexBuffer = null; }
-      if (this.sampleIdxBuffer) { this.sampleIdxBuffer.destroy(); this.sampleIdxBuffer = null; }
-      if (this.segIndexUBuffer) { this.segIndexUBuffer.destroy(); this.segIndexUBuffer = null; }
+      this.deferDestroy(this.positionBuffer); this.positionBuffer = null;
+      this.deferDestroy(this.colorBuffer); this.colorBuffer = null;
+      this.deferDestroy(this.indexBuffer); this.indexBuffer = null;
+      this.deferDestroy(this.sampleIdxBuffer); this.sampleIdxBuffer = null;
+      this.deferDestroy(this.segIndexUBuffer); this.segIndexUBuffer = null;
       return;
     }
 
@@ -768,14 +799,15 @@ export class NurbsRenderer {
     const sampleIdxData = new Float32Array(allSampleIndices);
     const segIdxUData = new Float32Array(allSegIndexU);
 
-    if (this.positionBuffer) this.positionBuffer.destroy();
+    this.deferDestroy(this.positionBuffer);
     this.positionBuffer = this.device.createBuffer({
+      label: 'NurbsRenderer.positionBuffer',
       size: posData.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.positionBuffer, 0, posData);
 
-    if (this.colorBuffer) this.colorBuffer.destroy();
+    this.deferDestroy(this.colorBuffer);
     this.colorBuffer = this.device.createBuffer({
       size: colData.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -783,23 +815,22 @@ export class NurbsRenderer {
     this.device.queue.writeBuffer(this.colorBuffer, 0, colData);
 
     // Sample index buffer (for progress cutoff)
-    const sampleIdxBuffer = this.device.createBuffer({
+    this.deferDestroy(this.sampleIdxBuffer);
+    this.sampleIdxBuffer = this.device.createBuffer({
       size: sampleIdxData.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(sampleIdxBuffer, 0, sampleIdxData);
-    // Store on this for rendering
-    this.sampleIdxBuffer = sampleIdxBuffer;
+    this.device.queue.writeBuffer(this.sampleIdxBuffer, 0, sampleIdxData);
 
     // Segment index + normalized arc length buffer (for ReNURBS shader evaluation)
-    if (this.segIndexUBuffer) this.segIndexUBuffer.destroy();
+    this.deferDestroy(this.segIndexUBuffer);
     this.segIndexUBuffer = this.device.createBuffer({
       size: segIdxUData.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.segIndexUBuffer, 0, segIdxUData);
 
-    if (this.indexBuffer) this.indexBuffer.destroy();
+    this.deferDestroy(this.indexBuffer);
     this.indexBuffer = this.device.createBuffer({
       size: idxData.byteLength,
       usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
@@ -878,10 +909,10 @@ export class NurbsRenderer {
       ],
     });
 
-    // Swap in the new buffers and destroy the old ones.
-    if (this.renurbsCpBuffer) this.renurbsCpBuffer.destroy();
-    if (this.renurbsKnotBuffer) this.renurbsKnotBuffer.destroy();
-    if (this.renurbsMetaBuffer) this.renurbsMetaBuffer.destroy();
+    // Swap in the new buffers and queue the old ones for destruction.
+    this.deferDestroy(this.renurbsCpBuffer);
+    this.deferDestroy(this.renurbsKnotBuffer);
+    this.deferDestroy(this.renurbsMetaBuffer);
 
     this.renurbsCpBuffer = newCpBuffer;
     this.renurbsKnotBuffer = newKnotBuffer;
@@ -947,10 +978,10 @@ export class NurbsRenderer {
         ],
       });
 
-      // Swap in the new buffers and bind group, then destroy the old ones.
-      if (this.paCpBuffer) this.paCpBuffer.destroy();
-      if (this.paKnotBuffer) this.paKnotBuffer.destroy();
-      if (this.paMetaBuffer) this.paMetaBuffer.destroy();
+      // Swap in the new buffers and bind group, then queue the old ones for destruction.
+      this.deferDestroy(this.paCpBuffer);
+      this.deferDestroy(this.paKnotBuffer);
+      this.deferDestroy(this.paMetaBuffer);
 
       this.paCpBuffer = newCpBuffer;
       this.paKnotBuffer = newKnotBuffer;
@@ -1127,8 +1158,12 @@ export class NurbsRenderer {
     if (!this.uniformBuffer || !this.bindGroup || !this.colorBuffer || !this.sampleIdxBuffer || !this.indexBuffer) return;
     if (!this.segIndexUBuffer || !this.renurbsBindGroup || !this.stateBindGroup) return;
 
+    // Destroy resources replaced during previous data updates.  This is done
+    // after the previous frame's queue.submit() has finished using them.
+    this.flushStaleResources();
+
     // Uniforms: viewProj(16 floats) + progress(1) + colorMode(u32) + maxValue(1)
-    //           + useStateTexture(u32) + pad(1) = 84 bytes
+    //           + useStateTexture(u32) + pad(4 floats) = 96 bytes
     const cm = this.getColorMode();
     const isPaMode = cm === 5 || cm === 6;
     const isKinematicMode = cm >= 1 && cm <= 4;
@@ -1140,14 +1175,14 @@ export class NurbsRenderer {
       ? (cm === 5 ? this.paMaxOffset : this.paMaxVelocity)
       : (hasState ? this.getStateMaxValue() : (this.hasReNurbs ? this.getReNurbsMaxValue() : 1.0));
 
-    const uniformData = new ArrayBuffer(84);
+    const uniformData = new ArrayBuffer(96);
     const view = new DataView(uniformData);
     for (let i = 0; i < 16; i++) view.setFloat32(i * 4, viewProj[i], true);
     view.setFloat32(64, this.progress, true);
     view.setUint32(68, colorMode, true);
     view.setFloat32(72, maxValue, true);
     view.setUint32(76, hasState ? 1 : 0, true);
-    view.setFloat32(80, 0, true); // pad
+    for (let i = 0; i < 4; i++) view.setFloat32(80 + i * 4, 0, true); // pad
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
     pass.setPipeline(this.pipeline);
@@ -1180,6 +1215,8 @@ export class NurbsRenderer {
     this.renurbsCpBuffer?.destroy();
     this.renurbsKnotBuffer?.destroy();
     this.renurbsMetaBuffer?.destroy();
+    for (const r of this.staleResources) r.destroy();
+    this.staleResources = [];
     this.cachedPositions = null;
   }
 }
