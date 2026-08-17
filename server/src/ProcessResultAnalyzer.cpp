@@ -11,6 +11,7 @@
 #include "analysis/ThermalCoolingAnalyzer.hpp"
 #include "analysis/CncToolpathAnalyzer.hpp"
 #include "analysis/StockCollisionAnalyzer.hpp"
+#include "analysis/ThermalSimulationAnalyzer.hpp"
 #include "proto/tether_viewer.pb.h"
 
 #include <algorithm>
@@ -389,6 +390,7 @@ void appendProcessResultAnalysis(
     appendThermalCoolingAnalysis(response, result, gcodeLines, request);
     appendCncToolpathAnalysis(response, result, gcodeLines, request);
     appendStockCollisionAnalysis(response, result, gcodeLines, request);
+    appendThermalSimulationAnalysis(response, result, gcodeLines, request);
 }
 
 } // namespace tether::web
