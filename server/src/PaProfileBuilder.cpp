@@ -13,6 +13,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
+#include <iostream>
+
+namespace {
+
+inline void PA_LOG(std::string_view stage) {
+    std::cerr << "[PaProfileBuilder] " << stage << std::endl;
+}
+
+} // namespace
 
 namespace tether::web {
 
@@ -477,6 +487,48 @@ std::vector<double> computeLpvDeconvOffsets(
     return offsets;
 }
 
+/// Downsample PA samples so the ReNURBS builder's initial interpolation solve
+/// (which is O(n^3)) does not blow up for dense time series. The output is
+/// re-parameterized by time so the total time span is preserved.
+struct DownsampledSeries {
+    std::vector<double> offsets;
+    std::vector<double> velocities;
+    double sampleInterval = 0.0;
+};
+
+DownsampledSeries downsamplePaSeries(
+    const std::vector<double>& offsets,
+    const std::vector<double>& velocities,
+    double sampleInterval,
+    std::size_t targetSamples)
+{
+    if (offsets.size() <= targetSamples) {
+        return {offsets, velocities, sampleInterval};
+    }
+    if (targetSamples < 2) targetSamples = 2;
+
+    double totalTime = static_cast<double>(offsets.size() - 1) * sampleInterval;
+    std::vector<double> dsOffsets(targetSamples);
+    std::vector<double> dsVelocities(targetSamples);
+    const double srcCountM1 = static_cast<double>(offsets.size() - 1);
+
+    for (std::size_t i = 0; i < targetSamples; ++i) {
+        double t = srcCountM1 * (static_cast<double>(i) / (targetSamples - 1));
+        std::size_t idx = static_cast<std::size_t>(t);
+        double alpha = t - static_cast<double>(idx);
+        if (idx + 1 >= offsets.size()) {
+            dsOffsets[i] = offsets.back();
+            dsVelocities[i] = velocities.back();
+        } else {
+            dsOffsets[i] = offsets[idx] * (1.0 - alpha) + offsets[idx + 1] * alpha;
+            dsVelocities[i] = velocities[idx] * (1.0 - alpha) + velocities[idx + 1] * alpha;
+        }
+    }
+
+    double newSampleInterval = totalTime / (targetSamples - 1);
+    return {std::move(dsOffsets), std::move(dsVelocities), newSampleInterval};
+}
+
 /// Fit PA offsets + velocities to a ReNURBS profile
 PaProfileResult fitPaToReNurbs(
     const std::vector<double>& offsets,
@@ -485,11 +537,16 @@ PaProfileResult fitPaToReNurbs(
     double maxCompensation,
     PaAlgorithm algo)
 {
+    PA_LOG(std::format("fitPaToReNurbs: start (algo={}, offsets={}, velocities={})",
+        paAlgorithmName(algo), offsets.size(), velocities.size()));
     PaProfileResult result;
     result.algorithm = algo;
     result.algorithmName = paAlgorithmName(algo);
 
-    if (offsets.empty()) return result;
+    if (offsets.empty()) {
+        PA_LOG("fitPaToReNurbs: empty offsets, returning");
+        return result;
+    }
 
     // Compute max values for normalization
     float maxOff = 0.0f, maxVel = 0.0f;
@@ -506,19 +563,34 @@ PaProfileResult fitPaToReNurbs(
     paConfig.degree = 3;       // lower degree for smaller curves
     paConfig.maxControlPointsPerSegment = 32;
 
+    // The ReNURBS builder does an initial global interpolation solve that is
+    // O(n^3). Downsampling to a few hundred samples keeps this cheap while
+    // preserving the curve shape for visualization.
+    constexpr std::size_t kMaxPaSamples = 256;
+    auto ds = downsamplePaSeries(offsets, velocities, sampleInterval, kMaxPaSamples);
+    PA_LOG(std::format("fitPaToReNurbs: downsampled to {} samples, sampleInterval={:.6}",
+        ds.offsets.size(), ds.sampleInterval));
+
+    PA_LOG("fitPaToReNurbs: building pressure-advance ReNURBS (2 quantities)");
     try {
         result.profile = buildPressureAdvanceReNURBS(
-            offsets, velocities, sampleInterval, maxCompensation, paConfig);
-    } catch (const std::exception&) {
+            ds.offsets, ds.velocities, ds.sampleInterval, maxCompensation, paConfig);
+        PA_LOG("fitPaToReNurbs: 2-quantity ReNURBS build done");
+    } catch (const std::exception& e) {
+        PA_LOG(std::format("fitPaToReNurbs: 2-quantity build failed: {}", e.what()));
         // Fallback: single-quantity (offset only)
+        PA_LOG("fitPaToReNurbs: trying single-quantity fallback");
         try {
             result.profile = buildPressureAdvanceReNURBS(
-                offsets, sampleInterval, maxCompensation, paConfig);
-        } catch (const std::exception&) {
+                ds.offsets, ds.sampleInterval, maxCompensation, paConfig);
+            PA_LOG("fitPaToReNurbs: single-quantity fallback done");
+        } catch (const std::exception& e2) {
+            PA_LOG(std::format("fitPaToReNurbs: single-quantity fallback failed: {}", e2.what()));
             // If both fail, leave profile empty
         }
     }
 
+    PA_LOG("fitPaToReNurbs: done");
     return result;
 }
 
@@ -530,10 +602,17 @@ PaProfileResult computePaProfile(
     const PaConfig& config,
     const ExtrusionTrajectory<3, double>* trajectory)
 {
+    PA_LOG(std::format("computePaProfile: start algorithm {}, trajectory={}",
+        paAlgorithmName(config.algorithm), trajectory != nullptr));
+
     // If we have an analytical trajectory, use the analytical PA classes
     // (closed-form computation on WSS arcs).
     if (trajectory && trajectory->numArcs() > 0) {
+        PA_LOG(std::format("computePaProfile: building analytical time series (sampleInterval={})",
+            config.sampleInterval));
         auto ts = buildAnalyticalTimeSeries(*trajectory, config.sampleInterval);
+        PA_LOG(std::format("computePaProfile: analytical time series done, velocities={}",
+            ts.velocities.size()));
         if (ts.velocities.empty()) {
             PaProfileResult empty;
             empty.algorithm = config.algorithm;
@@ -543,6 +622,7 @@ PaProfileResult computePaProfile(
 
         std::vector<double> offsets;
         try {
+            PA_LOG("computePaProfile: computing analytical offsets");
             switch (config.algorithm) {
                 case PaAlgorithm::Linear:
                     offsets = computeAnalyticalLinearPaOffsets(*trajectory, config);
@@ -593,16 +673,24 @@ PaProfileResult computePaProfile(
                     offsets = computeLpvDeconvOffsets(tsCtrl.velocities, config);
                     break;
             }
-            return fitPaToReNurbs(offsets, tsCtrl.velocities, config.sampleInterval,
-                                  config.maxCompensation, config.algorithm);
+            PA_LOG(std::format("computePaProfile: fitting fallback ReNURBS (offsets={})", offsets.size()));
+            auto result = fitPaToReNurbs(offsets, tsCtrl.velocities, config.sampleInterval,
+                                         config.maxCompensation, config.algorithm);
+            PA_LOG("computePaProfile: fallback ReNURBS fit done");
+            return result;
         }
 
-        return fitPaToReNurbs(offsets, ts.velocities, config.sampleInterval,
-                              config.maxCompensation, config.algorithm);
+        PA_LOG(std::format("computePaProfile: fitting analytical ReNURBS (offsets={})", offsets.size()));
+        auto result = fitPaToReNurbs(offsets, ts.velocities, config.sampleInterval,
+                                     config.maxCompensation, config.algorithm);
+        PA_LOG("computePaProfile: analytical ReNURBS fit done");
+        return result;
     }
 
     // No trajectory — use control-level (sampled-space) PA classes
+    PA_LOG("computePaProfile: building control-level time series");
     auto ts = buildVelocityTimeSeries(velocityProfile, extrusionRatios, config.sampleInterval);
+    PA_LOG(std::format("computePaProfile: control time series done, velocities={}", ts.velocities.size()));
     if (ts.velocities.empty()) {
         PaProfileResult empty;
         empty.algorithm = config.algorithm;
@@ -631,8 +719,11 @@ PaProfileResult computePaProfile(
             break;
     }
 
-    return fitPaToReNurbs(offsets, ts.velocities, config.sampleInterval,
-                          config.maxCompensation, config.algorithm);
+    PA_LOG(std::format("computePaProfile: fitting ReNURBS (offsets={})", offsets.size()));
+    auto result = fitPaToReNurbs(offsets, ts.velocities, config.sampleInterval,
+                                 config.maxCompensation, config.algorithm);
+    PA_LOG("computePaProfile: ReNURBS fit done");
+    return result;
 }
 
 std::vector<PaProfileResult> computeAllPaProfiles(
@@ -641,6 +732,7 @@ std::vector<PaProfileResult> computeAllPaProfiles(
     const PaConfig& config,
     const ExtrusionTrajectory<3, double>* trajectory)
 {
+    PA_LOG("computeAllPaProfiles: start (5 algorithms)");
     std::vector<PaProfileResult> results;
     const PaAlgorithm allAlgos[] = {
         PaAlgorithm::Linear,
@@ -651,11 +743,14 @@ std::vector<PaProfileResult> computeAllPaProfiles(
     };
 
     for (auto algo : allAlgos) {
+        PA_LOG(std::format("computeAllPaProfiles: starting algorithm {}", paAlgorithmName(algo)));
         PaConfig cfg = config;
         cfg.algorithm = algo;
         results.push_back(computePaProfile(velocityProfile, extrusionRatios, cfg, trajectory));
+        PA_LOG(std::format("computeAllPaProfiles: finished algorithm {}", paAlgorithmName(algo)));
     }
 
+    PA_LOG("computeAllPaProfiles: done");
     return results;
 }
 
