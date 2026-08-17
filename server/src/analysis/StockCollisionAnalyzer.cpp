@@ -23,6 +23,7 @@ struct Bounds3D {
     double minX = 0.0, maxX = 0.0, minY = 0.0, maxY = 0.0, minZ = 0.0, maxZ = 0.0;
     bool valid = false;
     bool circularBed = false;
+    bool isStock = false;
 };
 
 struct Violation {
@@ -35,14 +36,12 @@ struct Violation {
 
 std::optional<double> parseCommentValue(const std::string& line,
                                         const std::string& prefix,
-                                        char delimiter) {
-    const std::string raw = stripGcodeComments(line);
-    if (raw.empty()) return std::nullopt;
-
-    // Case 1: prefix immediately after ;
-    size_t pos = line.find(prefix);
+                                        char /*delimiter*/) {
+    const std::string uline = toUpper(line);
+    const std::string uprefix = toUpper(prefix);
+    size_t pos = uline.find(uprefix);
     if (pos == std::string::npos) return std::nullopt;
-    pos += prefix.size();
+    pos += uprefix.size();
     if (pos < line.size() && (line[pos] == ':' || line[pos] == ',' || line[pos] == '=')) {
         ++pos;
         while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos]))) ++pos;
@@ -102,6 +101,7 @@ Bounds3D parseStockOrBed(const std::vector<std::string>& gcodeLines) {
         b.minZ = 0.0;
         b.maxZ = stockZ;
         b.valid = true;
+        b.isStock = true;
     } else if (hasBounds) {
         b.minX = minX;
         b.maxX = maxX;
@@ -175,15 +175,31 @@ void appendStockCollisionAnalysis(
         auto check = [&](double x, double y, double z) {
             if (!bounds.valid) return;
 
-            if (seg.isRapid) {
-                if (insideBox(bounds, x, y, z) ||
-                    (bounds.circularBed && z < bounds.maxZ && insideCircle(bounds, x, y))) {
-                    violations.push_back({"rapid_collision", ANALYSIS_SEVERITY_HIGH,
-                                          std::format("Rapid move into stock at line {} (Z={:.2f})", lineNumber, z),
+            if (bounds.isStock) {
+                if (seg.isRapid) {
+                    if (insideBox(bounds, x, y, z) ||
+                        (bounds.circularBed && z < bounds.maxZ && insideCircle(bounds, x, y))) {
+                        violations.push_back({"rapid_collision", ANALYSIS_SEVERITY_HIGH,
+                                              std::format("Rapid move into stock at line {} (Z={:.2f})", lineNumber, z),
+                                              lineNumber, x, y, z});
+                    }
+                }
+                if (z < bounds.minZ) {
+                    violations.push_back({"cut_below_stock", ANALYSIS_SEVERITY_HIGH,
+                                          std::format("Cut below stock bottom at line {} (Z={:.2f})", lineNumber, z),
                                           lineNumber, x, y, z});
                 }
-            } else {
-                // Cutting move outside stock/bed
+
+                // Rapid clearance check for CNC-like motion: rapids below safe Z.
+                if (seg.isRapid && z < safeZ && z > 0.0) {
+                    violations.push_back({"clearance_violation", ANALYSIS_SEVERITY_MEDIUM,
+                                          std::format("Rapid below safe Z ({:.2f} < {:.2f}) at line {}", z, safeZ, lineNumber),
+                                          lineNumber, x, y, z});
+                }
+            }
+
+            if (!seg.isRapid) {
+                // Cutting/extruding move outside stock/bed
                 bool inside = bounds.circularBed ? insideCircle(bounds, x, y)
                                                  : (x >= bounds.minX && x <= bounds.maxX &&
                                                     y >= bounds.minY && y <= bounds.maxY);
@@ -193,18 +209,6 @@ void appendStockCollisionAnalysis(
                                                       lineNumber, x, y),
                                           lineNumber, x, y, z});
                 }
-                if (z < bounds.minZ) {
-                    violations.push_back({"cut_below_stock", ANALYSIS_SEVERITY_HIGH,
-                                          std::format("Cut below stock bottom at line {} (Z={:.2f})", lineNumber, z),
-                                          lineNumber, x, y, z});
-                }
-            }
-
-            // Rapid clearance check for CNC-like motion: rapids below safe Z.
-            if (seg.isRapid && z < safeZ && z > 0.0) {
-                violations.push_back({"clearance_violation", ANALYSIS_SEVERITY_MEDIUM,
-                                      std::format("Rapid below safe Z ({:.2f} < {:.2f}) at line {}", z, safeZ, lineNumber),
-                                      lineNumber, x, y, z});
             }
         };
 
