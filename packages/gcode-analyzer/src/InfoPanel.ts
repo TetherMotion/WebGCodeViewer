@@ -3069,6 +3069,30 @@ export class InfoPanel {
             html += `<div class="info-row"><span>${metric.key}</span><span>${valueText}</span></div>`;
           }
         }
+        if (section.topEvents && section.topEvents.length > 0) {
+          html += '<div class="info-sublabel">Events:</div>';
+          for (const e of section.topEvents) {
+            let details: Record<string, number> = {};
+            try {
+              details = JSON.parse(e.detailsJson || '{}') as Record<string, number>;
+            } catch {
+              details = {};
+            }
+            const timeS = details.time_s;
+            const extrusionMm = details.extrusion_mm;
+            const lineInfo = e.lineNumber > 0 ? ` (line ${e.lineNumber})` : '';
+            let valueText = '–';
+            if (typeof timeS === 'number' && typeof extrusionMm === 'number') {
+              valueText = `${formatTime(timeS)}, ${extrusionMm.toFixed(1)} mm`;
+            } else if (e.metricValue) {
+              valueText = Number(e.metricValue).toFixed(2).replace(/\.?0+$/, '') || '0';
+            }
+            html += `<div class="info-row"><span>${e.message}${lineInfo}</span><span>${valueText}</span></div>`;
+          }
+        }
+        if (section.hasMoreEvents) {
+          html += `<div class="info-sublabel">More events available on the server.</div>`;
+        }
         html += '</details>';
       }
       html += '</div>';

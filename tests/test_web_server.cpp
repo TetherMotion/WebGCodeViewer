@@ -8,9 +8,12 @@
 #include "tether/web/TrajectorySerializer.hpp"
 #include "tether/web/GCodeProcessor.hpp"
 #include "tether/web/WebServerConfig.hpp"
+#include "ProcessResultAnalyzer.hpp"
+#include "tether_viewer.pb.h"
 
 #include <gtest/gtest.h>
 #include <chrono>
+#include <set>
 #include <thread>
 
 using namespace tether::web;
@@ -30,6 +33,23 @@ const char* SQUARE_GCODE =
     "G1 X100 Y100 Z5 F3000\n"
     "G1 X0 Y100 Z5 F3000\n"
     "G1 X0 Y0 Z5 F3000\n"
+    "M30\n";
+
+const char* LAYERED_FEATURE_GCODE =
+    "G21\nG90\nM82\n"
+    ";TYPE:SKIRT\n"
+    "G0 X0 Y0 Z0.2\n"
+    "G1 X50 Y0 Z0.2 E1 F1500\n"
+    "G1 X50 Y50 Z0.2 E2 F1500\n"
+    "G1 X0 Y50 Z0.2 E3 F1500\n"
+    ";TYPE:WALL-INNER\n"
+    "G0 X10 Y10 Z0.2\n"
+    "G1 X40 Y10 Z0.2 E4 F1500\n"
+    "G1 X40 Y40 Z0.2 E5 F1500\n"
+    ";TYPE:FILL\n"
+    "G0 X0 Y0 Z0.4\n"
+    "G1 X50 Y0 Z0.4 E6 F1500\n"
+    "G1 X50 Y50 Z0.4 E7 F1500\n"
     "M30\n";
 
 } // anonymous namespace
@@ -221,4 +241,61 @@ TEST(WebServerPipelineTest, FullPipelineEndToEnd) {
     // Get segments
     std::string segs = jm.getSegmentsJson(id);
     EXPECT_NE(segs.find("segments"), std::string::npos);
+}
+
+// ── ProcessResult-driven analysis tests ──────────────────────────────────────
+
+TEST(ProcessResultAnalyzerTest, MaterialLayerAndFeatureSections) {
+    using ::tether::viewer::v1::GetAnalysisRequest;
+    using ::tether::viewer::v1::AnalysisResultResponse;
+
+    JobManager jm;
+    std::string id = jm.createJob(LAYERED_FEATURE_GCODE, "layered.gcode");
+    ASSERT_TRUE(jm.startProcessing(id));
+
+    for (int i = 0; i < 100; ++i) {
+        if (jm.getJobState(id) == JobState::Ready) break;
+        if (jm.getJobState(id) == JobState::Failed) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    ASSERT_EQ(jm.getJobState(id), JobState::Ready);
+
+    GetAnalysisRequest request;
+    request.set_detail_level("standard");
+    request.set_top_event_limit(50);
+
+    AnalysisResultResponse response;
+    appendProcessResultAnalysis(response, jm.getResult(id), jm.getGcodeLines(id), request);
+
+    ASSERT_EQ(response.sections_size(), 3);
+    EXPECT_EQ(response.sections(0).section_name(), "material_time");
+    EXPECT_EQ(response.sections(1).section_name(), "layer_summary");
+    EXPECT_EQ(response.sections(2).section_name(), "feature_summary");
+
+    const auto& material = response.sections(0);
+    EXPECT_GT(material.metrics_size(), 0);
+
+    bool foundExtrusion = false;
+    for (const auto& m : material.metrics()) {
+        if (m.key() == "total_extrusion_mm") {
+            foundExtrusion = true;
+            EXPECT_GT(m.double_value(), 0.0);
+        }
+    }
+    EXPECT_TRUE(foundExtrusion);
+
+    const auto& layers = response.sections(1);
+    EXPECT_GT(layers.top_events_size(), 0);
+    EXPECT_EQ(layers.top_events(0).event_type(), "layer");
+
+    const auto& features = response.sections(2);
+    EXPECT_GT(features.top_events_size(), 0);
+
+    // Should see at least two different feature types (SKIRT, WALL-INNER, FILL).
+    std::set<std::string> featureNames;
+    for (const auto& e : features.top_events()) {
+        featureNames.insert(e.event_type());
+    }
+    EXPECT_GE(featureNames.size(), 2u);
 }

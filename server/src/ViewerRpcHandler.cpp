@@ -4,6 +4,7 @@
 #include "tether/web/ViewerRpcHandler.hpp"
 #include "tether/web/TrajectorySerializer.hpp"
 #include "AnalysisSerializer.hpp"
+#include "ProcessResultAnalyzer.hpp"
 
 #include "tether_viewer.pb.h"
 
@@ -618,6 +619,12 @@ std::string ViewerRpcHandler::handleGetAnalysis(const std::string& requestBytes,
             }
 
             auto response = buildAnalysisResponse(registry);
+
+            // Augment the Tether text-based analysis with material/time/layer/feature
+            // metrics derived from the already parsed ProcessResult. This avoids
+            // re-parsing the G-code and lets the server expose geometry-heavy stats.
+            const auto* procResult = jobManager_->getResult(req.job_id());
+            appendProcessResultAnalysis(response, procResult, gcodeLines, req);
 
             // Final progress + sections. The `complete` flag tells the client this
             // is the last message in the stream.
