@@ -85,7 +85,7 @@ struct PaProfileResult {
 ///                   control-level sampled-space classes.
 /// @return Vector of PA profile results, one per algorithm
 std::vector<PaProfileResult> computeAllPaProfiles(
-    const MotionPlanner::VelocityProfile<double>& velocityProfile,
+    const MotionPlanner::VelocityProfile& velocityProfile,
     const std::vector<double>& extrusionRatios,
     const PaConfig& config = {},
     const MotionPlanner::analytical::extrusion::ExtrusionTrajectory<3, double>* trajectory = nullptr);
@@ -97,7 +97,7 @@ std::vector<PaProfileResult> computeAllPaProfiles(
 /// @param trajectory Optional ExtrusionTrajectory (from WSS) for analytical PA.
 /// @return PA profile result
 PaProfileResult computePaProfile(
-    const MotionPlanner::VelocityProfile<double>& velocityProfile,
+    const MotionPlanner::VelocityProfile& velocityProfile,
     const std::vector<double>& extrusionRatios,
     const PaConfig& config,
     const MotionPlanner::analytical::extrusion::ExtrusionTrajectory<3, double>* trajectory = nullptr);

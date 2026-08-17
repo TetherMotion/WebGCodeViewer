@@ -494,8 +494,11 @@ ProcessResult GCodeProcessor::process(
             Timer toppraTimer;
             auto velocityProfile = profiler.computeProfile(
                 pathAdapter, feedRate, 0.0, 0.0, numSamples);
+            if (!velocityProfile) {
+                throw std::runtime_error("ParetoPlanner returned a null velocity profile");
+            }
             WGV_LOG_TIME(std::format("Step 3b: ParetoPlanner computeProfile — {} samples",
-                velocityProfile.points().size()), toppraTimer);
+                velocityProfile->points().size()), toppraTimer);
 
             // Extract the WSS (analytical trajectory source) for PA computation
             auto wss = profiler.weightedSource();
@@ -509,7 +512,7 @@ ProcessResult GCodeProcessor::process(
 
             Timer renurbsTimer;
             auto renurbsProfile = tether::motion::profile_renurbs::buildReNURBSProfile(
-                velocityProfile, pathAdapter, limits, renurbsConfig);
+                *velocityProfile, pathAdapter, limits, renurbsConfig);
             WGV_LOG_TIME(std::format("Step 3b: buildReNURBSProfile — {} segments",
                 renurbsProfile.perSegment.size()), renurbsTimer);
 
@@ -580,7 +583,7 @@ ProcessResult GCodeProcessor::process(
                 PaConfig paConfig;
                 paConfig.sampleInterval = 0.001;  // 1ms sampling
                 result.paProfiles = computeAllPaProfiles(
-                    velocityProfile, extrusionRatios, paConfig,
+                    *velocityProfile, extrusionRatios, paConfig,
                     extrusionTraj.get());
                 WGV_LOG_TIME(std::format("Step 3c: PA profiles (analytical) — {} algorithms",
                     result.paProfiles.size()), paTimer);

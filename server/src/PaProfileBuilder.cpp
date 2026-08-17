@@ -79,7 +79,7 @@ struct VelocityTimeSeries {
 /// The extrusion ratio is per-segment (from PlanningSegment E delta / length).
 /// For segments with no extrusion (ratio=0), velocity is 0.
 VelocityTimeSeries buildVelocityTimeSeries(
-    const VelocityProfile<double>& vp,
+    const VelocityProfile& vp,
     const std::vector<double>& extrusionRatios,
     double sampleInterval)
 {
@@ -597,7 +597,7 @@ PaProfileResult fitPaToReNurbs(
 } // anonymous namespace
 
 PaProfileResult computePaProfile(
-    const VelocityProfile<double>& velocityProfile,
+    const VelocityProfile& velocityProfile,
     const std::vector<double>& extrusionRatios,
     const PaConfig& config,
     const ExtrusionTrajectory<3, double>* trajectory)
@@ -727,7 +727,7 @@ PaProfileResult computePaProfile(
 }
 
 std::vector<PaProfileResult> computeAllPaProfiles(
-    const VelocityProfile<double>& velocityProfile,
+    const VelocityProfile& velocityProfile,
     const std::vector<double>& extrusionRatios,
     const PaConfig& config,
     const ExtrusionTrajectory<3, double>* trajectory)
