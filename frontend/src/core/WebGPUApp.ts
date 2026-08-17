@@ -1,32 +1,5 @@
 import { InfoPanel } from '@tether/gcode-analyzer';
-import { parseDrillingCycles, parseCutterCompensation, parseProbeEvents, parseSubprograms, analyzePathOptimization, computeFeatureTimeBreakdown, estimateJobCost } from '@tether/gcode-analyzer/GcodeAdvanced';
-import { analyzeZHops, analyzeExtrusionConsistency, analyzeToolpathSmoothing, predictPrintQuality, analyzeVolumetricFlowRate, generateStatisticsSummary, detectToolpathOverlaps, analyzePrintEfficiency, autoGenerateAnnotations } from '@tether/gcode-analyzer/GcodeAdvanced10';
-import { simulateGcode, trackToolWearProgression, generateOptimizationReport, analyzeBedThermalMap, buildSubprogramCallGraph, analyzeCoolingEffectiveness, analyzeDependencies, predictPrintFailure, generateDocumentation, benchmarkGcode, auditGcodeSecurity } from '@tether/gcode-analyzer/GcodeAdvanced11';
-import { reverseEngineerGcode, analyzeMachiningStrategy, analyzeBedLevelingQuality, optimizeToolpathForRendering, validateGcodeRules } from '@tether/gcode-analyzer/GcodeAdvanced12';
-import { generateExecutionTrace, analyzeChipThickness, generateQualityHeatmap, analyzeWorkholding, analyzeMaterialFlow, generateFlowVisualization, optimizeFixturePlacement, generateLayerVisualization, analyzeCompressionOpportunities, analyzeAerodynamics, analyzeAdaptiveSpeed, generateDependencyGraph } from '@tether/gcode-analyzer/GcodeAdvanced13';
-import { highlightGcodeSyntax, predictToolDeflectionAdvanced, generateStringingRiskMap, previewMacroExpansion, predictSurfaceRoughness, simulateWarping, detectCollisions3D, calculateToolLife, analyzeInfillPattern, computeBounds, simulateCuttingForces, optimizeRetractions } from '@tether/gcode-analyzer/GcodeAdvanced14';
-import { profileGcodeExecution, generateToolWearMap, analyzeLayerAdhesion, analyzeChatterFrequency, generateOverhangMap, generateOperationTimeline, checkToolpathContinuity, analyzeExtrusionWidthConsistency, optimizePostProcessorOutput, analyzeMachineVibration, trackThermalHistory } from '@tether/gcode-analyzer/GcodeAdvanced15';
-import { analyzeLineStatistics, generateEngagementMap, visualizeBedMesh, generateCommandFlow, calculateChipLoad, estimateSpoolUsage, suggestErrorRecovery, calculateMRR, analyzeCoasting, identifyBottlenecks, calculatePullOffDistance, analyzeFirstLayerSquish } from '@tether/gcode-analyzer/GcodeAdvanced16';
-import { analyzeIdleTime, quantifyToolpathOverlap, adviseFlowRateCalibration, estimateMemoryUsage, validateCuttingParameters, detectLayerShiftRisk, optimizeExecutionPath, calculateNoseRadiusCompensation, analyzeElephantFoot, analyzeCommentDensity, optimizeRapidTraverse, analyzeSkirtBrim } from '@tether/gcode-analyzer/GcodeAdvanced17';
-import { analyzePerToolPathLength, analyzeOozePrevention, analyzeCoordinateSystems, analyzeSpindleSpeedVariation, predictBridgeQuality, analyzeModalGroups, simulateFeedRateOverride, analyzeFanCurve, analyzeSubprogramComplexity, countDirectionReversals, optimizeZSeamAlignment, assessExecutionRisk } from '@tether/gcode-analyzer/GcodeAdvanced18';
-import { calculateArcLength, analyzeEntryExitAngles, optimizeRetractionDistance, analyzeBlockStructure, calculateFeedPerRevolution, analyzeThinWalls, trackVariableUsage, classifyToolpathSegments, analyzeInfillDensityVariance, detectErrorPatterns, calculateSurfaceSpeed, analyzeLayerTimeVariance } from '@tether/gcode-analyzer/GcodeAdvanced19';
-import { parseColorChanges, analyzeSupportStructure, parseInfillDensity, parseMacros, trackMultiExtruder, parseBedLevelingMesh, detectRapidPlanes } from '@tether/gcode-analyzer/GcodeAdvanced2';
-import { generateSpeedHeatmap, predictToolWearProgression, optimizeRetractionSpeed, scoreLineComplexity, optimizeDepthOfCut, optimizeLayerFanSpeed, detectCircularInterpolation, calculateToolpathEfficiency, trackMaterialPerLayer, removeCommandRedundancy, adviseCuttingStrategy, analyzeIroningPattern } from '@tether/gcode-analyzer/GcodeAdvanced20';
-import { calculatePerLayerBounds, calculateEngagementTime, analyzeRetractionFrequency, estimateSpindleLoadProfile, countDirectionChanges, calculateBedAdhesionArea, detectCoordinateRotations, calculateWearRate, analyzeFlowRateConsistency, validateCommandSequence, analyzeFeedRateHarmonics, analyzeLayerHeightVariance } from '@tether/gcode-analyzer/GcodeAdvanced21';
-import { analyzeAccelerationProfile, analyzeCuttingForceSpectrum, optimizePressureAdvance, mapCoordinateOrigins, detectToolpathLoops, analyzeExtrusionWidthPerLayer, optimizeSpindleWarmup, optimizeSupportStructure, optimizeFileSize, generateCurvatureHeatmap, predictLayerAdhesionStrength, calculateCorneringSpeed } from '@tether/gcode-analyzer/GcodeAdvanced22';
-import { calculateScallopHeight, detectFilamentDiameterVariance, detectCoordinateScaling, calculateChipThinning, analyzeInfillAngles, analyzeSegmentLengthDistribution, calculateStepover, calibrateExtrusionMultiplier, detectToolpathSymmetry, optimizeRetractPlane, analyzeSkirtBrimGap, estimateExecutionTime } from '@tether/gcode-analyzer/GcodeAdvanced23';
-import { calculateEngagementAnglePerSegment, optimizeFirstLayerSpeed, analyzeRapidTravelEfficiency, analyzePlungeRate, calculateMaterialPerExtruder, classifyClimbConventionalPerPass, analyzeLayerCoolingTime, analyzeReversalPoints, analyzeCuttingModeConsistency, analyzeExtrusionStartStopQuality, analyzeProgramFlowStructure, calculateMRRPerLayer } from '@tether/gcode-analyzer/GcodeAdvanced24';
-import { calculateAirCuttingTime, analyzeBeadWidthVariance, validateParameterRanges, generateEngagementHeatmapPerLayer, analyzeFanDutyCycle, optimizeToolChangePositions, adviseSpindleSpeed, optimizeFirstLayerHeight, checkContinuityPerLayer, calculateMinimumClearance, analyzeWallThicknessConsistency, optimizeExecutionOrder } from '@tether/gcode-analyzer/GcodeAdvanced25';
-import { calculateEngagementTimePerLayer, analyzeExtrusionRatePerLayer, analyzeWorkOffsetUsage, calculateDeflectionCompensation, optimizeBridgingSpeed, detectOverlapsPerLayer, analyzeSpindleLoadPerLayer, analyzeRetractionHopHeight, calculateProgramComplexity, analyzeArcInterpolationQuality, analyzeLayerHeightConsistencyPerLayer, analyzeModalStateTransitions } from '@tether/gcode-analyzer/GcodeAdvanced26';
-import { analyzeEntryStrategy, analyzeRetractionAcceleration, checkCoordinateSystemAlignment, validateNoseRadiusCompensation, analyzeInfillDensityPerLayer, classifySegmentsPerLayer, validateSpindleWarmupCycle, analyzeFanSpeedPerLayer, analyzeStructureComplexityPerSection, analyzeLeadInOut, analyzeExtrusionConsistencyPerLayer, checkMachineCoordinateBoundary } from '@tether/gcode-analyzer/GcodeAdvanced27';
-import { parseRotaryAxes, simulateThermal, predictWarping, buildPrintTimeGraph, estimateSpindleLoad, estimateToolWear, checkCollisions, createStockModel, parseToolDefinitions, getDefaultToolLibrary } from '@tether/gcode-analyzer/GcodeAdvanced3';
-import { analyzeRetractions, checkLayerHeightConsistency, analyzeFlowRate, analyzeFirstLayer, predictStringing, analyzeCoolingFan, analyzePrintSpeeds } from '@tether/gcode-analyzer/GcodeAdvanced4';
-import { lintGcode, analyzeToolpathOptimization, analyzePressureAdvance, detectArcFittingCandidates, profileGcode, computeBeadGeometry } from '@tether/gcode-analyzer/GcodeAdvanced5';
-import { detectMillingDirection, estimateAccelerationLimitedTime, estimateEnergyConsumption, analyzeWorkOffsets, recognizePatterns, estimateToolDeflection, compensateThermalExpansion, expandSubprograms } from '@tether/gcode-analyzer/GcodeAdvanced6';
-import { predictChatter, trackMacroVariables, analyzeCoordinateRotation, estimateToolLife, verifyCutterCompensation, suggestTravelOptimization } from '@tether/gcode-analyzer/GcodeAdvanced7';
-import { trackModalStates, analyzeDwellTime, check3DPSafety, analyzeCurvature, recognizeFeatures, analyzeSpindlePower, analyzeMultiPart, analyzeBedAdhesion, checkGcodeCompatibility } from '@tether/gcode-analyzer/GcodeAdvanced8';
-import { detectSelfIntersections, analyzeCommandFrequency, optimizeToolChanges, analyzeLayerTimes, extractComments, analyzeToolpathLength, analyzeMCodes, analyzeSpindleWarmup, generateFeedRateHistogram, analyzeToolpathDirection, parseWithRecovery } from '@tether/gcode-analyzer/GcodeAdvanced9';
-import { detectStringingRisk, detectGcodeErrors, detectLayerTimeWarnings, computeVolumetricFlow, getFlowStats, parseFeatureTypes, parseWorkCoordinateSystems, parseStockDimensions, estimatePrintTime, getFeatureTypeAtLine, FeatureTypeSegment } from '@tether/gcode-analyzer/GcodeAnalysis';
+import { parseFeatureTypes, getFeatureTypeAtLine, FeatureTypeSegment } from '@tether/gcode-analyzer/GcodeAnalysis';
 import { parseGcodeMetadata, GcodeMetadata, computeMaterialUsage, computeSpeedStats, computeLayerTimes, formatTime, getMachineStateAtLine } from '@tether/gcode-analyzer/GcodeMetadata';
 /**
  * @file WebGPUApp.ts
@@ -2132,14 +2105,8 @@ export class WebGPUApp {
    */
   /** Show probe point markers on the 3D view */
   private showProbeMarkers(): void {
-    if (!this.gcodeViewer || !this.currentNBP) return;
-    const lines = this.gcodeViewer.allLines;
-    const probes = parseProbeEvents(lines);
-    if (probes.length === 0) return;
-    // Highlight the first probe position in the G-code viewer
-    if (probes.length > 0) {
-      this.gcodeViewer?.highlightLine(probes[0].lineNumber);
-    }
+    // Client-side advanced G-code analysis removed; placeholder for future remote support
+    return;
   }
 
   /** Hide probe point markers */
@@ -2150,14 +2117,8 @@ export class WebGPUApp {
 
   /** Show drilling cycle markers on the 3D view */
   private showDrillMarkers(): void {
-    if (!this.gcodeViewer || !this.currentNBP) return;
-    const lines = this.gcodeViewer.allLines;
-    const cycles = parseDrillingCycles(lines);
-    if (cycles.length === 0) return;
-    // Highlight the first drilling position in the G-code viewer
-    if (cycles.length > 0) {
-      this.gcodeViewer?.highlightLine(cycles[0].lineNumber);
-    }
+    // Client-side advanced G-code analysis removed; placeholder for future remote support
+    return;
   }
 
   /** Hide drilling cycle markers */
@@ -2289,9 +2250,6 @@ export class WebGPUApp {
     const bounds = this.getCurrentFullBounds();
     if (!bounds) return;
 
-    // Get G-code lines for advanced analysis
-    const gcodeLines = this.gcodeViewer?.allLines ?? [];
-
     // Compute material usage if we have NBP data
     let materialUsage: { extrusionLength: number; volume: number; weight: number } | undefined;
     if (this.currentNBP && this.miniplotData) {
@@ -2308,7 +2266,6 @@ export class WebGPUApp {
       bounds: { min: bounds.min as [number, number, number], max: bounds.max as [number, number, number] },
       sampleCount: this.currentData?.header.sampleCount ?? 0,
       pieceCount: this.currentNBP?.pieces.length ?? 0,
-      gcodeLines: gcodeLines.length > 0 ? gcodeLines : undefined,
       materialUsage,
       remoteSections: this.remoteAnalysisSections,
     });
@@ -2332,7 +2289,6 @@ export class WebGPUApp {
       ? computeLayerTimes(this.zLayers, this.miniplotData.segments)
       : [];
 
-    const gcodeLines = this.gcodeViewer?.allLines ?? [];
     let materialUsage: { extrusionLength: number; volume: number; weight: number } | undefined;
     if (this.currentNBP && this.miniplotData) {
       const segmentTimes = this.miniplotData.segments.map(s => s.duration);
@@ -2350,9 +2306,13 @@ export class WebGPUApp {
         durationFormatted: formatTime(this.totalDuration),
       },
       dimensions: bounds ? {
-        minX: bounds.min[0], maxX: bounds.max[0], sizeX: bounds.max[0] - bounds.min[0],
-        minY: bounds.min[1], maxY: bounds.max[1], sizeY: bounds.max[1] - bounds.min[1],
-        minZ: bounds.min[2], maxZ: bounds.max[2], sizeZ: bounds.max[2] - bounds.min[2],
+        min: { x: bounds.min[0], y: bounds.min[1], z: bounds.min[2] },
+        max: { x: bounds.max[0], y: bounds.max[1], z: bounds.max[2] },
+        size: {
+          x: bounds.max[0] - bounds.min[0],
+          y: bounds.max[1] - bounds.min[1],
+          z: bounds.max[2] - bounds.min[2],
+        },
       } : null,
       speedStats,
       layerCount: this.zLayers.length,
@@ -2369,356 +2329,9 @@ export class WebGPUApp {
       fanEvents: this.gcodeMetadata.fanEvents,
       coolantEvents: this.gcodeMetadata.coolantEvents,
       feedRateRange: this.gcodeMetadata.feedRateRange,
-      // Advanced analysis
       materialUsage: materialUsage ?? null,
-      gcodeIssues: gcodeLines.length > 0 ? detectGcodeErrors(gcodeLines) : [],
-      stringingRisks: gcodeLines.length > 0 ? detectStringingRisk(gcodeLines) : [],
-      layerTimeWarnings: detectLayerTimeWarnings(layerTimes),
-      featureTypes: gcodeLines.length > 0 ? parseFeatureTypes(gcodeLines) : [],
-      workCoordinateSystems: gcodeLines.length > 0 ? parseWorkCoordinateSystems(gcodeLines) : [],
-      stockDimensions: gcodeLines.length > 0 ? parseStockDimensions(gcodeLines) : null,
-      printTimeEstimate: gcodeLines.length > 0 ? estimatePrintTime(gcodeLines) : null,
-      volumetricFlowStats: gcodeLines.length > 0
-        ? getFlowStats(computeVolumetricFlow(gcodeLines))
-        : null,
-      // Advanced CNC/3DP analysis
-      drillingCycles: gcodeLines.length > 0 ? parseDrillingCycles(gcodeLines) : [],
-      cutterCompensation: gcodeLines.length > 0 ? parseCutterCompensation(gcodeLines) : [],
-      probeEvents: gcodeLines.length > 0 ? parseProbeEvents(gcodeLines) : [],
-      subprograms: gcodeLines.length > 0 ? parseSubprograms(gcodeLines) : { calls: [], definitions: [] },
-      pathOptimization: gcodeLines.length > 0 ? analyzePathOptimization(gcodeLines) : [],
-      featureTimeBreakdown: gcodeLines.length > 0 ? computeFeatureTimeBreakdown(gcodeLines) : [],
-      costEstimate: (materialUsage && gcodeLines.length > 0)
-        ? estimateJobCost(
-            estimatePrintTime(gcodeLines).estimatedTime,
-            materialUsage.weight,
-          )
-        : null,
-      // Batch 2 advanced analysis
-      colorChanges: gcodeLines.length > 0 ? parseColorChanges(gcodeLines) : [],
-      supportStructure: gcodeLines.length > 0
-        ? analyzeSupportStructure(gcodeLines, materialUsage?.extrusionLength ?? 0)
-        : null,
-      infillDensity: gcodeLines.length > 0 ? parseInfillDensity(gcodeLines) : [],
-      multiExtruder: gcodeLines.length > 0 ? trackMultiExtruder(gcodeLines) : [],
-      bedLevelingMesh: gcodeLines.length > 0 ? parseBedLevelingMesh(gcodeLines) : null,
-      macros: gcodeLines.length > 0 ? parseMacros(gcodeLines) : { variables: [], calls: [] },
-      rapidPlanes: gcodeLines.length > 0 ? detectRapidPlanes(gcodeLines) : [],
-      // Batch 3 advanced analysis
-      rotaryAxes: gcodeLines.length > 0 ? parseRotaryAxes(gcodeLines) : { moves: [], finalState: { a: 0, b: 0, c: 0, x: 0, y: 0, z: 0 } },
-      thermalSimulation: gcodeLines.length > 0 ? simulateThermal(gcodeLines) : null,
-      warpPrediction: gcodeLines.length > 0 && bounds
-        ? predictWarping(simulateThermal(gcodeLines), {
-            minX: bounds.min[0], maxX: bounds.max[0],
-            minY: bounds.min[1], maxY: bounds.max[1],
-            minZ: bounds.min[2], maxZ: bounds.max[2],
-          }, 0.2)
-        : null,
-      printTimeGraph: gcodeLines.length > 0 ? buildPrintTimeGraph(gcodeLines, []) : null,
-      spindleLoad: gcodeLines.length > 0 ? estimateSpindleLoad(gcodeLines) : [],
-      toolWear: gcodeLines.length > 0 ? estimateToolWear(gcodeLines) : [],
-      toolDefinitions: gcodeLines.length > 0 ? parseToolDefinitions(gcodeLines) : getDefaultToolLibrary(),
-      collisions: gcodeLines.length > 0 && bounds
-        ? checkCollisions(gcodeLines, createStockModel('block',
-            bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1], bounds.max[2] - bounds.min[2],
-            bounds.min[0], bounds.min[1], bounds.min[2], true))
-        : [],
-      // Batch 4 advanced analysis
-      retractionAnalysis: gcodeLines.length > 0 ? analyzeRetractions(gcodeLines) : null,
-      layerHeightConsistency: gcodeLines.length > 0 ? checkLayerHeightConsistency([]) : null,
-      flowRateAnalysis: gcodeLines.length > 0 ? analyzeFlowRate(gcodeLines) : null,
-      firstLayerAnalysis: gcodeLines.length > 0 ? analyzeFirstLayer(gcodeLines) : null,
-      stringingPrediction: gcodeLines.length > 0 ? predictStringing(gcodeLines) : null,
-      coolingFanAnalysis: gcodeLines.length > 0 ? analyzeCoolingFan(gcodeLines) : null,
-      printSpeedAnalysis: gcodeLines.length > 0 ? analyzePrintSpeeds(gcodeLines) : null,
-      // Batch 5 advanced analysis
-      lintResult: gcodeLines.length > 0 ? lintGcode(gcodeLines) : null,
-      toolpathOptimization: gcodeLines.length > 0 ? analyzeToolpathOptimization(gcodeLines) : null,
-      pressureAdvance: gcodeLines.length > 0 ? analyzePressureAdvance(gcodeLines) : null,
-      arcFittingCandidates: gcodeLines.length > 0 ? detectArcFittingCandidates(gcodeLines) : null,
-      performanceProfile: gcodeLines.length > 0 ? profileGcode(gcodeLines) : null,
-      beadGeometry: computeBeadGeometry(0.2, 0.4, 1.75),
-      // Batch 6 advanced analysis
-      millingDirection: gcodeLines.length > 0 ? detectMillingDirection(gcodeLines) : null,
-      accelerationLimitedTime: gcodeLines.length > 0 ? estimateAccelerationLimitedTime(gcodeLines) : null,
-      energyConsumption: gcodeLines.length > 0 ? estimateEnergyConsumption(gcodeLines) : null,
-      workOffsets: gcodeLines.length > 0 ? analyzeWorkOffsets(gcodeLines) : null,
-      patternRecognition: gcodeLines.length > 0 ? recognizePatterns(gcodeLines) : null,
-      toolDeflection: gcodeLines.length > 0 ? estimateToolDeflection(gcodeLines) : null,
-      subprogramExpansion: gcodeLines.length > 0 ? expandSubprograms(gcodeLines) : null,
-      // Batch 7 advanced analysis
-      chatterPrediction: gcodeLines.length > 0 ? predictChatter(gcodeLines) : null,
-      macroVariables: gcodeLines.length > 0 ? trackMacroVariables(gcodeLines) : null,
-      coordinateRotation: gcodeLines.length > 0 ? analyzeCoordinateRotation(gcodeLines) : null,
-      toolLifeEstimation: gcodeLines.length > 0 ? estimateToolLife(gcodeLines) : null,
-      cutterCompensationVerification: gcodeLines.length > 0 ? verifyCutterCompensation(gcodeLines) : null,
-      travelOptimization: gcodeLines.length > 0 ? suggestTravelOptimization(gcodeLines) : null,
-      // Batch 8 advanced analysis
-      modalStates: gcodeLines.length > 0 ? trackModalStates(gcodeLines) : null,
-      dwellAnalysis: gcodeLines.length > 0 ? analyzeDwellTime(gcodeLines) : null,
-      safetyCheck: gcodeLines.length > 0 ? check3DPSafety(gcodeLines) : null,
-      curvatureAnalysis: gcodeLines.length > 0 ? analyzeCurvature(gcodeLines) : null,
-      recognizedFeatures: gcodeLines.length > 0 ? recognizeFeatures(gcodeLines) : null,
-      spindlePowerAnalysis: gcodeLines.length > 0 ? analyzeSpindlePower(gcodeLines) : null,
-      multiPartAnalysis: gcodeLines.length > 0 ? analyzeMultiPart(gcodeLines) : null,
-      bedAdhesionAnalysis: gcodeLines.length > 0 ? analyzeBedAdhesion(gcodeLines) : null,
-      compatibilityCheck: gcodeLines.length > 0 ? checkGcodeCompatibility(gcodeLines, 'fanuc') : null,
-
-      // Batch 9
-      selfIntersections: gcodeLines.length > 0 ? detectSelfIntersections(gcodeLines) : null,
-      commandFrequency: gcodeLines.length > 0 ? analyzeCommandFrequency(gcodeLines) : null,
-      toolChangeOptimization: gcodeLines.length > 0 ? optimizeToolChanges(gcodeLines) : null,
-      layerTimeAnalysis: gcodeLines.length > 0 ? analyzeLayerTimes(gcodeLines) : null,
-      commentExtraction: gcodeLines.length > 0 ? extractComments(gcodeLines) : null,
-      toolpathLengthAnalysis: gcodeLines.length > 0 ? analyzeToolpathLength(gcodeLines) : null,
-      mCodeAnalysis: gcodeLines.length > 0 ? analyzeMCodes(gcodeLines) : null,
-      spindleWarmup: gcodeLines.length > 0 ? analyzeSpindleWarmup(gcodeLines) : null,
-      feedRateHistogram: gcodeLines.length > 0 ? generateFeedRateHistogram(gcodeLines) : null,
-      toolpathDirection: gcodeLines.length > 0 ? analyzeToolpathDirection(gcodeLines) : null,
-      parseErrors: gcodeLines.length > 0 ? parseWithRecovery(gcodeLines) : null,
-
-      // Batch 10
-      zHopAnalysis: gcodeLines.length > 0 ? analyzeZHops(gcodeLines) : null,
-      extrusionConsistency: gcodeLines.length > 0 ? analyzeExtrusionConsistency(gcodeLines) : null,
-      toolpathSmoothing: gcodeLines.length > 0 ? analyzeToolpathSmoothing(gcodeLines) : null,
-      qualityPrediction: gcodeLines.length > 0 ? predictPrintQuality(gcodeLines) : null,
-      volumetricFlowRate: gcodeLines.length > 0 ? analyzeVolumetricFlowRate(gcodeLines) : null,
-      statisticsSummary: gcodeLines.length > 0 ? generateStatisticsSummary(gcodeLines) : null,
-      toolpathOverlaps: gcodeLines.length > 0 ? detectToolpathOverlaps(gcodeLines) : null,
-      printEfficiency: gcodeLines.length > 0 ? analyzePrintEfficiency(gcodeLines) : null,
-      autoAnnotations: gcodeLines.length > 0 ? autoGenerateAnnotations(gcodeLines) : null,
-
-      // Batch 11
-      simulation: gcodeLines.length > 0 ? simulateGcode(gcodeLines) : null,
-      toolWearProgression: gcodeLines.length > 0 ? trackToolWearProgression(gcodeLines) : null,
-      optimizationReport: gcodeLines.length > 0 ? generateOptimizationReport(gcodeLines) : null,
-      bedThermalMap: gcodeLines.length > 0 ? analyzeBedThermalMap(gcodeLines) : null,
-      subprogramCallGraph: gcodeLines.length > 0 ? buildSubprogramCallGraph(gcodeLines) : null,
-      coolingEffectiveness: gcodeLines.length > 0 ? analyzeCoolingEffectiveness(gcodeLines) : null,
-      dependencyAnalysis: gcodeLines.length > 0 ? analyzeDependencies(gcodeLines) : null,
-      failurePrediction: gcodeLines.length > 0 ? predictPrintFailure(gcodeLines) : null,
-      documentation: gcodeLines.length > 0 ? generateDocumentation(gcodeLines) : null,
-      benchmark: gcodeLines.length > 0 ? benchmarkGcode(gcodeLines) : null,
-      securityAudit: gcodeLines.length > 0 ? auditGcodeSecurity(gcodeLines) : null,
-
-      // Batch 12
-      reverseEngineering: gcodeLines.length > 0 ? reverseEngineerGcode(gcodeLines) : null,
-      machiningStrategy: gcodeLines.length > 0 ? analyzeMachiningStrategy(gcodeLines) : null,
-      bedLevelingQuality: gcodeLines.length > 0 ? analyzeBedLevelingQuality(gcodeLines) : null,
-      renderingOptimization: gcodeLines.length > 0 ? optimizeToolpathForRendering(gcodeLines) : null,
-      validationRules: gcodeLines.length > 0 ? validateGcodeRules(gcodeLines) : null,
-
-      // Batch 13
-      executionTrace: gcodeLines.length > 0 ? generateExecutionTrace(gcodeLines) : null,
-      chipThickness: gcodeLines.length > 0 ? analyzeChipThickness(gcodeLines) : null,
-      qualityHeatmap: gcodeLines.length > 0 ? generateQualityHeatmap(gcodeLines) : null,
-      workholding: gcodeLines.length > 0 ? analyzeWorkholding(gcodeLines) : null,
-      materialFlow: gcodeLines.length > 0 ? analyzeMaterialFlow(gcodeLines) : null,
-      flowVisualization: gcodeLines.length > 0 ? generateFlowVisualization(gcodeLines) : null,
-      fixtureOptimization: gcodeLines.length > 0 ? optimizeFixturePlacement(gcodeLines) : null,
-      layerVisualization: gcodeLines.length > 0 ? generateLayerVisualization(gcodeLines) : null,
-      compressionAnalysis: gcodeLines.length > 0 ? analyzeCompressionOpportunities(gcodeLines) : null,
-      aerodynamics: gcodeLines.length > 0 ? analyzeAerodynamics(gcodeLines) : null,
-      adaptiveSpeed: gcodeLines.length > 0 ? analyzeAdaptiveSpeed(gcodeLines) : null,
-      dependencyGraph: gcodeLines.length > 0 ? generateDependencyGraph(gcodeLines) : null,
-
-      // Batch 14
-      syntaxHighlight: gcodeLines.length > 0 ? highlightGcodeSyntax(gcodeLines) : null,
-      toolDeflectionAdv: gcodeLines.length > 0 ? predictToolDeflectionAdvanced(gcodeLines) : null,
-      stringingRiskMap: gcodeLines.length > 0 ? generateStringingRiskMap(gcodeLines) : null,
-      macroExpansion: gcodeLines.length > 0 ? previewMacroExpansion(gcodeLines) : null,
-      surfaceRoughness: gcodeLines.length > 0 ? predictSurfaceRoughness(gcodeLines) : null,
-      warpingSimulation: gcodeLines.length > 0 ? simulateWarping(gcodeLines) : null,
-      collisionDetection: gcodeLines.length > 0 ? detectCollisions3D(gcodeLines) : null,
-      toolLife: gcodeLines.length > 0 ? calculateToolLife(gcodeLines) : null,
-      infillPattern: gcodeLines.length > 0 ? analyzeInfillPattern(gcodeLines) : null,
-      partBounds: gcodeLines.length > 0 ? computeBounds(gcodeLines) : null,
-      cuttingForces: gcodeLines.length > 0 ? simulateCuttingForces(gcodeLines) : null,
-      retractionOptimization: gcodeLines.length > 0 ? optimizeRetractions(gcodeLines) : null,
-
-      // Batch 15
-      executionProfile: gcodeLines.length > 0 ? profileGcodeExecution(gcodeLines) : null,
-      toolWearMap: gcodeLines.length > 0 ? generateToolWearMap(gcodeLines) : null,
-      layerAdhesion: gcodeLines.length > 0 ? analyzeLayerAdhesion(gcodeLines) : null,
-      overhangMap: gcodeLines.length > 0 ? generateOverhangMap(gcodeLines) : null,
-      operationTimeline: gcodeLines.length > 0 ? generateOperationTimeline(gcodeLines) : null,
-      toolpathContinuity: gcodeLines.length > 0 ? checkToolpathContinuity(gcodeLines) : null,
-      extrusionWidthConsistency: gcodeLines.length > 0 ? analyzeExtrusionWidthConsistency(gcodeLines) : null,
-      postProcessorOptimization: gcodeLines.length > 0 ? optimizePostProcessorOutput(gcodeLines) : null,
-      machineVibration: gcodeLines.length > 0 ? analyzeMachineVibration(gcodeLines) : null,
-      thermalHistory: gcodeLines.length > 0 ? trackThermalHistory(gcodeLines) : null,
-
-      // Batch 16
-      lineStatistics: gcodeLines.length > 0 ? analyzeLineStatistics(gcodeLines) : null,
-      engagementMap: gcodeLines.length > 0 ? generateEngagementMap(gcodeLines) : null,
-      bedMesh: gcodeLines.length > 0 ? visualizeBedMesh(gcodeLines) : null,
-      commandFlow: gcodeLines.length > 0 ? generateCommandFlow(gcodeLines) : null,
-      chipLoad: gcodeLines.length > 0 ? calculateChipLoad(gcodeLines) : null,
-      spoolEstimate: gcodeLines.length > 0 ? estimateSpoolUsage(gcodeLines) : null,
-      errorRecovery: gcodeLines.length > 0 ? suggestErrorRecovery(gcodeLines) : null,
-      mrr: gcodeLines.length > 0 ? calculateMRR(gcodeLines) : null,
-      coasting: gcodeLines.length > 0 ? analyzeCoasting(gcodeLines) : null,
-      bottlenecks: gcodeLines.length > 0 ? identifyBottlenecks(gcodeLines) : null,
-      pullOff: gcodeLines.length > 0 ? calculatePullOffDistance(gcodeLines) : null,
-      firstLayerSquish: gcodeLines.length > 0 ? analyzeFirstLayerSquish(gcodeLines) : null,
-
-      // Batch 17
-      idleTime: gcodeLines.length > 0 ? analyzeIdleTime(gcodeLines) : null,
-      toolpathOverlap: gcodeLines.length > 0 ? quantifyToolpathOverlap(gcodeLines) : null,
-      flowRateCalibration: gcodeLines.length > 0 ? adviseFlowRateCalibration(gcodeLines) : null,
-      memoryEstimate: gcodeLines.length > 0 ? estimateMemoryUsage(gcodeLines) : null,
-      parameterValidation: gcodeLines.length > 0 ? validateCuttingParameters(gcodeLines) : null,
-      layerShiftRisk: gcodeLines.length > 0 ? detectLayerShiftRisk(gcodeLines) : null,
-      executionPathOpt: gcodeLines.length > 0 ? optimizeExecutionPath(gcodeLines) : null,
-      noseRadiusComp: gcodeLines.length > 0 ? calculateNoseRadiusCompensation(gcodeLines) : null,
-      elephantFoot: gcodeLines.length > 0 ? analyzeElephantFoot(gcodeLines) : null,
-      commentDensity: gcodeLines.length > 0 ? analyzeCommentDensity(gcodeLines) : null,
-      rapidTraverseOpt: gcodeLines.length > 0 ? optimizeRapidTraverse(gcodeLines) : null,
-      skirtBrim: gcodeLines.length > 0 ? analyzeSkirtBrim(gcodeLines) : null,
-
-      // Batch 18
-      perToolPathLength: gcodeLines.length > 0 ? analyzePerToolPathLength(gcodeLines) : null,
-      oozePrevention: gcodeLines.length > 0 ? analyzeOozePrevention(gcodeLines) : null,
-      coordinateSystems: gcodeLines.length > 0 ? analyzeCoordinateSystems(gcodeLines) : null,
-      spindleSpeedVariation: gcodeLines.length > 0 ? analyzeSpindleSpeedVariation(gcodeLines) : null,
-      bridgeQuality: gcodeLines.length > 0 ? predictBridgeQuality(gcodeLines) : null,
-      modalGroups: gcodeLines.length > 0 ? analyzeModalGroups(gcodeLines) : null,
-      feedRateOverride: gcodeLines.length > 0 ? simulateFeedRateOverride(gcodeLines) : null,
-      fanCurve: gcodeLines.length > 0 ? analyzeFanCurve(gcodeLines) : null,
-      subprogramComplexity: gcodeLines.length > 0 ? analyzeSubprogramComplexity(gcodeLines) : null,
-      directionReversals: gcodeLines.length > 0 ? countDirectionReversals(gcodeLines) : null,
-      zSeamAlignment: gcodeLines.length > 0 ? optimizeZSeamAlignment(gcodeLines) : null,
-      executionRisk: gcodeLines.length > 0 ? assessExecutionRisk(gcodeLines) : null,
-
-      // Batch 19
-      arcLength: gcodeLines.length > 0 ? calculateArcLength(gcodeLines) : null,
-      entryExitAngles: gcodeLines.length > 0 ? analyzeEntryExitAngles(gcodeLines) : null,
-      retractionOptimizer: gcodeLines.length > 0 ? optimizeRetractionDistance(gcodeLines) : null,
-      blockStructure: gcodeLines.length > 0 ? analyzeBlockStructure(gcodeLines) : null,
-      feedPerRevolution: gcodeLines.length > 0 ? calculateFeedPerRevolution(gcodeLines) : null,
-      thinWalls: gcodeLines.length > 0 ? analyzeThinWalls(gcodeLines) : null,
-      variableUsage: gcodeLines.length > 0 ? trackVariableUsage(gcodeLines) : null,
-      segmentClassifier: gcodeLines.length > 0 ? classifyToolpathSegments(gcodeLines) : null,
-      infillDensityVariance: gcodeLines.length > 0 ? analyzeInfillDensityVariance(gcodeLines) : null,
-      errorPatterns: gcodeLines.length > 0 ? detectErrorPatterns(gcodeLines) : null,
-      surfaceSpeed: gcodeLines.length > 0 ? calculateSurfaceSpeed(gcodeLines) : null,
-      layerTimeVariance: gcodeLines.length > 0 ? analyzeLayerTimeVariance(gcodeLines) : null,
-
-      // Batch 20
-      speedHeatmap: gcodeLines.length > 0 ? generateSpeedHeatmap(gcodeLines) : null,
-      toolWearPrediction: gcodeLines.length > 0 ? predictToolWearProgression(gcodeLines) : null,
-      retractionSpeedOpt: gcodeLines.length > 0 ? optimizeRetractionSpeed(gcodeLines) : null,
-      lineComplexity: gcodeLines.length > 0 ? scoreLineComplexity(gcodeLines) : null,
-      docOptimizer: gcodeLines.length > 0 ? optimizeDepthOfCut(gcodeLines) : null,
-      layerFanOptimizer: gcodeLines.length > 0 ? optimizeLayerFanSpeed(gcodeLines) : null,
-      circularInterpolation: gcodeLines.length > 0 ? detectCircularInterpolation(gcodeLines) : null,
-      toolpathEfficiency: gcodeLines.length > 0 ? calculateToolpathEfficiency(gcodeLines) : null,
-      materialPerLayer: gcodeLines.length > 0 ? trackMaterialPerLayer(gcodeLines) : null,
-      commandRedundancy: gcodeLines.length > 0 ? removeCommandRedundancy(gcodeLines) : null,
-      cuttingStrategy: gcodeLines.length > 0 ? adviseCuttingStrategy(gcodeLines) : null,
-      ironingPattern: gcodeLines.length > 0 ? analyzeIroningPattern(gcodeLines) : null,
-
-      // Previously unintegrated analysis functions
-      chatterFrequencyAnalysis: gcodeLines.length > 0 ? analyzeChatterFrequency(gcodeLines) : null,
-      thermalExpansionCompensation: gcodeLines.length > 0 ? compensateThermalExpansion(gcodeLines) : null,
-
-      // Batch 21
-      perLayerBounds: gcodeLines.length > 0 ? calculatePerLayerBounds(gcodeLines) : null,
-      engagementTime: gcodeLines.length > 0 ? calculateEngagementTime(gcodeLines) : null,
-      retractionFrequency: gcodeLines.length > 0 ? analyzeRetractionFrequency(gcodeLines) : null,
-      spindleLoadProfile: gcodeLines.length > 0 ? estimateSpindleLoadProfile(gcodeLines) : null,
-      directionChanges: gcodeLines.length > 0 ? countDirectionChanges(gcodeLines) : null,
-      bedAdhesionArea: gcodeLines.length > 0 ? calculateBedAdhesionArea(gcodeLines) : null,
-      coordinateRotations: gcodeLines.length > 0 ? detectCoordinateRotations(gcodeLines) : null,
-      wearRate: gcodeLines.length > 0 ? calculateWearRate(gcodeLines) : null,
-      flowRateConsistency: gcodeLines.length > 0 ? analyzeFlowRateConsistency(gcodeLines) : null,
-      commandSequenceValidation: gcodeLines.length > 0 ? validateCommandSequence(gcodeLines) : null,
-      feedRateHarmonics: gcodeLines.length > 0 ? analyzeFeedRateHarmonics(gcodeLines) : null,
-      layerHeightVariance: gcodeLines.length > 0 ? analyzeLayerHeightVariance(gcodeLines) : null,
-
-      // Batch 22
-      accelerationProfile: gcodeLines.length > 0 ? analyzeAccelerationProfile(gcodeLines) : null,
-      cuttingForceSpectrum: gcodeLines.length > 0 ? analyzeCuttingForceSpectrum(gcodeLines) : null,
-      pressureAdvanceOpt: gcodeLines.length > 0 ? optimizePressureAdvance(gcodeLines) : null,
-      coordinateOrigins: gcodeLines.length > 0 ? mapCoordinateOrigins(gcodeLines) : null,
-      toolpathLoops: gcodeLines.length > 0 ? detectToolpathLoops(gcodeLines) : null,
-      extrusionWidthPerLayer: gcodeLines.length > 0 ? analyzeExtrusionWidthPerLayer(gcodeLines) : null,
-      spindleWarmupOpt: gcodeLines.length > 0 ? optimizeSpindleWarmup(gcodeLines) : null,
-      supportStructureOpt: gcodeLines.length > 0 ? optimizeSupportStructure(gcodeLines) : null,
-      fileSizeOpt: gcodeLines.length > 0 ? optimizeFileSize(gcodeLines) : null,
-      curvatureHeatmap: gcodeLines.length > 0 ? generateCurvatureHeatmap(gcodeLines) : null,
-      layerAdhesionStrength: gcodeLines.length > 0 ? predictLayerAdhesionStrength(gcodeLines) : null,
-      corneringSpeed: gcodeLines.length > 0 ? calculateCorneringSpeed(gcodeLines) : null,
-
-      // Batch 23
-      scallopHeight: gcodeLines.length > 0 ? calculateScallopHeight(gcodeLines) : null,
-      filamentDiameterVariance: gcodeLines.length > 0 ? detectFilamentDiameterVariance(gcodeLines) : null,
-      coordinateScaling: gcodeLines.length > 0 ? detectCoordinateScaling(gcodeLines) : null,
-      chipThinning: gcodeLines.length > 0 ? calculateChipThinning(gcodeLines) : null,
-      infillAngles: gcodeLines.length > 0 ? analyzeInfillAngles(gcodeLines) : null,
-      segmentLengthDistribution: gcodeLines.length > 0 ? analyzeSegmentLengthDistribution(gcodeLines) : null,
-      stepover: gcodeLines.length > 0 ? calculateStepover(gcodeLines) : null,
-      extrusionMultiplier: gcodeLines.length > 0 ? calibrateExtrusionMultiplier(gcodeLines) : null,
-      toolpathSymmetry: gcodeLines.length > 0 ? detectToolpathSymmetry(gcodeLines) : null,
-      retractPlaneOpt: gcodeLines.length > 0 ? optimizeRetractPlane(gcodeLines) : null,
-      skirtBrimGap: gcodeLines.length > 0 ? analyzeSkirtBrimGap(gcodeLines) : null,
-      executionTime: gcodeLines.length > 0 ? estimateExecutionTime(gcodeLines) : null,
-
-      // Batch 24
-      engagementAnglePerSegment: gcodeLines.length > 0 ? calculateEngagementAnglePerSegment(gcodeLines) : null,
-      firstLayerSpeedOpt: gcodeLines.length > 0 ? optimizeFirstLayerSpeed(gcodeLines) : null,
-      rapidTravelEfficiency: gcodeLines.length > 0 ? analyzeRapidTravelEfficiency(gcodeLines) : null,
-      plungeRateAnalysis: gcodeLines.length > 0 ? analyzePlungeRate(gcodeLines) : null,
-      materialPerExtruder: gcodeLines.length > 0 ? calculateMaterialPerExtruder(gcodeLines) : null,
-      climbConventionalPerPass: gcodeLines.length > 0 ? classifyClimbConventionalPerPass(gcodeLines) : null,
-      layerCoolingTime: gcodeLines.length > 0 ? analyzeLayerCoolingTime(gcodeLines) : null,
-      reversalPoints: gcodeLines.length > 0 ? analyzeReversalPoints(gcodeLines) : null,
-      cuttingModeConsistency: gcodeLines.length > 0 ? analyzeCuttingModeConsistency(gcodeLines) : null,
-      extrusionStartStopQuality: gcodeLines.length > 0 ? analyzeExtrusionStartStopQuality(gcodeLines) : null,
-      programFlowStructure: gcodeLines.length > 0 ? analyzeProgramFlowStructure(gcodeLines) : null,
-      mrrPerLayer: gcodeLines.length > 0 ? calculateMRRPerLayer(gcodeLines) : null,
-
-      // Batch 25
-      airCuttingTime: gcodeLines.length > 0 ? calculateAirCuttingTime(gcodeLines) : null,
-      beadWidthVariance: gcodeLines.length > 0 ? analyzeBeadWidthVariance(gcodeLines) : null,
-      parameterRanges: gcodeLines.length > 0 ? validateParameterRanges(gcodeLines) : null,
-      engagementHeatmapPerLayer: gcodeLines.length > 0 ? generateEngagementHeatmapPerLayer(gcodeLines) : null,
-      fanDutyCycle: gcodeLines.length > 0 ? analyzeFanDutyCycle(gcodeLines) : null,
-      toolChangePositions: gcodeLines.length > 0 ? optimizeToolChangePositions(gcodeLines) : null,
-      spindleSpeedAdvice: gcodeLines.length > 0 ? adviseSpindleSpeed(gcodeLines) : null,
-      firstLayerHeightOpt: gcodeLines.length > 0 ? optimizeFirstLayerHeight(gcodeLines) : null,
-      continuityPerLayer: gcodeLines.length > 0 ? checkContinuityPerLayer(gcodeLines) : null,
-      minimumClearance: gcodeLines.length > 0 ? calculateMinimumClearance(gcodeLines) : null,
-      wallThicknessConsistency: gcodeLines.length > 0 ? analyzeWallThicknessConsistency(gcodeLines) : null,
-      executionOrder: gcodeLines.length > 0 ? optimizeExecutionOrder(gcodeLines) : null,
-
-      // Batch 26
-      engagementTimePerLayer: gcodeLines.length > 0 ? calculateEngagementTimePerLayer(gcodeLines) : null,
-      extrusionRatePerLayer: gcodeLines.length > 0 ? analyzeExtrusionRatePerLayer(gcodeLines) : null,
-      workOffsetUsage: gcodeLines.length > 0 ? analyzeWorkOffsetUsage(gcodeLines) : null,
-      deflectionCompensation: gcodeLines.length > 0 ? calculateDeflectionCompensation(gcodeLines) : null,
-      bridgingSpeedOpt: gcodeLines.length > 0 ? optimizeBridgingSpeed(gcodeLines) : null,
-      overlapsPerLayer: gcodeLines.length > 0 ? detectOverlapsPerLayer(gcodeLines) : null,
-      spindleLoadPerLayer: gcodeLines.length > 0 ? analyzeSpindleLoadPerLayer(gcodeLines) : null,
-      retractionHopHeight: gcodeLines.length > 0 ? analyzeRetractionHopHeight(gcodeLines) : null,
-      programComplexity: gcodeLines.length > 0 ? calculateProgramComplexity(gcodeLines) : null,
-      arcInterpolationQuality: gcodeLines.length > 0 ? analyzeArcInterpolationQuality(gcodeLines) : null,
-      layerHeightConsistencyPerLayer: gcodeLines.length > 0 ? analyzeLayerHeightConsistencyPerLayer(gcodeLines) : null,
-      modalStateTransitions: gcodeLines.length > 0 ? analyzeModalStateTransitions(gcodeLines) : null,
-
-      // Batch 27
-      entryStrategy: gcodeLines.length > 0 ? analyzeEntryStrategy(gcodeLines) : null,
-      retractionAcceleration: gcodeLines.length > 0 ? analyzeRetractionAcceleration(gcodeLines) : null,
-      coordinateSystemAlignment: gcodeLines.length > 0 ? checkCoordinateSystemAlignment(gcodeLines) : null,
-      noseRadiusCompensation: gcodeLines.length > 0 ? validateNoseRadiusCompensation(gcodeLines) : null,
-      infillDensityPerLayer: gcodeLines.length > 0 ? analyzeInfillDensityPerLayer(gcodeLines) : null,
-      segmentClassificationPerLayer: gcodeLines.length > 0 ? classifySegmentsPerLayer(gcodeLines) : null,
-      spindleWarmupValidation: gcodeLines.length > 0 ? validateSpindleWarmupCycle(gcodeLines) : null,
-      fanSpeedPerLayer: gcodeLines.length > 0 ? analyzeFanSpeedPerLayer(gcodeLines) : null,
-      structureComplexityPerSection: gcodeLines.length > 0 ? analyzeStructureComplexityPerSection(gcodeLines) : null,
-      leadInOut: gcodeLines.length > 0 ? analyzeLeadInOut(gcodeLines) : null,
-      extrusionConsistencyPerLayer: gcodeLines.length > 0 ? analyzeExtrusionConsistencyPerLayer(gcodeLines) : null,
-      machineCoordinateBoundary: gcodeLines.length > 0 ? checkMachineCoordinateBoundary(gcodeLines) : null,
+      featureTypes: this.featureTypeSegments,
+      remoteAnalysis: this.remoteAnalysisSections,
     };
 
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });

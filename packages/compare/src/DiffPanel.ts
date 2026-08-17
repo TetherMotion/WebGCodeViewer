@@ -3,8 +3,109 @@
  * @brief Side panel for comparing two G-code files with structural diff.
  */
 
-import { diffGcode, GcodeDiffResult } from "@tether/gcode-analyzer/GcodeAdvanced";
 import { EventDispatcher } from "@tether/viewer-core";
+
+export interface GcodeDiffResult {
+  /** Lines added in the new file (not in old) */
+  added: { lineNumber: number; content: string }[];
+  /** Lines removed from the old file (not in new) */
+  removed: { lineNumber: number; content: string }[];
+  /** Lines modified (same position, different content) */
+  modified: { oldLineNumber: number; newLineNumber: number; oldContent: string; newContent: string }[];
+  /** Lines that are identical */
+  unchanged: number;
+  /** Summary statistics */
+  summary: {
+    totalAdded: number;
+    totalRemoved: number;
+    totalModified: number;
+    totalUnchanged: number;
+    similarityScore: number; // 0..1
+  };
+  /** Changed G-code words (semantic diff) */
+  wordChanges: { lineNumber: number; word: string; oldValue: string; newValue: string }[];
+}
+
+/**
+ * Compare two G-code files and produce a structural diff.
+ * Uses line-by-line comparison with semantic word-level change detection.
+ *
+ * @param oldLines Old G-code lines
+ * @param newLines New G-code lines
+ */
+export function diffGcode(oldLines: string[], newLines: string[]): GcodeDiffResult {
+  const added: { lineNumber: number; content: string }[] = [];
+  const removed: { lineNumber: number; content: string }[] = [];
+  const modified: { oldLineNumber: number; newLineNumber: number; oldContent: string; newContent: string }[] = [];
+  const wordChanges: { lineNumber: number; word: string; oldValue: string; newValue: string }[] = [];
+  let unchanged = 0;
+
+  const maxLen = Math.max(oldLines.length, newLines.length);
+  const minLen = Math.min(oldLines.length, newLines.length);
+
+  for (let i = 0; i < maxLen; i++) {
+    if (i < minLen) {
+      const oldLine = oldLines[i].trim();
+      const newLine = newLines[i].trim();
+      if (oldLine === newLine) {
+        unchanged++;
+      } else {
+        modified.push({
+          oldLineNumber: i,
+          newLineNumber: i,
+          oldContent: oldLines[i],
+          newContent: newLines[i],
+        });
+
+        const oldWords = oldLine.match(/([A-Za-z])(-?\d*\.?\d+)/g) || [];
+        const newWords = newLine.match(/([A-Za-z])(-?\d*\.?\d+)/g) || [];
+        const oldMap = new Map<string, string>();
+        const newMap = new Map<string, string>();
+        for (const w of oldWords) oldMap.set(w[0].toUpperCase(), w);
+        for (const w of newWords) newMap.set(w[0].toUpperCase(), w);
+
+        for (const key of new Set([...oldMap.keys(), ...newMap.keys()])) {
+          const oldVal = oldMap.get(key);
+          const newVal = newMap.get(key);
+          if (oldVal !== newVal) {
+            wordChanges.push({
+              lineNumber: i,
+              word: key,
+              oldValue: oldVal ?? '(none)',
+              newValue: newVal ?? '(none)',
+            });
+          }
+        }
+      }
+    } else if (i < newLines.length) {
+      added.push({ lineNumber: i, content: newLines[i] });
+    } else if (i < oldLines.length) {
+      removed.push({ lineNumber: i, content: oldLines[i] });
+    }
+  }
+
+  const totalAdded = added.length;
+  const totalRemoved = removed.length;
+  const totalModified = modified.length;
+  const totalUnchanged = unchanged;
+  const totalLines = maxLen;
+  const similarityScore = totalLines > 0 ? totalUnchanged / totalLines : 1;
+
+  return {
+    added,
+    removed,
+    modified,
+    unchanged,
+    summary: {
+      totalAdded,
+      totalRemoved,
+      totalModified,
+      totalUnchanged,
+      similarityScore,
+    },
+    wordChanges,
+  };
+}
 
 export interface DiffPanelEvents {
   closed: void;
