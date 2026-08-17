@@ -8,6 +8,7 @@
 #include "analysis/VolumetricFlowAnalyzer.hpp"
 #include "analysis/FirstLayerAnalyzer.hpp"
 #include "analysis/PatternAnalyzer.hpp"
+#include "analysis/ThermalCoolingAnalyzer.hpp"
 #include "proto/tether_viewer.pb.h"
 
 #include <algorithm>
@@ -383,6 +384,7 @@ void appendProcessResultAnalysis(
     appendVolumetricFlowAnalysis(response, result, gcodeLines, request);
     appendFirstLayerAnalysis(response, result, gcodeLines, request);
     appendPatternAnalysis(response, result, gcodeLines, request);
+    appendThermalCoolingAnalysis(response, result, gcodeLines, request);
 }
 
 } // namespace tether::web
