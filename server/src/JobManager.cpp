@@ -258,6 +258,22 @@ std::vector<uint8_t> JobManager::getPaBinary(const std::string& jobId) const
     return {};
 }
 
+std::vector<uint8_t> JobManager::getStateProfileBinary(const std::string& jobId) const
+{
+    auto job = getJob(jobId);
+    if (!job || job->state != JobState::Ready) return {};
+
+    try {
+        if (job->result.stateProfile && !job->result.stateProfile->texels.empty()) {
+            return serializeStateProfile(*job->result.stateProfile);
+        }
+    } catch (const std::exception& e) {
+        return {};
+    }
+
+    return {};
+}
+
 std::string JobManager::getBlocksJson(const std::string& jobId) const {
     auto job = getJob(jobId);
     if (!job || job->state != JobState::Ready) return "{\"error\":\"job not ready\"}";

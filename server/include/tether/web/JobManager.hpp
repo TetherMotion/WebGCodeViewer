@@ -9,6 +9,7 @@
 #include "tether/web/GCodeProcessor.hpp"
 #include "tether/web/TrajectorySerializer.hpp"
 #include "tether/web/NurbsSerializer.hpp"
+#include "tether/web/StateProfileSerializer.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -111,6 +112,13 @@ public:
     /// @param jobId Job ID
     /// @return Binary TRNP-PA data, or empty if not available
     std::vector<uint8_t> getPaBinary(const std::string& jobId) const;
+
+    /// @brief Get the sampled analytical state profile (TSSP format).
+    /// Returns a 1D RGBA32F texture data source (time, velocity, acceleration,
+    /// jerk) sampled from the Pareto analytical velocity profile.
+    /// @param jobId Job ID
+    /// @return Binary TSSP data, or empty if not available
+    std::vector<uint8_t> getStateProfileBinary(const std::string& jobId) const;
 
     /// @brief Get block metadata for a job as JSON.
     std::string getBlocksJson(const std::string& jobId) const;

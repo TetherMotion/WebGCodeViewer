@@ -384,6 +384,36 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
             cb(resp);
         }, {drogon::Get});
 
+    // ── GET /api/trajectory/{jobId}/state ──
+    // Get sampled 1D state profile (TSSP format) — time, velocity,
+    // acceleration, jerk as a 1D RGBA32F texture data source. Sampled
+    // directly from the Pareto analytical velocity profile (WSS).
+    app.registerHandler("/api/trajectory/{jobId}/state",
+        [jobManager, enableCors](const drogon::HttpRequestPtr& req,
+           std::function<void(const drogon::HttpResponsePtr&)>&& cb,
+           const std::string& jobId) {
+            if (jobManager->getJobState(jobId) != JobState::Ready) {
+                cb(makeErrorResponse(404, "Job not ready", enableCors));
+                return;
+            }
+
+            auto binary = jobManager->getStateProfileBinary(jobId);
+            if (binary.empty()) {
+                cb(makeErrorResponse(404, "No state profile available", enableCors));
+                return;
+            }
+
+            auto resp = drogon::HttpResponse::newHttpResponse();
+            resp->setContentTypeString("application/octet-stream");
+            resp->addHeader("Content-Disposition",
+                            "attachment; filename=\"profile.tssp\"");
+            resp->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            resp->setBody(std::string(reinterpret_cast<const char*>(binary.data()),
+                                       binary.size()));
+            if (enableCors) addCorsHeaders(resp);
+            cb(resp);
+        }, {drogon::Get});
+
     // ── GET /api/trajectory/{jobId}/pa ──
     // Get pressure advance profiles binary data (TRNP-PA format) —
     // per-algorithm NURBS curves for PA pre/post (Linear, PowerLaw, CrossWLF,

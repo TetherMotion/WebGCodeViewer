@@ -4,7 +4,6 @@
 #include "tether/motion_planner/PathAdapter.hpp"
 #include "tether/motion_planner/analytical/ParetoTimeEnergyOptimalVelocityPlanner.hpp"
 #include "tether/motion_planner/analytical/extrusion/AnalyticalExtrusionTypes.hpp"
-#include "tether/motion_planner/profile_renurbs/ReNURBSProfileBuilder.hpp"
 #include "tether/web/PaProfileBuilder.hpp"
 
 #include <algorithm>
@@ -24,6 +23,7 @@ using GCodeExport::TrajectorySample;
 using GCodeExport::TrajectoryAnalyzer;
 using GCodeExport::AnalysisConfig;
 using GCodeExport::TrajectoryStatistics;
+using MotionPlanner::analytical::WeightedArcType;
 
 // ── Constructor / Destructor ─────────────────────────────────────────────────
 
@@ -492,56 +492,160 @@ ProcessResult GCodeProcessor::process(
             WGV_LOG(std::format("Step 3b: ParetoPlanner — {} segments, feedRate={:.1} mm/s, numSamples={}",
                 pathAdapter.numSegments(), feedRate, numSamples));
             Timer toppraTimer;
+            WGV_LOG("Step 3b: ParetoPlanner calling computeProfile...");
             auto velocityProfile = profiler.computeProfile(
                 pathAdapter, feedRate, 0.0, 0.0, numSamples);
             if (!velocityProfile) {
                 throw std::runtime_error("ParetoPlanner returned a null velocity profile");
             }
-            WGV_LOG_TIME(std::format("Step 3b: ParetoPlanner computeProfile — {} samples",
-                velocityProfile->points().size()), toppraTimer);
+            WGV_LOG_TIME("Step 3b: ParetoPlanner computeProfile returned (analytical)", toppraTimer);
 
             // Extract the WSS (analytical trajectory source) for PA computation
             auto wss = profiler.weightedSource();
 
-            // Build ReNURBS profile from the velocity profile
-            tether::motion::profile_renurbs::ReNURBSConfig renurbsConfig;
-            renurbsConfig.enabled = true;
-            renurbsConfig.certify = false;  // skip certification for speed
-            renurbsConfig.certifyThrowOnFailure = false;
-            // Use default tolerances and degrees
+            // Sample the analytical Pareto profile into a 1D state texture
+            // that the WebGPU UI can use directly, avoiding the ReNURBS
+            // conversion and its expensive O(n^3) spline fitting.
+            //
+            // We sample the WSS by *time* (forward evaluation, cheap) and
+            // then resample onto a uniform arc-length grid (1D texture).
+            // Sampling by arc-length is slow because it requires inverting
+            // the WSS time-to-s mapping, especially for WALL arcs.
+            constexpr std::size_t kStateSourceSamples = 512;
+            constexpr std::size_t kStateTextureSamples = 1024;
+            StateProfile stateProfile;
+            if (wss && wss->totalTime() > 0.0) {
+                Timer stateTimer;
+                const double T = wss->totalTime();
+                const double L = wss->totalLength();
+                stateProfile.totalLength = L;
+                stateProfile.totalTime = T;
+                stateProfile.texels.resize(kStateTextureSamples * 4);
 
-            Timer renurbsTimer;
-            auto renurbsProfile = tether::motion::profile_renurbs::buildReNURBSProfile(
-                *velocityProfile, pathAdapter, limits, renurbsConfig);
-            WGV_LOG_TIME(std::format("Step 3b: buildReNURBSProfile — {} segments",
-                renurbsProfile.perSegment.size()), renurbsTimer);
+                // Time samples: monotonic in both t and s.
+                std::vector<double> srcS(kStateSourceSamples);
+                std::vector<double> srcT(kStateSourceSamples);
+                std::vector<double> srcV(kStateSourceSamples);
+                std::vector<double> srcA(kStateSourceSamples);
+                std::vector<double> srcJ(kStateSourceSamples);
 
-            // Compute max values for normalization from control point convex hull
-            float maxVel = 0.0f, maxAccel = 0.0f, maxJerk = 0.0f, maxTime = 0.0f;
-            for (const auto& seg : renurbsProfile.perSegment) {
-                if (seg.velocity.curve) {
-                    for (const auto& cp : seg.velocity.curve->controlPoints()) {
-                        if (cp.dim() > 0) maxVel = std::max(maxVel, static_cast<float>(cp[0]));
+                const auto& arcs = wss->arcs();
+
+                auto findArcByTime = [&](double t) -> size_t {
+                    size_t lo = 0, hi = arcs.size();
+                    while (lo < hi) {
+                        size_t mid = (lo + hi) / 2;
+                        if (arcs[mid].t0 <= t) lo = mid + 1;
+                        else hi = mid;
                     }
-                }
-                if (seg.acceleration.curve) {
-                    for (const auto& cp : seg.acceleration.curve->controlPoints()) {
-                        if (cp.dim() > 0) maxAccel = std::max(maxAccel, static_cast<float>(std::abs(cp[0])));
+                    if (lo == 0) return 0;
+                    if (lo >= arcs.size()) return arcs.size() - 1;
+                    // lo is first arc with t0 > t; the active arc is lo-1
+                    return (arcs[lo - 1].t0 + arcs[lo - 1].duration >= t) ? (lo - 1) : lo;
+                };
+
+                double maxV = 0.0, maxA = 0.0, maxJ = 0.0;
+                const double dt = T / static_cast<double>(kStateSourceSamples - 1);
+                WGV_LOG(std::format("Step 3b: StateProfile start sampling — {} arcs", arcs.size()));
+                for (std::size_t i = 0; i < kStateSourceSamples; ++i) {
+                    const double t = std::min(static_cast<double>(i) * dt, T);
+
+                    // Evaluate the WSS arc at time t without going through the
+                    // full WSS methods, which call the constraint evaluator for
+                    // every sample and are very slow (they evaluate the NURBS
+                    // path at arc length to get curvature/velocity limit).
+                    // BANG/SINGULAR arcs are pure polynomial; use closed form.
+                    // WALL arcs fall back to the (slower) WSS methods.
+                    const size_t arcIdx = findArcByTime(t);
+                    const auto& arc = arcs[arcIdx];
+                    const double tau = std::clamp(t - arc.t0, 0.0, arc.duration);
+                    double s, v, a, j;
+
+                    if (arc.type == WeightedArcType::SINGULAR) {
+                        const double acc = arc.a_star;
+                        v = arc.v0 + acc * tau;
+                        s = arc.s0 + arc.v0 * tau + 0.5 * acc * tau * tau;
+                        a = acc;
+                        j = 0.0;
+                    } else if (arc.type == WeightedArcType::WALL) {
+                        // Fast approximation: WALL arcs are velocity-limited,
+                        // so they move at the local velocity limit v_wall(s).
+                        // Computing the exact v_wall(s) from the path curvature
+                        // requires an expensive arc-length-to-parameter NURBS
+                        // inversion, so we approximate with the average
+                        // constant velocity over the arc. This is exact when
+                        // the velocity limit is constant (e.g. circular arcs).
+                        const double vWall = (arc.s1 - arc.s0) / std::max(arc.duration, 1e-12);
+                        v = vWall;
+                        s = arc.s0 + vWall * tau;
+                        a = 0.0;
+                        j = 0.0;
+                    } else {
+                        // BANG_PLUS or BANG_MINUS
+                        const double e = arc.eta;
+                        a = arc.a0 + e * tau;
+                        v = arc.v0 + arc.a0 * tau + 0.5 * e * tau * tau;
+                        s = arc.s0 + arc.v0 * tau
+                            + 0.5 * arc.a0 * tau * tau
+                            + (1.0 / 6.0) * e * tau * tau * tau;
+                        j = e;
                     }
+
+                    srcT[i] = t;
+                    srcS[i] = s;
+                    srcV[i] = v;
+                    srcA[i] = a;
+                    srcJ[i] = j;
+                    maxV = std::max(maxV, std::abs(v));
+                    maxA = std::max(maxA, std::abs(a));
+                    maxJ = std::max(maxJ, std::abs(j));
                 }
-                if (seg.jerk.curve) {
-                    for (const auto& cp : seg.jerk.curve->controlPoints()) {
-                        if (cp.dim() > 0) maxJerk = std::max(maxJerk, static_cast<float>(std::abs(cp[0])));
+
+                // Resample onto a uniform arc-length grid for the 1D texture.
+                // srcS is sorted (increasing t => increasing s), so a simple
+                // linear scan is enough.
+                std::size_t srcIdx = 0;
+                const double ds = L / static_cast<double>(kStateTextureSamples - 1);
+                for (std::size_t i = 0; i < kStateTextureSamples; ++i) {
+                    const double sU = std::min(static_cast<double>(i) * ds, L);
+                    while (srcIdx + 1 < kStateSourceSamples && srcS[srcIdx + 1] < sU) {
+                        ++srcIdx;
                     }
+
+                    double t, v, a, j;
+                    if (srcIdx + 1 >= kStateSourceSamples || srcS[srcIdx + 1] <= srcS[srcIdx]) {
+                        t = srcT[srcIdx];
+                        v = srcV[srcIdx];
+                        a = srcA[srcIdx];
+                        j = srcJ[srcIdx];
+                    } else {
+                        const double alpha = (sU - srcS[srcIdx]) /
+                                             (srcS[srcIdx + 1] - srcS[srcIdx]);
+                        t = srcT[srcIdx] + alpha * (srcT[srcIdx + 1] - srcT[srcIdx]);
+                        v = srcV[srcIdx] + alpha * (srcV[srcIdx + 1] - srcV[srcIdx]);
+                        a = srcA[srcIdx] + alpha * (srcA[srcIdx + 1] - srcA[srcIdx]);
+                        j = srcJ[srcIdx] + alpha * (srcJ[srcIdx + 1] - srcJ[srcIdx]);
+                    }
+
+                    stateProfile.texels[i * 4 + 0] = static_cast<float>(t);
+                    stateProfile.texels[i * 4 + 1] = static_cast<float>(v);
+                    stateProfile.texels[i * 4 + 2] = static_cast<float>(a);
+                    stateProfile.texels[i * 4 + 3] = static_cast<float>(j);
                 }
-                maxTime = std::max(maxTime, static_cast<float>(seg.sEnd));
+
+                stateProfile.maxVelocity = static_cast<float>(maxV);
+                stateProfile.maxAcceleration = static_cast<float>(maxA);
+                stateProfile.maxJerk = static_cast<float>(maxJ);
+
+                WGV_LOG_TIME(std::format("Step 3b: sampled StateProfile — {}x{} samples",
+                    kStateSourceSamples, kStateTextureSamples), stateTimer);
             }
 
-            result.renurbsProfile = std::move(renurbsProfile);
-            result.renurbsMaxVelocity = maxVel;
-            result.renurbsMaxAcceleration = maxAccel;
-            result.renurbsMaxJerk = maxJerk;
-            result.renurbsMaxTime = maxTime;
+            result.stateProfile = std::move(stateProfile);
+            result.renurbsMaxVelocity = result.stateProfile ? result.stateProfile->maxVelocity : 0.0f;
+            result.renurbsMaxAcceleration = result.stateProfile ? result.stateProfile->maxAcceleration : 0.0f;
+            result.renurbsMaxJerk = result.stateProfile ? result.stateProfile->maxJerk : 0.0f;
+            result.renurbsMaxTime = result.stateProfile ? static_cast<float>(result.stateProfile->totalTime) : 0.0f;
 
             // ── Step 3c: Compute pressure advance profiles ──
             // Uses analytical PA algorithms (closed-form computation on WSS

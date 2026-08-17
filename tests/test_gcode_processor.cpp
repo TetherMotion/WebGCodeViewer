@@ -55,6 +55,12 @@ TEST(GCodeProcessor, ParsesSquareToolpath) {
     EXPECT_GT(result.sampleCount, 0u);
     EXPECT_GT(result.duration, 0.0);
     EXPECT_GT(result.pathLength, 350.0); // 4 × 100mm = 400mm
+
+    // State profile should be populated from the analytical Pareto profile.
+    ASSERT_TRUE(result.stateProfile.has_value());
+    EXPECT_GT(result.stateProfile->texels.size(), 0u);
+    EXPECT_GT(result.stateProfile->maxVelocity, 0.0f);
+    EXPECT_FLOAT_EQ(result.stateProfile->totalLength, result.pathLength);
 }
 
 TEST(GCodeProcessor, EmptyGcodeReturnsError) {
@@ -164,6 +170,12 @@ TEST(GCodeProcessor, ParsesArcToolpath) {
     // Path length = π * 25 ≈ 78.5mm
     EXPECT_GT(result.pathLength, 70.0);
     EXPECT_LT(result.pathLength, 90.0);
+
+    // State profile should be populated from the analytical Pareto profile.
+    ASSERT_TRUE(result.stateProfile.has_value());
+    EXPECT_GT(result.stateProfile->texels.size(), 0u);
+    EXPECT_GT(result.stateProfile->maxVelocity, 0.0f);
+    EXPECT_FLOAT_EQ(result.stateProfile->totalLength, result.pathLength);
 }
 
 TEST(GCodeProcessor, ArcSamplesFollowCircularPath) {

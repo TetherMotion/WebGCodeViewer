@@ -25,6 +25,7 @@
 #include "tether/motion_planner/geometry/PlanningSegmentConverter.hpp"
 #include "tether/motion_planner/profile_renurbs/ReNURBSProfile.hpp"
 #include "tether/web/PaProfileBuilder.hpp"
+#include "tether/web/StateProfile.hpp"
 
 #include <memory>
 #include <optional>
@@ -115,6 +116,11 @@ struct ProcessResult {
     float renurbsMaxAcceleration = 0.0f;
     float renurbsMaxJerk = 0.0f;
     float renurbsMaxTime = 0.0f;
+
+    /// Uniformly sampled 1D state profile (t, v, a, j) for the WebGPU UI.
+    /// Replaces the ReNURBS profile for velocity/acceleration/jerk/time color
+    /// mapping; sampled directly from the analytical Pareto velocity profile.
+    std::optional<StateProfile> stateProfile;
 
     /// Pressure advance profiles — one per algorithm (Linear, PowerLaw,
     /// CrossWLF, LTI-Deconv, LPV-Deconv). Each contains pre-PA velocity
