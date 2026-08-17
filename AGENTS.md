@@ -11,11 +11,15 @@ backend (Drogon HTTP server + WebSocket) and TypeScript frontend.
 # Configure
 cmake -B build
 
-# Build everything (C++ server + frontend)
+# Build everything (C++ server + frontend + copy to build/web/frontend)
 cmake --build build -j$(nproc)
 
-# Build only frontend (TypeScript bundle)
+# Build only frontend TypeScript bundle
 cmake --build build --target wgv_frontend -j$(nproc)
+
+# Copy freshly built frontend assets into build/web/frontend (needed before running
+# web_viewer or Playwright if you only built the TS bundle)
+cmake --build build --target wgv_frontend_deploy -j$(nproc)
 
 # Build only the web viewer binary
 cmake --build build --target web_viewer -j$(nproc)
