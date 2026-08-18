@@ -653,6 +653,21 @@ body {
     text-align: left;
 }
 
+.menu-dropdown .auto-layer-filter-row {
+    padding: 4px 8px;
+    gap: 8px;
+}
+
+.menu-dropdown .auto-layer-filter-row input[type="checkbox"] {
+    flex: 0 0 auto;
+    cursor: pointer;
+}
+
+.menu-dropdown .auto-layer-filter-row label {
+    flex: 1;
+    user-select: none;
+}
+
 .menu-dropdown .menu-divider {
     height: 1px;
     background: var(--border);

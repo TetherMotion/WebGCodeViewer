@@ -17,6 +17,7 @@ export interface ControlPanelEvents {
   resetView: void;
   exportImage: void;
   layerChanged: number;       // layer index, -1 = all layers
+  toggleAutoLayerFilter: boolean;  // auto-filter toolpath to current Z layer during playback
   timeChanged: number;        // 0..1 fraction of path
   playStateChanged: boolean;  // true = playing
   toggleMiniplot: void;
@@ -468,6 +469,31 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     };
     this.layerGroup.appendChild(allLayersBtn);
     playbackDropdown.appendChild(this.layerGroup);
+
+    // Checkbox: "Show only current Z layer" — when checked, the toolpath is
+    // auto-filtered to the current Z layer as the print head moves during
+    // realtime playback. Default off so the full toolpath stays visible.
+    const autoLayerRow = document.createElement('div');
+    autoLayerRow.className = 'menu-row auto-layer-filter-row';
+    const autoLayerCheckbox = document.createElement('input');
+    autoLayerCheckbox.type = 'checkbox';
+    autoLayerCheckbox.id = 'auto-layer-filter';
+    autoLayerCheckbox.checked = false;
+    autoLayerCheckbox.title = 'When enabled, automatically filter the toolpath to the current Z layer as the print head moves';
+    const autoLayerLabel = document.createElement('label');
+    autoLayerLabel.htmlFor = 'auto-layer-filter';
+    autoLayerLabel.textContent = 'Show only current Z layer';
+    autoLayerLabel.style.cursor = 'pointer';
+    // Stop propagation on click so the document-level outside-click handler
+    // doesn't close the dropdown when interacting with the checkbox/label.
+    autoLayerCheckbox.onclick = (e) => e.stopPropagation();
+    autoLayerLabel.onclick = (e) => e.stopPropagation();
+    autoLayerCheckbox.onchange = () => {
+      this.emit('toggleAutoLayerFilter', autoLayerCheckbox.checked);
+    };
+    autoLayerRow.appendChild(autoLayerCheckbox);
+    autoLayerRow.appendChild(autoLayerLabel);
+    playbackDropdown.appendChild(autoLayerRow);
 
     // Tool filter (hidden until tools are detected)
     addDivider(playbackDropdown);
