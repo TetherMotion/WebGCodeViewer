@@ -682,6 +682,9 @@ export class WebGPUApp {
 
     this.gridRenderer = new GridRenderer(this.device);
     await this.gridRenderer.init(this.format);
+    // Initially (before any job is loaded) point the camera at the center of
+    // the grid plane and orbit around it, rather than the grid's origin corner.
+    this.camera.setTarget({ x: this.gridRenderer.centerX, y: this.gridRenderer.centerY, z: 0 });
 
     this.crossSectionRenderer = new CrossSectionRenderer(this.device);
     await this.crossSectionRenderer.init(this.format);
