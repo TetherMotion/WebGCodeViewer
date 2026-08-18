@@ -217,10 +217,8 @@ export class NavigationGizmo {
     // X axis arrow head
     this.addArrowHead(positions, colors, indices, vertexOffset,
       [AXIS_LENGTH, 0, 0], [1, 0, 0], COLORS.X);
-    vertexOffset += 16; // 1 tip + 12 ring + 3 center = 16... actually 1 + 12 = 13
-
-    // Recount: each arrow head = 1 tip + 12 ring vertices = 13 vertices, 36 indices (12 triangles)
-    vertexOffset = 13;
+    // Each arrow head = 1 tip + 12 ring vertices = 13 vertices, 36 indices (12 triangles)
+    vertexOffset += 13;
 
     this.addArrowHead(positions, colors, indices, vertexOffset,
       [0, AXIS_LENGTH, 0], [0, 1, 0], COLORS.Y);
@@ -370,7 +368,7 @@ export class NavigationGizmo {
     pass.setVertexBuffer(0, this.axisBuffer!);
     pass.setVertexBuffer(1, this.colorBuffer!);
     pass.setIndexBuffer(this.indexBuffer!, 'uint32');
-    pass.drawIndexed(36); // 3 axes × 12 triangles
+    pass.drawIndexed(108); // 3 axes × 12 triangles × 3 indices
 
     pass.end();
     this.device.queue.submit([encoder.finish()]);
