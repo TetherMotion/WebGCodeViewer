@@ -24,7 +24,6 @@
     "@webgpu/types": "^0.1.71"
   },
   "dependencies": {
-    "@tether/viewer-core": "*",
-    "@chartgpu/chartgpu": "file:../../third_party/ChartGPU"
+    "@tether/viewer-core": "*"
   }
 }

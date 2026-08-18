@@ -5,9 +5,8 @@
   "type": "module",
   "scripts": {
     "proto:generate": "mkdir -p ../packages/viewer-core/src/generated && protoc --proto_path=../proto --plugin=protoc-gen-es=../node_modules/.bin/protoc-gen-es --es_out=../packages/viewer-core/src/generated --es_opt=target=ts ../proto/tether_viewer.proto",
-    "build:chartgpu": "cd ../third_party/ChartGPU && npm install --silent && npm run build --silent",
-    "build": "npm run build:chartgpu --silent && tsc && node build.mjs",
-    "build:dev": "npm run build:chartgpu --silent && tsc && node build.mjs --dev",
+    "build": "tsc && node build.mjs",
+    "build:dev": "tsc && node build.mjs --dev",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

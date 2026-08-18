@@ -22,10 +22,7 @@
     "noFallthroughCasesInSwitch": true,
     "exactOptionalPropertyTypes": false,
     "useDefineForClassFields": false,
-    "baseUrl": ".",
-    "paths": {
-      "@chartgpu/chartgpu": ["../third_party/ChartGPU/dist/index"]
-    }
+    "baseUrl": "."
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "tests"]

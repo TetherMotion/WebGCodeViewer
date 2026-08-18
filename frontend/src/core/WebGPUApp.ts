@@ -32,9 +32,7 @@ import { PrinterFrameRenderer } from "@tether/scene-decorators";
 import { DirectionCubeRenderer } from "@tether/nav-overlay";
 import { NurbsRenderer, NurbsColorAttribute } from "@tether/nurbs-renderer";
 import { GpuPlot, PlotSeries, PressureAdvanceControls, PressureAdvanceAlgorithmId, PressureAdvancePlotRenderer } from "@tether/pressure-advance-plot";
-import { MiniplotRenderer } from "@tether/miniplot"
 import type { MiniplotData } from "@tether/viewer-core";
-import { ComputeMiniplotRenderer } from "@tether/miniplot";
 import { WssMiniplotRenderer, type WssPlotQuantity } from "@tether/miniplot";
 import { GridLabels } from "@tether/ground-grid";
 import { GridLabelRenderer } from "@tether/ground-grid";
@@ -50,7 +48,6 @@ import { degToRad } from "@tether/viewer-core";
 
 export class WebGPUApp {
   private canvas: HTMLCanvasElement;
-  private adapter: GPUAdapter | null = null;
   private device: GPUDevice | null = null;
   private context: GPUCanvasContext | null = null;
   private format: GPUTextureFormat = 'bgra8unorm';
@@ -78,7 +75,7 @@ export class WebGPUApp {
   private nurbsRenderer: NurbsRenderer | null = null;
   private gridLabels: GridLabels | null = null;
   private gridLabelRenderer: GridLabelRenderer | null = null;
-  private miniplotRenderer: WssMiniplotRenderer | ComputeMiniplotRenderer | MiniplotRenderer | null = null;
+  private miniplotRenderer: WssMiniplotRenderer | null = null;
   private miniplotContainer: HTMLElement | null = null;
   private miniplotLabel: HTMLElement | null = null;
   private miniplotVisible: boolean = false;
@@ -434,18 +431,8 @@ export class WebGPUApp {
         'Jerk': 'jerk',
       };
       const q = qMap[quantityName] || 'velocity';
-      if (this.miniplotRenderer instanceof WssMiniplotRenderer) {
+      if (this.miniplotRenderer) {
         this.miniplotRenderer.setQuantity(q);
-        this.updateMiniplotLabel();
-      } else if (this.miniplotRenderer) {
-        // Fallback: ComputeMiniplotRenderer/MiniplotRenderer use setAxis
-        const axisMap: Record<string, string> = {
-          'Velocity': 'speedLinear',
-          'Acceleration': 'speedLinear',
-          'Jerk': 'speedLinear',
-        };
-        const axis = axisMap[quantityName] || 'speedLinear';
-        (this.miniplotRenderer as ComputeMiniplotRenderer).setAxis(axis as any);
         this.updateMiniplotLabel();
       }
     });
@@ -667,7 +654,6 @@ export class WebGPUApp {
   async init(): Promise<void> {
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error('WebGPU not supported');
-    this.adapter = adapter;
     this.device = await adapter.requestDevice();
     this.context = this.canvas.getContext('webgpu')!;
     this.format = navigator.gpu.getPreferredCanvasFormat();
@@ -727,22 +713,10 @@ export class WebGPUApp {
       this.gridLabelRenderer.updateLabels(this.gridRenderer.ticks);
     }
 
-    // Miniplot renderer (WSS analytical, fallback to compute-shader resampled)
+    // Miniplot renderer (WSS analytical — evaluates WSS arcs in a compute shader)
     if (this.miniplotContainer && this.device) {
-      try {
-        this.miniplotRenderer = new WssMiniplotRenderer(this.miniplotContainer, this.device);
-        await this.miniplotRenderer.init();
-      } catch (err) {
-        console.warn('WssMiniplotRenderer init failed, falling back to ComputeMiniplotRenderer:', err);
-        try {
-          this.miniplotRenderer = new ComputeMiniplotRenderer(this.miniplotContainer, this.device);
-          await this.miniplotRenderer.init();
-        } catch (err2) {
-          console.warn('ComputeMiniplotRenderer init failed, falling back to ChartGPU:', err2);
-          this.miniplotRenderer = new MiniplotRenderer(this.miniplotContainer, this.device, this.adapter!);
-          await this.miniplotRenderer.init();
-        }
-      }
+      this.miniplotRenderer = new WssMiniplotRenderer(this.miniplotContainer, this.device);
+      await this.miniplotRenderer.init();
       this.setupMiniplotInteraction(this.miniplotContainer);
     }
 
@@ -1525,7 +1499,7 @@ export class WebGPUApp {
   // ── Miniplot ─────────────────────────────────────────────────────────────
 
   private setupMiniplotInteraction(container: HTMLElement): void {
-    // ChartGPU handles wheel zoom and drag-to-pan internally.
+    // The WssMiniplotRenderer handles wheel zoom and drag-to-pan internally.
     this.miniplotRenderer?.onViewRangeChange(() => this.updateMiniplotLabel());
 
     container.addEventListener('dblclick', () => {
@@ -1555,27 +1529,22 @@ export class WebGPUApp {
   }
 
   /**
-   * Push the current WSS data (or MiniplotData fallback) to the miniplot renderer.
+   * Push the current WSS data to the miniplot renderer.
    * Called when the miniplot becomes visible or when new data arrives.
    */
   private updateMiniplotData(): void {
     if (!this.miniplotRenderer) return;
 
-    if (this.miniplotRenderer instanceof WssMiniplotRenderer) {
-      if (this.currentWss) {
-        this.miniplotRenderer.setWssData(this.currentWss);
-        // Pass event lines and line-to-time map for overlays
-        this.miniplotRenderer.setEventLines({
-          toolChangeLines: this.miniplotData?.toolChangeLines,
-          tempChangeLines: this.miniplotData?.tempChangeLines,
-          fanChangeLines: this.miniplotData?.fanChangeLines,
-          coolantChangeLines: this.miniplotData?.coolantChangeLines,
-        });
-        this.miniplotRenderer.setLineToTimeMap(this.buildLineToTimeMap());
-      }
-    } else if (this.miniplotData) {
-      // Fallback: ComputeMiniplotRenderer or MiniplotRenderer
-      (this.miniplotRenderer as ComputeMiniplotRenderer | MiniplotRenderer).setData(this.miniplotData);
+    if (this.currentWss) {
+      this.miniplotRenderer.setWssData(this.currentWss);
+      // Pass event lines and line-to-time map for overlays
+      this.miniplotRenderer.setEventLines({
+        toolChangeLines: this.miniplotData?.toolChangeLines,
+        tempChangeLines: this.miniplotData?.tempChangeLines,
+        fanChangeLines: this.miniplotData?.fanChangeLines,
+        coolantChangeLines: this.miniplotData?.coolantChangeLines,
+      });
+      this.miniplotRenderer.setLineToTimeMap(this.buildLineToTimeMap());
     }
   }
 

@@ -15,7 +15,6 @@ import { ToolChangeMarkerRenderer } from "@tether/scene-decorators";
 import { PrinterFrameRenderer } from "@tether/scene-decorators";
 import { NurbsRenderer } from "@tether/nurbs-renderer";
 import { ToolpathRenderer } from '../src/renderers/ToolpathRenderer';
-import { MiniplotRenderer } from "@tether/miniplot";
 import { DirectionCubeRenderer } from "@tether/nav-overlay";
 import { GridLabelRenderer } from "@tether/ground-grid";
 import { mat4Identity } from "@tether/viewer-core";
@@ -1251,63 +1250,6 @@ describe('ToolpathRenderer', () => {
     const r = new ToolpathRenderer(device);
     await r.init('bgra8unorm');
     r.updateData(makeTHRData());
-    r.destroy();
-    expect(true).toBe(true);
-  });
-});
-
-describe('MiniplotRenderer', () => {
-  let device: ReturnType<typeof createMockDevice>;
-  let canvas: HTMLCanvasElement;
-
-  beforeEach(() => {
-    device = createMockDevice();
-    setupNavigatorGPU(device);
-    canvas = createMockCanvas(200, 100);
-  });
-
-  it('init creates pipeline', async () => {
-    const r = new MiniplotRenderer(canvas, device);
-    await r.init();
-    expect(true).toBe(true);
-  });
-
-  it('setData with empty segments', async () => {
-    const r = new MiniplotRenderer(canvas, device);
-    await r.init();
-    r.setData({ totalTime: 0, segments: [] });
-    expect(true).toBe(true);
-  });
-
-  it('setData with segments', async () => {
-    const r = new MiniplotRenderer(canvas, device);
-    await r.init();
-    r.setData({
-      totalTime: 100,
-      segments: [
-        { timeStart: 0, duration: 10, lineNumber: 0, speedX: 10, speedY: 0, speedZ: 0, speedE: 0, speedLinear: 10 },
-        { timeStart: 10, duration: 20, lineNumber: 1, speedX: 20, speedY: 0, speedZ: 0, speedE: 0, speedLinear: 20 },
-      ],
-    });
-    expect(true).toBe(true);
-  });
-
-  it('render executes without error', async () => {
-    const r = new MiniplotRenderer(canvas, device);
-    await r.init();
-    r.setData({
-      totalTime: 100,
-      segments: [
-        { timeStart: 0, duration: 50, lineNumber: 0, speedX: 10, speedY: 0, speedZ: 0, speedE: 0, speedLinear: 10 },
-      ],
-    });
-    r.render();
-    expect(true).toBe(true);
-  });
-
-  it('destroy cleans up', async () => {
-    const r = new MiniplotRenderer(canvas, device);
-    await r.init();
     r.destroy();
     expect(true).toBe(true);
   });
