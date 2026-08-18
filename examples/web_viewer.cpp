@@ -11,10 +11,10 @@
 /// connection is required — all processing happens in-memory.
 ///
 /// Usage:
-///   web_viewer [--port PORT] [--web-root DIR] [--bind ADDR] [--threads N]
+///   web_viewer [-p PORT] [-b ADDR] [-w DIR] [-j N]
 ///
 /// Example:
-///   web_viewer --port 8080
+///   web_viewer -p 8080
 ///   # Then open http://localhost:8080 in a WebGPU-compatible browser
 ///
 /// Frontend assets are automatically copied to the build directory by CMake.
@@ -24,23 +24,11 @@
 #include "tether/web/WebServer.hpp"
 #include "tether/web/WebServerConfig.hpp"
 
-#include <chrono>
+#include <argparse/argparse.hpp>
+
 #include <filesystem>
 #include <iostream>
 #include <string>
-
-static void printUsage(const char* prog) {
-    std::cerr << "Usage: " << prog << " [options]\n"
-              << "\nOptions:\n"
-              << "  --port PORT       HTTP listen port (default: 8080)\n"
-              << "  --bind ADDR       Bind address (default: 0.0.0.0)\n"
-              << "  --web-root DIR    Frontend static files directory\n"
-              << "  --threads N       Number of worker threads (default: auto)\n"
-              << "  --help            Show this help\n"
-              << "\nExample:\n"
-              << "  " << prog << " --port 8080\n"
-              << "  # Open http://localhost:8080 in a WebGPU-compatible browser\n";
-}
 
 /// @brief Try to locate the frontend assets directory.
 static std::string findWebRoot(const char* argv0) {
@@ -68,25 +56,33 @@ static std::string findWebRoot(const char* argv0) {
 int main(int argc, char* argv[]) {
     tether::web::WebServerConfig config;
 
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        if (arg == "--help" || arg == "-h") {
-            printUsage(argv[0]);
-            return 0;
-        } else if (arg == "--port" && i + 1 < argc) {
-            config.port = std::stoi(argv[++i]);
-        } else if (arg == "--bind" && i + 1 < argc) {
-            config.bindAddress = argv[++i];
-        } else if (arg == "--web-root" && i + 1 < argc) {
-            config.webRoot = argv[++i];
-        } else if (arg == "--threads" && i + 1 < argc) {
-            config.threads = std::stoi(argv[++i]);
-        } else {
-            std::cerr << "Unknown argument: " << arg << "\n";
-            printUsage(argv[0]);
-            return 1;
-        }
+    argparse::ArgumentParser program("web_viewer");
+    program.add_argument("-p", "--port")
+        .scan<'i', int>()
+        .default_value(config.port)
+        .help("HTTP listen port (default: 8080)");
+    program.add_argument("-b", "--bind")
+        .default_value(config.bindAddress)
+        .help("Bind address (default: 0.0.0.0)");
+    program.add_argument("-w", "--web-root")
+        .default_value(std::string{})
+        .help("Frontend static files directory (auto-detected if omitted)");
+    program.add_argument("-j", "--threads")
+        .scan<'i', int>()
+        .default_value(config.threads)
+        .help("Number of worker threads (default: auto)");
+
+    try {
+        program.parse_args(argc, argv);
+    } catch (const std::runtime_error& err) {
+        std::cerr << err.what() << '\n' << program;
+        return 1;
     }
+
+    config.port = program.get<int>("--port");
+    config.bindAddress = program.get<std::string>("--bind");
+    config.webRoot = program.get<std::string>("--web-root");
+    config.threads = program.get<int>("--threads");
 
     // Auto-detect web root if not specified
     if (config.webRoot.empty()) {
