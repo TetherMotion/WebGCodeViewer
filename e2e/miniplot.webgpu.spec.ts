@@ -27,7 +27,7 @@ async function uploadAndProcess(request: APIRequestContext) {
   return jobId;
 }
 
-test.describe('Compute shader miniplot (WebGPU)', () => {
+test.describe('WSS miniplot (WebGPU)', () => {
   test('miniplot renders without console errors when toggled', async ({ page, request }) => {
     const jobId = await uploadAndProcess(request);
     const consoleErrors: string[] = [];
@@ -42,10 +42,10 @@ test.describe('Compute shader miniplot (WebGPU)', () => {
     await page.keyboard.press('m');
     await page.waitForTimeout(500);
 
-    // Wait for the compute miniplot canvas to be present and visible.
-    const canvas = page.locator('#miniplot-container canvas.miniplot-compute-canvas');
+    // Wait for the WSS miniplot canvas (or compute miniplot fallback) to be present and visible.
+    const canvas = page.locator('#miniplot-container canvas.wss-miniplot-canvas, #miniplot-container canvas.miniplot-compute-canvas');
     await expect(canvas).toBeVisible();
 
-    expect(consoleErrors, 'No console errors while opening/running compute miniplot').toEqual([]);
+    expect(consoleErrors, 'No console errors while opening/running miniplot').toEqual([]);
   });
 });

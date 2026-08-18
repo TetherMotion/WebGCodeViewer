@@ -377,17 +377,17 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
       this.emit('toggleMiniplot', undefined);
     };
 
-    addSection(plotDropdown, 'Miniplot Axis');
+    addSection(plotDropdown, 'Miniplot Quantity');
     const miniplotAxisLabel = document.createElement('label');
-    miniplotAxisLabel.textContent = 'Axis: ';
+    miniplotAxisLabel.textContent = 'Quantity: ';
     const miniplotAxisSelect = document.createElement('select');
-    for (const ax of ['Extruder', 'X', 'Y', 'Z', 'Linear']) {
+    for (const q of ['Velocity', 'Acceleration', 'Jerk']) {
       const opt = document.createElement('option');
-      opt.value = ax;
-      opt.textContent = ax;
+      opt.value = q;
+      opt.textContent = q;
       miniplotAxisSelect.appendChild(opt);
     }
-    miniplotAxisSelect.value = 'Extruder';
+    miniplotAxisSelect.value = 'Velocity';
     miniplotAxisSelect.onchange = () => this.emit('miniplotAxisChanged', miniplotAxisSelect.value);
     miniplotAxisLabel.appendChild(miniplotAxisSelect);
     addRow(plotDropdown, miniplotAxisLabel);

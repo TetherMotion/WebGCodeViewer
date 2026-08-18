@@ -34,8 +34,9 @@ import { NurbsRenderer, NurbsColorAttribute } from "@tether/nurbs-renderer";
 import { GpuPlot, PlotSeries } from "@tether/pa-plot";
 import { PaControls, PaAlgorithmId } from "@tether/pa-plot";
 import { MiniplotRenderer } from "@tether/miniplot"
-import type { MiniplotAxis, MiniplotData } from "@tether/viewer-core";
+import type { MiniplotData } from "@tether/viewer-core";
 import { ComputeMiniplotRenderer } from "@tether/miniplot";
+import { WssMiniplotRenderer, type WssPlotQuantity } from "@tether/miniplot";
 import { GridLabels } from "@tether/ground-grid";
 import { GridLabelRenderer } from "@tether/ground-grid";
 import { ToolChangeMarkerRenderer } from "@tether/scene-decorators";
@@ -78,7 +79,7 @@ export class WebGPUApp {
   private nurbsRenderer: NurbsRenderer | null = null;
   private gridLabels: GridLabels | null = null;
   private gridLabelRenderer: GridLabelRenderer | null = null;
-  private miniplotRenderer: ComputeMiniplotRenderer | MiniplotRenderer | null = null;
+  private miniplotRenderer: WssMiniplotRenderer | ComputeMiniplotRenderer | MiniplotRenderer | null = null;
   private miniplotContainer: HTMLElement | null = null;
   private miniplotLabel: HTMLElement | null = null;
   private miniplotVisible: boolean = false;
@@ -426,17 +427,25 @@ export class WebGPUApp {
     this.controlPanel.on('toggleMiniplot', () => {
       this.toggleMiniplot();
     });
-    this.controlPanel.on('miniplotAxisChanged', (axisName) => {
-      const axisMap: Record<string, MiniplotAxis> = {
-        'Extruder': 'speedE',
-        'X': 'speedX',
-        'Y': 'speedY',
-        'Z': 'speedZ',
-        'Linear': 'speedLinear',
+    this.controlPanel.on('miniplotAxisChanged', (quantityName) => {
+      const qMap: Record<string, WssPlotQuantity> = {
+        'Velocity': 'velocity',
+        'Acceleration': 'acceleration',
+        'Jerk': 'jerk',
       };
-      const axis = axisMap[axisName] || 'speedE';
-      if (this.miniplotRenderer) {
-        this.miniplotRenderer.setAxis(axis);
+      const q = qMap[quantityName] || 'velocity';
+      if (this.miniplotRenderer instanceof WssMiniplotRenderer) {
+        this.miniplotRenderer.setQuantity(q);
+        this.updateMiniplotLabel();
+      } else if (this.miniplotRenderer) {
+        // Fallback: ComputeMiniplotRenderer/MiniplotRenderer use setAxis
+        const axisMap: Record<string, string> = {
+          'Velocity': 'speedLinear',
+          'Acceleration': 'speedLinear',
+          'Jerk': 'speedLinear',
+        };
+        const axis = axisMap[quantityName] || 'speedLinear';
+        (this.miniplotRenderer as ComputeMiniplotRenderer).setAxis(axis as any);
         this.updateMiniplotLabel();
       }
     });
@@ -715,15 +724,21 @@ export class WebGPUApp {
       this.gridLabelRenderer.updateLabels(this.gridRenderer.ticks);
     }
 
-    // Miniplot renderer (compute-shader resampled speed plot, fallback to ChartGPU)
+    // Miniplot renderer (WSS analytical, fallback to compute-shader resampled)
     if (this.miniplotContainer && this.device) {
       try {
-        this.miniplotRenderer = new ComputeMiniplotRenderer(this.miniplotContainer, this.device);
+        this.miniplotRenderer = new WssMiniplotRenderer(this.miniplotContainer, this.device);
         await this.miniplotRenderer.init();
       } catch (err) {
-        console.warn('ComputeMiniplotRenderer init failed, falling back to ChartGPU:', err);
-        this.miniplotRenderer = new MiniplotRenderer(this.miniplotContainer, this.device, this.adapter!);
-        await this.miniplotRenderer.init();
+        console.warn('WssMiniplotRenderer init failed, falling back to ComputeMiniplotRenderer:', err);
+        try {
+          this.miniplotRenderer = new ComputeMiniplotRenderer(this.miniplotContainer, this.device);
+          await this.miniplotRenderer.init();
+        } catch (err2) {
+          console.warn('ComputeMiniplotRenderer init failed, falling back to ChartGPU:', err2);
+          this.miniplotRenderer = new MiniplotRenderer(this.miniplotContainer, this.device, this.adapter!);
+          await this.miniplotRenderer.init();
+        }
       }
       this.setupMiniplotInteraction(this.miniplotContainer);
     }
@@ -1525,16 +1540,55 @@ export class WebGPUApp {
       // Resize after becoming visible
       requestAnimationFrame(() => {
         this.miniplotRenderer?.resize();
-        if (this.miniplotData) {
-          this.miniplotRenderer?.setData(this.miniplotData!);
-        }
+        this.updateMiniplotData();
         this.updateMiniplotLabel();
       });
-      // Fetch data if not yet loaded
+      // Fetch segment speeds if not yet loaded (needed for event line numbers
+      // and totalDuration even when using WSS analytical rendering)
       if (!this.miniplotData && this.currentJobId) {
         this.fetchMiniplotData(this.currentJobId);
       }
     }
+  }
+
+  /**
+   * Push the current WSS data (or MiniplotData fallback) to the miniplot renderer.
+   * Called when the miniplot becomes visible or when new data arrives.
+   */
+  private updateMiniplotData(): void {
+    if (!this.miniplotRenderer) return;
+
+    if (this.miniplotRenderer instanceof WssMiniplotRenderer) {
+      if (this.currentWss) {
+        this.miniplotRenderer.setWssData(this.currentWss);
+        // Pass event lines and line-to-time map for overlays
+        this.miniplotRenderer.setEventLines({
+          toolChangeLines: this.miniplotData?.toolChangeLines,
+          tempChangeLines: this.miniplotData?.tempChangeLines,
+          fanChangeLines: this.miniplotData?.fanChangeLines,
+          coolantChangeLines: this.miniplotData?.coolantChangeLines,
+        });
+        this.miniplotRenderer.setLineToTimeMap(this.buildLineToTimeMap());
+      }
+    } else if (this.miniplotData) {
+      // Fallback: ComputeMiniplotRenderer or MiniplotRenderer
+      (this.miniplotRenderer as ComputeMiniplotRenderer | MiniplotRenderer).setData(this.miniplotData);
+    }
+  }
+
+  /**
+   * Build a map from G-code line number to start time, using MiniplotData segments.
+   */
+  private buildLineToTimeMap(): Map<number, number> {
+    const map = new Map<number, number>();
+    if (this.miniplotData) {
+      for (const s of this.miniplotData.segments) {
+        if (!map.has(s.lineNumber)) {
+          map.set(s.lineNumber, s.timeStart);
+        }
+      }
+    }
+    return map;
   }
 
   private async fetchMiniplotData(jobId: string): Promise<void> {
@@ -1551,10 +1605,9 @@ export class WebGPUApp {
         this.miniplotData.fanChangeLines = this.gcodeMetadata.fanEvents.map(fe => fe.lineNumber);
         this.miniplotData.coolantChangeLines = this.gcodeMetadata.coolantEvents.map(ce => ce.lineNumber);
       }
-      if (this.miniplotRenderer) {
-        this.miniplotRenderer.setData(this.miniplotData);
-        this.updateMiniplotLabel();
-      }
+      // Update the miniplot renderer with the new data
+      this.updateMiniplotData();
+      this.updateMiniplotLabel();
       // Update total duration and info panel now that we have speed data
       if (this.miniplotData) {
         this.totalDuration = this.miniplotData.totalTime;
@@ -1654,8 +1707,9 @@ export class WebGPUApp {
     const state = this.paControls.getState();
     const series: PlotSeries[] = [];
 
-    // Motion profile series from the analytical WSS (sampled on CPU for now;
-    // Phase 7 will replace this with a WebGPU compute shader miniplot).
+    // Motion profile series from the analytical WSS (sampled to TRNP for the
+    // PA plot; the miniplot at the bottom of the screen uses WssMiniplotRenderer
+    // which evaluates the WSS analytically in a compute shader).
     const motionTrnp = this.currentWss
       ? wssToTrnp(this.currentWss)
       : null;
@@ -1894,6 +1948,11 @@ export class WebGPUApp {
         this.nurbsRenderer?.updateWss(this.currentWss);
         console.info(`WSS loaded: ${this.currentWss.arcs.length} arcs, ` +
                      `${wssBinary.byteLength} bytes, totalLength=${this.currentWss.totalLength.toFixed(1)}mm`);
+        // Update miniplot if visible and using WssMiniplotRenderer
+        if (this.miniplotVisible) {
+          this.updateMiniplotData();
+          this.updateMiniplotLabel();
+        }
       } catch (e) {
         // WSS is optional — if it fails, the renderer falls back to
         // ReNURBS or piece-level coloring.
@@ -2269,10 +2328,9 @@ export class WebGPUApp {
         this.miniplotData.tempChangeLines = gcodeMetadata.temperatureEvents.map(te => te.lineNumber);
         this.miniplotData.fanChangeLines = gcodeMetadata.fanEvents.map(fe => fe.lineNumber);
         this.miniplotData.coolantChangeLines = gcodeMetadata.coolantEvents.map(ce => ce.lineNumber);
-        if (this.miniplotRenderer) {
-          this.miniplotRenderer.setData(this.miniplotData);
-          this.updateMiniplotLabel();
-        }
+        // Update miniplot renderer with enriched event data
+        this.updateMiniplotData();
+        this.updateMiniplotLabel();
       }
 
       // Update tool change markers with 3D positions
