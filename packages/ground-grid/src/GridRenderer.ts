@@ -32,6 +32,10 @@ export class GridRenderer {
   gridSize: number = 200;
   gridDivisions: number = 20;
 
+  /** Center of the grid in world space. The grid spans [center - size/2, center + size/2]. */
+  centerX: number = 100;
+  centerY: number = 100;
+
   /** Tick mark length as a fraction of grid step. */
   tickLength: number = 0.3;
 
@@ -178,6 +182,9 @@ export class GridRenderer {
     const size = this.gridSize;
     const step = this.gridSize / this.gridDivisions;
     const tickLen = step * this.tickLength;
+    // Grid spans from (cx - size/2) to (cx + size/2) in X, same in Y
+    const x0 = this.centerX - size / 2;
+    const y0 = this.centerY - size / 2;
 
     // Darker colors to contrast with the lighter background
     const gridColor: [number, number, number] = [0.25, 0.25, 0.27];
@@ -195,35 +202,36 @@ export class GridRenderer {
       lines.push(x2, y2, z2, color[0], color[1], color[2]);
     };
 
-    // ── Grid lines — grid starts at (0,0) as its corner, extends to (size, size) ──
+    // ── Grid lines — centered at (centerX, centerY) ──
     for (let i = 0; i <= this.gridDivisions; i++) {
-      const p = i * step;
-      addLine(p, 0, 0, p, size, 0, gridColor); // vertical (constant X)
-      addLine(0, p, 0, size, p, 0, gridColor); // horizontal (constant Y)
+      const p = x0 + i * step;  // X position
+      addLine(p, y0, 0, p, y0 + size, 0, gridColor); // vertical (constant X)
+      const q = y0 + i * step;  // Y position
+      addLine(x0, q, 0, x0 + size, q, 0, gridColor); // horizontal (constant Y)
     }
 
     // ── Axis lines along the edges of the grid (darker) ──
-    addLine(0, 0, 0, size, 0, 0, axisColor); // bottom edge (X axis)
-    addLine(0, 0, 0, 0, size, 0, axisColor); // left edge (Y axis)
+    addLine(x0, y0, 0, x0 + size, y0, 0, axisColor); // bottom edge (X axis)
+    addLine(x0, y0, 0, x0, y0 + size, 0, axisColor); // left edge (Y axis)
 
     // ── Tick marks on the BORDER edges ──
-    // X-axis ticks: along the bottom edge (Y = 0), ticks extend inward (+Y)
+    // X-axis ticks: along the bottom edge (Y = y0), ticks extend inward (+Y)
     this.ticks = [];
     for (let i = 0; i <= this.gridDivisions; i++) {
-      const p = i * step;
+      const p = x0 + i * step;
       // Tick mark on bottom edge
-      addLine(p, 0, 0, p, tickLen, 0, tickColor);
+      addLine(p, y0, 0, p, y0 + tickLen, 0, tickColor);
       // Label position: just inside the tick, at the bottom edge
-      this.ticks.push({ position: [p, tickLen, 0], value: p, axis: 0 });
+      this.ticks.push({ position: [p, y0 + tickLen, 0], value: p, axis: 0 });
     }
 
-    // Y-axis ticks: along the left edge (X = 0), ticks extend inward (+X)
+    // Y-axis ticks: along the left edge (X = x0), ticks extend inward (+X)
     for (let i = 0; i <= this.gridDivisions; i++) {
-      const p = i * step;
+      const p = y0 + i * step;
       // Tick mark on left edge
-      addLine(0, p, 0, tickLen, p, 0, tickColor);
+      addLine(x0, p, 0, x0 + tickLen, p, 0, tickColor);
       // Label position: just inside the tick, at the left edge
-      this.ticks.push({ position: [tickLen, p, 0], value: p, axis: 1 });
+      this.ticks.push({ position: [x0 + tickLen, p, 0], value: p, axis: 1 });
     }
 
     const vertices = new Float32Array(lines);
@@ -240,14 +248,16 @@ export class GridRenderer {
   /** Build a single quad covering the grid area for the checkerboard pattern. */
   private buildChecker(): void {
     const s = this.gridSize;
-    // Two triangles forming a quad: (0,0) → (s,0) → (s,s) → (0,s)
+    const x0 = this.centerX - s / 2;
+    const y0 = this.centerY - s / 2;
+    // Two triangles forming a quad centered at (centerX, centerY)
     const quad = new Float32Array([
-      0, 0, 0,
-      s, 0, 0,
-      s, s, 0,
-      0, 0, 0,
-      s, s, 0,
-      0, s, 0,
+      x0,       y0,       0,
+      x0 + s,   y0,       0,
+      x0 + s,   y0 + s,   0,
+      x0,       y0,       0,
+      x0 + s,   y0 + s,   0,
+      x0,       y0 + s,   0,
     ]);
 
     if (this.checkerVertexBuffer) this.checkerVertexBuffer.destroy();
@@ -256,6 +266,19 @@ export class GridRenderer {
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.checkerVertexBuffer, 0, quad);
+  }
+
+  /**
+   * Reposition the grid so its center is at (cx, cy).
+   * Rebuilds grid geometry and tick positions. Returns the new tick array
+   * so callers can update GridLabelRenderer.
+   */
+  setCenter(cx: number, cy: number): TickInfo[] {
+    this.centerX = cx;
+    this.centerY = cy;
+    this.buildGrid();
+    this.buildChecker();
+    return this.ticks;
   }
 
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {

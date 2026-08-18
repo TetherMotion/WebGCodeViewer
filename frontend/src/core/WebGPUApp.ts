@@ -172,7 +172,7 @@ export class WebGPUApp {
   private layerCountEl: HTMLElement | null = null;
 
   // BUG 3 FIX: Pending camera params from URL — applied after job data loads
-  // (because loadJobData calls camera.fitToBounds which would override them)
+  // (because loadJobData calls fitCameraToBounds which would override them)
   private pendingCamParams: { angle: number; elevation: number; distance: number } | null = null;
 
   // BUG 6 FIX: Track stats-only loop animation ID so it can be cancelled in destroy()
@@ -287,7 +287,7 @@ export class WebGPUApp {
       // BUG 1 FIX: Check NURBS data first (the common path), then TTHR
       const bounds = this.getCurrentFullBounds();
       if (bounds) {
-        this.camera.fitToBounds(
+        this.fitCameraToBounds(
           { x: bounds.min[0], y: bounds.min[1], z: bounds.min[2] },
           { x: bounds.max[0], y: bounds.max[1], z: bounds.max[2] },
         );
@@ -1812,11 +1812,11 @@ export class WebGPUApp {
     };
 
     // Re-frame on the object's bounding box so the whole object is visible
-    // regardless of any prior zoom/pan. fitToBounds centers the orbit target
-    // on the bbox midpoint and sets the orbit distance to fit the object.
+    // regardless of any prior zoom/pan. fitCameraToBounds centers the orbit
+    // target on the bbox midpoint and repositions the grid to match.
     const bounds = this.getCurrentFullBounds();
     if (bounds) {
-      this.camera.fitToBounds(
+      this.fitCameraToBounds(
         { x: bounds.min[0], y: bounds.min[1], z: bounds.min[2] },
         { x: bounds.max[0], y: bounds.max[1], z: bounds.max[2] },
       );
@@ -1924,9 +1924,9 @@ export class WebGPUApp {
                    `${this.currentNBP.header.totalControlPoints} control points, ` +
                    `${nbpBinary.byteLength} bytes`);
 
-      // Fit camera to NURBS bounds
+      // Fit camera to NURBS bounds and reposition grid
       const h = this.currentNBP.header;
-      this.camera.fitToBounds(
+      this.fitCameraToBounds(
         { x: h.boundsMin[0], y: h.boundsMin[1], z: h.boundsMin[2] },
         { x: h.boundsMax[0], y: h.boundsMax[1], z: h.boundsMax[2] },
       );
@@ -1984,7 +1984,7 @@ export class WebGPUApp {
       this.crossSectionRenderer?.updateData(this.currentData!);
 
       const h = this.currentData!.header;
-      this.camera.fitToBounds(
+      this.fitCameraToBounds(
         { x: h.boundsMin[0], y: h.boundsMin[1], z: h.boundsMin[2] },
         { x: h.boundsMax[0], y: h.boundsMax[1], z: h.boundsMax[2] },
       );
@@ -2053,7 +2053,7 @@ export class WebGPUApp {
     this.updateInfoPanel();
 
     // BUG 3 FIX: Apply deferred camera params from URL after data has loaded
-    // and fitToBounds has been called. This ensures ?cam= is not overridden.
+    // and fitCameraToBounds has been called. This ensures ?cam= is not overridden.
     if (this.pendingCamParams) {
       this.camera.setOrbit(
         this.pendingCamParams.angle,
@@ -2706,7 +2706,7 @@ export class WebGPUApp {
    * Format: "angle,elevation,distance" (e.g. "0.5,0.3,400")
    * BUG 3 FIX: If a job is being loaded, defer applying the camera until
    * after loadJobData completes, because loadJobData calls
-   * camera.fitToBounds() which would override the URL camera params.
+   * fitCameraToBounds() which would override the URL camera params.
    */
   applyCameraFromUrl(camParam: string): void {
     const parts = camParam.split(',').map(parseFloat);
@@ -2797,6 +2797,22 @@ export class WebGPUApp {
       return { min: h.boundsMin, max: h.boundsMax };
     }
     return null;
+  }
+
+  /**
+   * Fit the camera to the given bounds AND reposition the grid so its center
+   * matches the bounds center. This ensures the camera's orbit target (which
+   * fitToBounds sets to the bbox midpoint) is always at the center of the grid.
+   */
+  private fitCameraToBounds(min: { x: number; y: number; z: number }, max: { x: number; y: number; z: number }): void {
+    this.camera.fitToBounds(min, max);
+    // Reposition grid to be centered on the bbox midpoint
+    const cx = (min.x + max.x) / 2;
+    const cy = (min.y + max.y) / 2;
+    if (this.gridRenderer) {
+      const ticks = this.gridRenderer.setCenter(cx, cy);
+      this.gridLabelRenderer?.updateLabels(ticks);
+    }
   }
 
   /**
