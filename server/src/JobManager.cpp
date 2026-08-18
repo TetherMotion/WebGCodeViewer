@@ -2,6 +2,7 @@
 
 #include "tether/motion_replanner/TrajectorySampleConverter.hpp"
 #include "tether/web/ReNurbsSerializer.hpp"
+#include "tether/web/PressureAdvanceSerializer.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -236,14 +237,14 @@ std::vector<uint8_t> JobManager::getWssBinary(const std::string& jobId) const
     return {};
 }
 
-std::vector<uint8_t> JobManager::getPaBinary(const std::string& jobId) const
+std::vector<uint8_t> JobManager::getPressureAdvanceBinary(const std::string& jobId) const
 {
     auto job = getJob(jobId);
     if (!job || job->state != JobState::Ready) return {};
 
     try {
-        if (!job->result.paProfiles.empty()) {
-            return serializePaProfiles(job->result.paProfiles);
+        if (!job->result.pressureAdvanceParams.empty()) {
+            return serializePressureAdvanceParams(job->result.pressureAdvanceParams);
         }
     } catch (const std::exception& e) {
         return {};

@@ -253,8 +253,8 @@ export class RpcClient {
    * Returns per-algorithm NURBS curves for PA pre/post (Linear, PowerLaw,
    * CrossWLF, LTI-Deconv, LPV-Deconv).
    */
-  async getPaHttp(jobId: string): Promise<Uint8Array> {
-    const url = `${this.httpBaseUrl}/api/trajectory/${jobId}/pa`;
+  async getPressureAdvanceHttp(jobId: string): Promise<Uint8Array> {
+    const url = `${this.httpBaseUrl}/api/trajectory/${jobId}/pressure-advance`;
     const resp = await fetch(url);
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');

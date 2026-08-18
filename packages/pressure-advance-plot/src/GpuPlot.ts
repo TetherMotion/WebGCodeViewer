@@ -19,7 +19,7 @@
  * with millions of data points the rendering is O(pixels) not O(samples).
  */
 
-import { evalBSpline1D, TRNPData, TRNPPaData, TRNPQuantityCurve, TRNPSegment } from "@tether/viewer-core";
+import { evalBSpline1D, TRNPData, TRNPQuantityCurve, TRNPSegment } from "@tether/viewer-core";
 
 export interface PlotSeries {
   name: string;

@@ -145,7 +145,7 @@ export class WssMiniplotRenderer {
         struct WssArc {
           s0: f32, s1: f32, t0: f32, v0: f32,
           a0: f32, eta: f32, aStar: f32, duration: f32,
-          type: f32, _pad0: f32, _pad1: f32, _pad2: f32,
+          kind: f32, _pad0: f32, _pad1: f32, _pad2: f32,
         };
 
         struct ComputeUniforms {
@@ -189,18 +189,18 @@ export class WssMiniplotRenderer {
           let idx = findArcByTime(t);
           let arc = arcs[idx];
           let tau = max(t - arc.t0, 0.0);
-          let arcType = arc.type;
+          let arcKind = arc.kind;
 
           var v: f32;
           var a: f32;
           var j: f32;
 
-          if (arcType < 2.5) {
+          if (arcKind < 2.5) {
             // BANG_PLUS (0) or BANG_MINUS (1)
             v = arc.v0 + arc.a0 * tau + 0.5 * arc.eta * tau * tau;
             a = arc.a0 + arc.eta * tau;
             j = arc.eta;
-          } else if (arcType < 3.5) {
+          } else if (arcKind < 3.5) {
             // SINGULAR (2)
             v = arc.v0 + arc.aStar * tau;
             a = arc.aStar;

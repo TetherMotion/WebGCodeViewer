@@ -389,7 +389,7 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
     // Get pressure advance profiles binary data (TRNP-PA format) —
     // per-algorithm NURBS curves for PA pre/post (Linear, PowerLaw, CrossWLF,
     // LTI-Deconv, LPV-Deconv). Selectable in the UI.
-    app.registerHandler("/api/trajectory/{jobId}/pa",
+    app.registerHandler("/api/trajectory/{jobId}/pressure-advance",
         [jobManager, enableCors](const drogon::HttpRequestPtr& req,
            std::function<void(const drogon::HttpResponsePtr&)>&& cb,
            const std::string& jobId) {
@@ -398,16 +398,16 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
                 return;
             }
 
-            auto binary = jobManager->getPaBinary(jobId);
+            auto binary = jobManager->getPressureAdvanceBinary(jobId);
             if (binary.empty()) {
-                cb(makeErrorResponse(404, "No PA data available", enableCors));
+                cb(makeErrorResponse(404, "No pressure advance data available", enableCors));
                 return;
             }
 
             auto resp = drogon::HttpResponse::newHttpResponse();
             resp->setContentTypeString("application/octet-stream");
             resp->addHeader("Content-Disposition",
-                            "attachment; filename=\"pa_profiles.tpa\"");
+                            "attachment; filename=\"pressure_advance_profiles.tpa\"");
             resp->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
             resp->setBody(std::string(reinterpret_cast<const char*>(binary.data()),
                                        binary.size()));

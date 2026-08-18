@@ -25,7 +25,7 @@
 #include "tether/motion_planner/geometry/PiecewiseNurbsPath.hpp"
 #include "tether/motion_planner/geometry/PlanningSegmentConverter.hpp"
 #include "tether/motion_planner/profile_renurbs/ReNURBSProfile.hpp"
-#include "tether/web/PaProfileBuilder.hpp"
+#include "tether/web/PressureAdvanceProfileBuilder.hpp"
 #include "tether/web/WssData.hpp"
 
 #include <memory>
@@ -115,10 +115,11 @@ struct ProcessResult {
     /// curvature + the kinematic limits stored in the WSS.
     std::optional<WssData> wssData;
 
-    /// Pressure advance profiles — one per algorithm (Linear, PowerLaw,
-    /// CrossWLF, LTI-Deconv, LPV-Deconv). Each contains pre-PA velocity
-    /// and post-PA offset as ReNURBS curves. Selectable in the UI.
-    std::vector<PaProfileResult> paProfiles;
+    /// Pressure advance parameters — one block per algorithm (Linear,
+    /// PowerLaw, CrossWLF, LTI-Deconv, LPV-Deconv). The frontend evaluates
+    /// PA analytically in WGSL shaders using WSS arcs + these parameters.
+    /// No sampling, no ReNURBS fitting.
+    std::vector<PressureAdvanceParamBlock> pressureAdvanceParams;
 };
 
 /// @brief Processes G-code text into trajectory samples.

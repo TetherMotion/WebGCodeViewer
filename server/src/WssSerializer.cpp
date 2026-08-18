@@ -25,7 +25,8 @@ T readVal(const uint8_t*& p) {
 
 std::vector<uint8_t> serializeWss(const WssData& data) {
     std::vector<uint8_t> buf;
-    buf.reserve(sizeof(TWSFHeader) + data.arcs.size() * sizeof(WssArcEntry));
+    buf.reserve(sizeof(TWSFHeader) + data.arcs.size() * sizeof(WssArcEntry)
+                + data.extrusionRatios.size() * sizeof(float));
 
     // Header
     TWSFHeader header;
@@ -45,6 +46,13 @@ std::vector<uint8_t> serializeWss(const WssData& data) {
     buf.insert(buf.end(), arcBytes,
                arcBytes + data.arcs.size() * sizeof(WssArcEntry));
 
+    // Extrusion ratios (v2) — one f32 per arc
+    if (!data.extrusionRatios.empty()) {
+        const auto* ratioBytes = reinterpret_cast<const uint8_t*>(data.extrusionRatios.data());
+        const size_t ratioCount = std::min(data.extrusionRatios.size(), data.arcs.size());
+        buf.insert(buf.end(), ratioBytes, ratioBytes + ratioCount * sizeof(float));
+    }
+
     return buf;
 }
 
@@ -63,7 +71,7 @@ WssData parseWss(std::span<const uint8_t> data) {
     if (std::memcmp(header.magic, TWSF_MAGIC, 4) != 0) {
         throw std::invalid_argument("Invalid TWSF magic");
     }
-    if (header.version != TWSF_VERSION) {
+    if (header.version != TWSF_VERSION && header.version != 1) {
         throw std::invalid_argument("Unsupported TWSF version");
     }
 
@@ -82,6 +90,16 @@ WssData parseWss(std::span<const uint8_t> data) {
 
     result.arcs.resize(header.arcCount);
     std::memcpy(result.arcs.data(), p, arcBytes);
+    p += arcBytes;
+
+    // Extrusion ratios (v2 only) — one f32 per arc
+    if (header.version >= 2) {
+        const size_t ratioBytes = static_cast<size_t>(header.arcCount) * sizeof(float);
+        if (static_cast<size_t>(end - p) >= ratioBytes) {
+            result.extrusionRatios.resize(header.arcCount);
+            std::memcpy(result.extrusionRatios.data(), p, ratioBytes);
+        }
+    }
 
     return result;
 }

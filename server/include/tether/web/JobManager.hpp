@@ -112,7 +112,7 @@ public:
     /// (Linear, PowerLaw, CrossWLF, LTI-Deconv, LPV-Deconv).
     /// @param jobId Job ID
     /// @return Binary TRNP-PA data, or empty if not available
-    std::vector<uint8_t> getPaBinary(const std::string& jobId) const;
+    std::vector<uint8_t> getPressureAdvanceBinary(const std::string& jobId) const;
 
     /// @brief Get block metadata for a job as JSON.
     std::string getBlocksJson(const std::string& jobId) const;

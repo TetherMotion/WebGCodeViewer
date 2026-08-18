@@ -58,6 +58,8 @@ export interface WssData {
   maxAcceleration: number;
   maxJerk: number;
   limits: WssLimits;
+  /// Per-arc extrusion ratios (E_delta / path_length). Empty for TWSF v1.
+  extrusionRatios?: Float32Array;
 }
 
 /// Flat arc data as Float32Array for direct GPU upload.
@@ -88,7 +90,7 @@ class BinaryReader {
 }
 
 const TWSF_MAGIC = 'TWSF';
-const TWSF_VERSION = 1;
+const TWSF_VERSION = 2;
 const TWSF_HEADER_SIZE = 80;
 const TWSF_ARC_SIZE = 48; // 12 × f32
 
@@ -106,7 +108,7 @@ export function parseTWSF(data: Uint8Array | ArrayBuffer): WssGpuData {
   }
 
   const version = reader.readU16();
-  if (version !== TWSF_VERSION) {
+  if (version !== 1 && version !== TWSF_VERSION) {
     throw new Error(`Unsupported TWSF version: ${version}`);
   }
 
@@ -163,6 +165,18 @@ export function parseTWSF(data: Uint8Array | ArrayBuffer): WssGpuData {
     });
   }
 
+  // Extrusion ratios (v2 only) — one f32 per arc
+  let extrusionRatios: Float32Array | undefined;
+  if (version >= 2) {
+    const ratioBytes = arcCount * 4;
+    if (reader.remaining >= ratioBytes) {
+      extrusionRatios = new Float32Array(arcCount);
+      for (let i = 0; i < arcCount; i++) {
+        extrusionRatios[i] = reader.readF32();
+      }
+    }
+  }
+
   return {
     arcs,
     totalLength,
@@ -178,6 +192,7 @@ export function parseTWSF(data: Uint8Array | ArrayBuffer): WssGpuData {
       maxAxisVelocityY,
       maxAxisVelocityZ,
     },
+    extrusionRatios,
     arcBuffer,
   };
 }

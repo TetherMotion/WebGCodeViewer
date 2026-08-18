@@ -4,7 +4,7 @@
 #include "tether/motion_planner/PathAdapter.hpp"
 #include "tether/motion_planner/analytical/ParetoTimeEnergyOptimalVelocityPlanner.hpp"
 #include "tether/motion_planner/analytical/extrusion/AnalyticalExtrusionTypes.hpp"
-#include "tether/web/PaProfileBuilder.hpp"
+#include "tether/web/PressureAdvanceProfileBuilder.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -496,6 +496,18 @@ ProcessResult GCodeProcessor::process(
             // Extract the WSS (analytical trajectory source)
             auto wss = profiler.weightedSource();
 
+            // Build extrusion ratios from segment data (needed for WSS v2
+            // and for PA computation)
+            std::vector<double> extrusionRatios;
+            extrusionRatios.reserve(parseResult.segments.size());
+            for (const auto& seg : parseResult.segments) {
+                if (seg.isRapid || seg.segmentLength < 1e-12) {
+                    extrusionRatios.push_back(0.0);
+                } else {
+                    extrusionRatios.push_back(seg.exitVelocity > 1e-9 ? 1.0 : 0.0);
+                }
+            }
+
             // ── Transfer WSS arcs directly (no sampling) ──
             // Each arc is converted to a WssArcEntry (48 bytes, f32) for
             // direct GPU upload. The shader evaluates v/a/j/t in closed form.
@@ -504,6 +516,7 @@ ProcessResult GCodeProcessor::process(
                 const auto& arcs = wss->arcs();
                 WssData wssData;
                 wssData.arcs.reserve(arcs.size());
+                wssData.extrusionRatios.reserve(arcs.size());
                 wssData.totalLength = wss->totalLength();
                 wssData.totalTime = wss->totalTime();
 
@@ -541,6 +554,13 @@ ProcessResult GCodeProcessor::process(
                     }
                     wssData.arcs.push_back(entry);
 
+                    // Map extrusion ratio to this arc via segment index at midpoint
+                    double tMid = arc.t0 + arc.duration * 0.5;
+                    auto segIdx = wss->segmentIndex(tMid);
+                    float ratio = (segIdx < extrusionRatios.size())
+                        ? static_cast<float>(extrusionRatios[segIdx]) : 0.0f;
+                    wssData.extrusionRatios.push_back(ratio);
+
                     // Track max values for normalization
                     if (arc.type == WAT::SINGULAR) {
                         maxA = std::max(maxA, std::abs(arc.a_star));
@@ -577,44 +597,20 @@ ProcessResult GCodeProcessor::process(
                 result.renurbsMaxTime = static_cast<float>(result.wssData->totalTime);
             }
 
-            // ── Step 3c: Compute pressure advance profiles ──
-            // Uses analytical PA algorithms (closed-form computation on WSS
-            // arcs) instead of sampled-space control-level classes.
-            // For each PA algorithm (Linear, PowerLaw, CrossWLF, LTI, LPV),
-            // compute pre-PA velocity and post-PA offset, fitted to ReNURBS.
-            // Selectable in the UI for visualization in the plot and color modes.
+            // ── Step 3c: Compute pressure advance parameters ──
+            // Packages PA algorithm parameters for frontend analytical
+            // evaluation in WGSL shaders. No sampling, no ReNURBS fitting.
+            // The frontend evaluates PA in closed form using WSS arcs +
+            // extrusion ratios (from TWSF v2) + these parameters.
             Timer paTimer;
             try {
-                // Build extrusion ratios from segment data
-                std::vector<double> extrusionRatios;
-                extrusionRatios.reserve(parseResult.segments.size());
-                for (const auto& seg : parseResult.segments) {
-                    if (seg.isRapid || seg.segmentLength < 1e-12) {
-                        extrusionRatios.push_back(0.0);
-                    } else {
-                        extrusionRatios.push_back(seg.exitVelocity > 1e-9 ? 1.0 : 0.0);
-                    }
-                }
-
-                // Build ExtrusionTrajectory from the WSS for analytical PA
-                std::unique_ptr<MotionPlanner::analytical::extrusion::ExtrusionTrajectory<3, double>> extrusionTraj;
-                if (wss) {
-                    extrusionTraj = std::make_unique<
-                        MotionPlanner::analytical::extrusion::ExtrusionTrajectory<3, double>>(
-                        *wss, extrusionRatios);
-                    WGV_LOG(std::format("Step 3c: ExtrusionTrajectory — {} arcs, total time={:.3}s",
-                        extrusionTraj->numArcs(), extrusionTraj->totalTime()));
-                }
-
-                PaConfig paConfig;
-                paConfig.sampleInterval = 0.001;  // 1ms sampling
-                result.paProfiles = computeAllPaProfiles(
-                    *velocityProfile, extrusionRatios, paConfig,
-                    extrusionTraj.get());
-                WGV_LOG_TIME(std::format("Step 3c: PA profiles (analytical) — {} algorithms",
-                    result.paProfiles.size()), paTimer);
+                PressureAdvanceConfig paConfig;
+                paConfig.sampleInterval = 0.001;
+                result.pressureAdvanceParams = computeAllPressureAdvanceParams(paConfig);
+                WGV_LOG_TIME(std::format("Step 3c: PA params (analytical, no sampling) — {} algorithms",
+                    result.pressureAdvanceParams.size()), paTimer);
             } catch (const std::exception& e) {
-                WGV_LOG(std::format("Step 3c: PA profiles FAILED (optional, continuing): {}", e.what()));
+                WGV_LOG(std::format("Step 3c: PA params FAILED (optional, continuing): {}", e.what()));
             }
         WGV_LOG_TIME("Step 3b total: WSS + PA", step3b);
         }

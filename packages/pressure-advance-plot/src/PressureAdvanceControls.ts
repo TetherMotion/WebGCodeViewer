@@ -1,5 +1,5 @@
 /**
- * @file PaControls.ts
+ * @file PressureAdvanceControls.ts
  * @brief UI panel for pressure advance algorithm selection and plot controls.
  *
  * Features:
@@ -10,10 +10,10 @@
  * - Reset view button
  */
 
-export type PaAlgorithmId = 0 | 1 | 2 | 3 | 4;
+export type PressureAdvanceAlgorithmId = 0 | 1 | 2 | 3 | 4;
 
-export interface PaControlState {
-  selectedAlgorithm: PaAlgorithmId;
+export interface PressureAdvanceControlState {
+  selectedAlgorithm: PressureAdvanceAlgorithmId;
   showPrePa: boolean;       // Show raw extruder velocity (before PA)
   showPostPa: boolean;      // Show PA offset (after PA)
   showVelocity: boolean;    // Show path velocity
@@ -21,7 +21,7 @@ export interface PaControlState {
   showJerk: boolean;
 }
 
-export const ALGORITHM_NAMES: Record<PaAlgorithmId, string> = {
+export const ALGORITHM_NAMES: Record<PressureAdvanceAlgorithmId, string> = {
   0: 'Linear (Classic Klipper)',
   1: 'PowerLaw (Non-Newtonian)',
   2: 'CrossWLF (Temperature-Dependent)',
@@ -29,7 +29,7 @@ export const ALGORITHM_NAMES: Record<PaAlgorithmId, string> = {
   4: 'LPV Deconvolution (Gain-Scheduled)',
 };
 
-export const ALGORITHM_DESCRIPTIONS: Record<PaAlgorithmId, string> = {
+export const ALGORITHM_DESCRIPTIONS: Record<PressureAdvanceAlgorithmId, string> = {
   0: 'δe = PA · v_e — Classic linear pressure advance',
   1: 'δe = K_base · (v_e · A_f)^n — Non-Newtonian shear-thinning',
   2: 'δe = (βV_m/A_f) · P_LUT(Q, T) — Cross-WLF rheological model',
@@ -37,12 +37,12 @@ export const ALGORITHM_DESCRIPTIONS: Record<PaAlgorithmId, string> = {
   4: 'Gain-scheduled overlap-add LPV deconvolution with lookahead',
 };
 
-export class PaControls {
+export class PressureAdvanceControls {
   private container: HTMLElement;
-  private state: PaControlState;
-  private onStateChange: (state: PaControlState) => void;
+  private state: PressureAdvanceControlState;
+  private onStateChange: (state: PressureAdvanceControlState) => void;
 
-  constructor(parent: HTMLElement, onStateChange: (state: PaControlState) => void) {
+  constructor(parent: HTMLElement, onStateChange: (state: PressureAdvanceControlState) => void) {
     this.onStateChange = onStateChange;
     this.state = {
       selectedAlgorithm: 0,
@@ -84,7 +84,7 @@ export class PaControls {
 
     const select = document.createElement('select');
     select.style.cssText = 'width: 100%; background: #1a1a2a; color: #ddd; border: 1px solid #444; padding: 4px; border-radius: 4px;';
-    for (const id of [0, 1, 2, 3, 4] as PaAlgorithmId[]) {
+    for (const id of [0, 1, 2, 3, 4] as PressureAdvanceAlgorithmId[]) {
       const opt = document.createElement('option');
       opt.value = String(id);
       opt.textContent = ALGORITHM_NAMES[id];
@@ -92,7 +92,7 @@ export class PaControls {
       select.appendChild(opt);
     }
     select.addEventListener('change', () => {
-      this.state.selectedAlgorithm = parseInt(select.value) as PaAlgorithmId;
+      this.state.selectedAlgorithm = parseInt(select.value) as PressureAdvanceAlgorithmId;
       this.onStateChange(this.state);
       this.render();
     });
@@ -188,11 +188,11 @@ export class PaControls {
     this.container.appendChild(labelEl);
   }
 
-  getState(): PaControlState {
+  getState(): PressureAdvanceControlState {
     return { ...this.state };
   }
 
-  setState(state: Partial<PaControlState>): void {
+  setState(state: Partial<PressureAdvanceControlState>): void {
     this.state = { ...this.state, ...state };
     this.render();
   }

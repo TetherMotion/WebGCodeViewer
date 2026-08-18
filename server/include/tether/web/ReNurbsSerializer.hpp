@@ -53,7 +53,6 @@
 #include "tether/motion_planner/profile_renurbs/ReNURBSProfile.hpp"
 #include "tether/motion_planner/profile_renurbs/GenericReNURBSProfile.hpp"
 #include "tether/motion_planner/geometry/NurbsCurve.hpp"
-#include "tether/web/PaProfileBuilder.hpp"
 
 #include <cstdint>
 #include <span>
@@ -143,62 +142,5 @@ std::vector<uint8_t> serializeReNurbsProfile(
 
 /// Parse TRNP binary data (for testing).
 ParsedTRNP parseReNurbsProfile(std::span<const uint8_t> data);
-
-// ── PA (Pressure Advance) TRNP extension ─────────────────────────────────────
-
-/// Serialize PA profiles to a TRNP-PA binary format.
-/// Each PA algorithm produces a GenericReNURBSProfile with 2 quantities:
-/// "pressure_offset" and "extruder_velocity".
-///
-/// Format (TRNP-PA):
-///   Header (32 bytes):
-///     magic[4] = "TPA\0"
-///     version (u16) = 1
-///     paCount (u8)         — number of PA algorithms
-///     reserved[1]
-///     totalSegments (u32)  — total segments across all PA profiles
-///     totalControlPoints (u32)
-///     totalKnots (u32)
-///     reserved[12]
-///
-///   PA algorithm table (paCount × 44 bytes):
-///     algorithmId (u8)     — PaAlgorithm enum value
-///     reserved[3]
-///     algorithmName[32]    — null-padded name
-///     maxOffset (f32)
-///     maxVelocity (f32)
-///
-///   Per-PA segment table + quantity metadata + CPs + knots
-///   (same layout as TRNP, repeated per PA algorithm)
-///
-/// @param paProfiles Vector of PA profile results (one per algorithm)
-/// @return Binary TRNP-PA data
-std::vector<uint8_t> serializePaProfiles(
-    const std::vector<PaProfileResult>& paProfiles);
-
-/// Parsed TRNP-PA data (for testing).
-struct ParsedTRNPPa {
-    struct PaEntry {
-        uint8_t algorithmId;
-        std::string algorithmName;
-        float maxOffset;
-        float maxVelocity;
-        // Per-segment per-quantity curves (same as ParsedTRNP::Segment)
-        struct Segment {
-            float sStart, sEnd;
-            struct Quantity {
-                std::vector<float> controlPoints;
-                std::vector<float> knots;
-                uint32_t degree;
-            };
-            std::vector<Quantity> quantities;
-        };
-        std::vector<Segment> segments;
-    };
-    std::vector<PaEntry> paEntries;
-};
-
-/// Parse TRNP-PA binary data (for testing).
-ParsedTRNPPa parsePaProfiles(std::span<const uint8_t> data);
 
 } // namespace tether::web

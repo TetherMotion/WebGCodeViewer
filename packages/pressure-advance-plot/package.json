@@ -1,7 +1,7 @@
 {
-  "name": "@tether/pa-plot",
+  "name": "@tether/pressure-advance-plot",
   "version": "1.0.0",
-  "description": "Tether viewer pa-plot package",
+  "description": "Tether viewer pressure-advance-plot package",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

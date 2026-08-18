@@ -348,8 +348,10 @@ void ViewerRpcHandler::sendResponse(const drogon::WebSocketConnectionPtr& conn,
     response->set_call_id(callId);
     response->set_done(done);
 
-    if (!responseBytes.empty() && hasResponse) {
-        // Parse response bytes into the correct oneof field
+    if (hasResponse) {
+        // Parse response bytes into the correct oneof field.
+        // Empty bytes are valid protobuf (parses to a default-valued message),
+        // so we always set the oneof field when hasResponse is true.
         bool parsed = false;
         if (requestCase == "upload_gcode") {
             parsed = response->mutable_upload_gcode()->ParseFromString(responseBytes);

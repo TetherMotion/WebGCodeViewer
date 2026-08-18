@@ -112,6 +112,12 @@ struct WssData {
 
     /// Kinematic limits for WALL arc evaluation.
     WssKinematicLimits limits;
+
+    /// Per-arc extrusion ratios (E_delta / path_length), one per arc.
+    /// 0 for non-extruding travel moves. Used by the frontend for analytical
+    /// pressure advance evaluation in WGSL shaders.
+    /// Empty for TWSF v1 data (defaults to 0 in the shader).
+    std::vector<float> extrusionRatios;
 };
 
 } // namespace tether::web

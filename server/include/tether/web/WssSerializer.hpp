@@ -36,6 +36,11 @@
 ///       vec4 A: (s0, s1, t0, v0)
 ///       vec4 B: (a0, eta, a_star, duration)
 ///       vec4 C: (type, 0, 0, 0)
+///
+///   Extrusion ratios (v2 only, arcCount × 4 bytes):
+///     One f32 per arc: E_delta / path_length (0 for travel moves).
+///     Used by the frontend for analytical pressure advance evaluation.
+///     Absent in v1 (frontend defaults to 0).
 
 #include "tether/web/WssData.hpp"
 
@@ -47,7 +52,7 @@ namespace tether::web {
 
 /// TWSF binary format magic number.
 constexpr char TWSF_MAGIC[4] = {'T', 'W', 'S', 'F'};
-constexpr uint16_t TWSF_VERSION = 1;
+constexpr uint16_t TWSF_VERSION = 2;
 
 /// TWSF header (80 bytes, little-endian, packed).
 #pragma pack(push, 1)

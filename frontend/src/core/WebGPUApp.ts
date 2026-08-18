@@ -20,7 +20,7 @@ import { parseTTHR, TTHRData, extractZLayer } from "@tether/viewer-core";
 import { parseNBP, NBPData } from "@tether/viewer-core";
 import { type AnalysisSection } from "@tether/viewer-core/generated";
 import { parseTWSF, WssGpuData, wssToTrnp } from "@tether/viewer-core";
-import { parseTRNP, TRNPData, parseTRNPPa, TRNPPaData } from "@tether/viewer-core";
+import { parseTRNP, TRNPData, parseTWPA, PressureAdvanceParamBlock } from "@tether/viewer-core";
 import { ToolpathRenderer, ColorAttribute } from '../renderers/ToolpathRenderer';
 import { GridRenderer } from "@tether/ground-grid";
 import { CrossSectionRenderer } from "@tether/cross-section";
@@ -31,8 +31,7 @@ import { PrintHeadMarker } from "@tether/scene-decorators";
 import { PrinterFrameRenderer } from "@tether/scene-decorators";
 import { DirectionCubeRenderer } from "@tether/nav-overlay";
 import { NurbsRenderer, NurbsColorAttribute } from "@tether/nurbs-renderer";
-import { GpuPlot, PlotSeries } from "@tether/pa-plot";
-import { PaControls, PaAlgorithmId } from "@tether/pa-plot";
+import { GpuPlot, PlotSeries, PressureAdvanceControls, PressureAdvanceAlgorithmId, PressureAdvancePlotRenderer } from "@tether/pressure-advance-plot";
 import { MiniplotRenderer } from "@tether/miniplot"
 import type { MiniplotData } from "@tether/viewer-core";
 import { ComputeMiniplotRenderer } from "@tether/miniplot";
@@ -99,9 +98,10 @@ export class WebGPUApp {
   private currentNBP: NBPData | null = null;
   private currentTRNP: TRNPData | null = null;
   private currentWss: WssGpuData | null = null;
-  private currentPaData: TRNPPaData | null = null;
+  private currentPressureAdvanceData: PressureAdvanceParamBlock[] | null = null;
   private gpuPlot: GpuPlot | null = null;
-  private paControls: PaControls | null = null;
+  private pressureAdvancePlotRenderer: PressureAdvancePlotRenderer | null = null;
+  private pressureAdvanceControls: PressureAdvanceControls | null = null;
   private plotCanvas: HTMLCanvasElement | null = null;
   private plotOverlayCanvas: HTMLCanvasElement | null = null;
   private plotContainer: HTMLDivElement | null = null;
@@ -1634,8 +1634,8 @@ export class WebGPUApp {
    * Set up the PA plot panel with WebGPU canvas, overlay canvas, and controls.
    * Called after PA data is loaded.
    */
-  private setupPaPlot(): void {
-    if (!this.currentPaData || !this.device) return;
+  private setupPressureAdvancePlot(): void {
+    if (!this.currentPressureAdvanceData || !this.device) return;
 
     // Create plot container if not already created
     if (!this.plotContainer) {
@@ -1663,12 +1663,12 @@ export class WebGPUApp {
       this.plotContainer.appendChild(this.plotOverlayCanvas);
 
       // Create PA controls panel
-      this.paControls = new PaControls(this.plotContainer, (state) => {
-        this.updatePaPlotSeries();
+      this.pressureAdvanceControls = new PressureAdvanceControls(this.plotContainer, (state) => {
+        this.updatePressureAdvancePlotSeries();
       });
     }
 
-    // Initialize the GpuPlot
+    // Initialize the GpuPlot (for motion profile series)
     if (!this.gpuPlot && this.plotCanvas) {
       this.gpuPlot = new GpuPlot(this.device, this.plotCanvas, {
         width: 800, height: 200,
@@ -1676,14 +1676,28 @@ export class WebGPUApp {
         title: 'Motion Profile & Pressure Advance',
       });
       this.gpuPlot.init(this.format).then(() => {
-        this.updatePaPlotSeries();
-        this.renderPaPlot();
+        this.updatePressureAdvancePlotSeries();
+        this.renderPressureAdvancePlot();
       }).catch((e) => {
         console.error('Failed to init PA plot:', e);
       });
     } else if (this.gpuPlot) {
-      this.updatePaPlotSeries();
-      this.renderPaPlot();
+      this.updatePressureAdvancePlotSeries();
+      this.renderPressureAdvancePlot();
+    }
+
+    // Initialize the PressureAdvancePlotRenderer (for analytical PA series)
+    // This uses a separate canvas that overlays on top of the GpuPlot canvas.
+    // For now, it shares the same plot canvas — the PA renderer draws on top.
+    if (!this.pressureAdvancePlotRenderer && this.plotCanvas && this.device) {
+      this.pressureAdvancePlotRenderer = new PressureAdvancePlotRenderer(
+        this.device, this.plotCanvas);
+      this.pressureAdvancePlotRenderer.init(this.format).then(() => {
+        this.updatePressureAdvancePlotSeries();
+        this.renderPressureAdvancePlot();
+      }).catch((e) => {
+        console.error('Failed to init PA plot renderer:', e);
+      });
     }
 
     // Show the plot container
@@ -1692,11 +1706,12 @@ export class WebGPUApp {
     }
 
     // Send PA data to NurbsRenderer for PA color modes
-    if (this.nurbsRenderer && this.currentPaData) {
+    if (this.nurbsRenderer && this.currentPressureAdvanceData) {
       // Default to first algorithm (Linear) for coloring
-      const paEntry = this.currentPaData.paEntries[0];
+      const paEntry = this.currentPressureAdvanceData[0];
       if (paEntry) {
-        this.nurbsRenderer.updatePaData(paEntry);
+        const ratios = this.currentWss?.extrusionRatios;
+        this.nurbsRenderer.updatePressureAdvanceData(paEntry, ratios);
       }
     }
   }
@@ -1704,10 +1719,10 @@ export class WebGPUApp {
   /**
    * Update the plot series based on current PA controls state and TRNP data.
    */
-  private updatePaPlotSeries(): void {
-    if (!this.gpuPlot || !this.paControls) return;
+  private updatePressureAdvancePlotSeries(): void {
+    if (!this.gpuPlot || !this.pressureAdvanceControls) return;
 
-    const state = this.paControls.getState();
+    const state = this.pressureAdvanceControls.getState();
     const series: PlotSeries[] = [];
 
     // Motion profile series from the analytical WSS (sampled to TRNP for the
@@ -1752,46 +1767,36 @@ export class WebGPUApp {
       }
     }
 
-    // PA series (from TRNP-PA)
-    if (this.currentPaData) {
-      const paEntry = this.currentPaData.paEntries.find(
+    // PA series (analytical evaluation from WSS arcs + PA parameters)
+    if (this.currentPressureAdvanceData && this.currentWss) {
+      const paEntry = this.currentPressureAdvanceData.find(
         e => e.algorithmId === state.selectedAlgorithm);
       if (paEntry) {
-        if (state.showPostPa) {
-          series.push({
-            name: `PA Offset - ${paEntry.algorithmName} (mm)`,
-            color: [0.4, 1.0, 0.4],
-            visible: true,
-            segments: paEntry.segments,
-            quantityIndex: 0,  // 0 = pressure_offset
-            yLabel: 'mm',
-            normalizeMax: paEntry.maxOffset || 1,
-          });
-        }
-        if (state.showPrePa) {
-          series.push({
-            name: `Pre-PA Velocity - ${paEntry.algorithmName} (mm/s)`,
-            color: [1.0, 0.8, 0.2],
-            visible: true,
-            segments: paEntry.segments,
-            quantityIndex: 1,  // 1 = extruder_velocity
-            yLabel: 'mm/s',
-            normalizeMax: paEntry.maxVelocity || 1,
-          });
+        // The PressureAdvancePlotRenderer evaluates PA analytically on the GPU
+        // using the WSS arcs + extrusion ratios + PA parameters.
+        // It is initialized in setupPressureAdvancePlot() and updated here.
+        if (this.pressureAdvancePlotRenderer) {
+          this.pressureAdvancePlotRenderer.setWssData(this.currentWss);
+          this.pressureAdvancePlotRenderer.setPaParams(paEntry);
         }
       }
     }
 
     this.gpuPlot.setSeries(series);
-    this.renderPaPlot();
+    this.renderPressureAdvancePlot();
   }
 
   /**
    * Render the PA plot (GPU + overlay).
    */
-  private renderPaPlot(): void {
+  private renderPressureAdvancePlot(): void {
     if (!this.gpuPlot || !this.plotOverlayCanvas) return;
+    // Render motion profile series (velocity, acceleration, jerk)
     this.gpuPlot.render();
+    // Render analytical PA series (offset, extruder velocity) on top
+    if (this.pressureAdvancePlotRenderer) {
+      this.pressureAdvancePlotRenderer.render();
+    }
     const ctx = this.plotOverlayCanvas.getContext('2d');
     if (ctx) this.gpuPlot.renderOverlay(ctx);
   }
@@ -1901,7 +1906,7 @@ export class WebGPUApp {
     this.currentNBP = null;
     this.currentTRNP = null;
     this.currentWss = null;
-    this.currentPaData = null;
+    this.currentPressureAdvanceData = null;
     this.currentData = null;
     this.fullData = null;
     this.zLayers = [];
@@ -1967,15 +1972,15 @@ export class WebGPUApp {
       // NURBS curves for PA pre/post (Linear, PowerLaw, CrossWLF, LTI, LPV).
       // Selectable in the UI for visualization in the plot and color modes.
       try {
-        const paBinary = await this.rpcClient.getPaHttp(jobId);
-        this.currentPaData = parseTRNPPa(paBinary);
-        console.info(`PA data loaded: ${this.currentPaData.paEntries.length} algorithms, ` +
+        const paBinary = await this.rpcClient.getPressureAdvanceHttp(jobId);
+        this.currentPressureAdvanceData = parseTWPA(paBinary);
+        console.info(`PA data loaded: ${this.currentPressureAdvanceData.length} algorithms, ` +
                      `${paBinary.byteLength} bytes`);
-        this.setupPaPlot();
+        this.setupPressureAdvancePlot();
       } catch (e) {
         // PA is optional — if it fails, continue without it.
         console.info('PA data not available');
-        this.currentPaData = null;
+        this.currentPressureAdvanceData = null;
       }
     } catch (e) {
       console.error('Failed to load NURBS data, falling back to TTHR:', e);

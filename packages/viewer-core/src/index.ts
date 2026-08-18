@@ -7,4 +7,5 @@ export * from './TthrParser';
 export * from './NurbsParser';
 export * from './ReNurbsParser';
 export * from './WssParser';
+export * from './PressureAdvanceParser';
 export * from './MiniplotData';

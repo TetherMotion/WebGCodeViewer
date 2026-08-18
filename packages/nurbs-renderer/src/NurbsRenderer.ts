@@ -17,9 +17,10 @@ import { Mat4 } from "@tether/viewer-core";
 import { NBPData, NBPPiece, tessellatePiece } from "@tether/viewer-core";
 import { TRNPData } from "@tether/viewer-core";
 import { WssGpuData } from "@tether/viewer-core";
+import { PressureAdvanceParamBlock } from "@tether/viewer-core";
 import { ColorMap } from "@tether/viewer-core";
 
-export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'extruderSpeed' | 'motion' | 'solid' | 'feedRate' | 'spindleRpm' | 'toolNumber' | 'coolant' | 'featureType' | 'velocity' | 'acceleration' | 'jerk' | 'time' | 'paOffset' | 'paVelocity';
+export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'extruderSpeed' | 'motion' | 'solid' | 'feedRate' | 'spindleRpm' | 'toolNumber' | 'coolant' | 'featureType' | 'velocity' | 'acceleration' | 'jerk' | 'time' | 'pressureAdvanceOffset' | 'pressureAdvanceVelocity';
 
 export interface NurbsRenderOptions {
   colorMap: ColorMap;
@@ -90,10 +91,12 @@ export class NurbsRenderer {
   private renurbsData: TRNPData | null = null;
   private hasReNurbs: boolean = false;
 
-  // PA storage buffers (group 2) — for GPU-side PA offset/velocity evaluation
-  private paCpBuffer: GPUBuffer | null = null;
-  private paKnotBuffer: GPUBuffer | null = null;
-  private paMetaBuffer: GPUBuffer | null = null;
+  // PA analytical parameter buffers (group 2) — for GPU-side PA evaluation
+  // All PA storage data (moments, opVelocities, qGrid, tempGrid, pValues) is
+  // packed into a single buffer to stay within maxStorageBuffersPerShaderStage.
+  private paParamBuffer: GPUBuffer | null = null;
+  private paExtrusionRatioBuffer: GPUBuffer | null = null;
+  private paDataBuffer: GPUBuffer | null = null;
   private paBindGroup: GPUBindGroup | null = null;
   private hasPaData: boolean = false;
   private paMaxOffset: number = 1.0;
@@ -173,10 +176,38 @@ export class NurbsRenderer {
         @group(1) @binding(1) var<storage, read> renurbsKnots: array<f32>;
         @group(1) @binding(2) var<storage, read> renurbsMeta: array<u32>;
 
-        // PA storage buffers (group 2) — same structure as group 1
-        @group(2) @binding(0) var<storage, read> paCPs: array<f32>;
-        @group(2) @binding(1) var<storage, read> paKnots: array<f32>;
-        @group(2) @binding(2) var<storage, read> paMeta: array<u32>;
+        // PA analytical parameters (group 2) — replaces old NURBS PA buffers.
+        // The frontend evaluates PA in closed form using WSS arcs (group 3) +
+        // extrusion ratios + these parameters.
+        // All PA storage data (moments, opVelocities, qGrid, tempGrid, pValues)
+        // is packed into a single storage buffer to stay within the
+        // maxStorageBuffersPerShaderStage limit (8).
+        struct PaParams {
+          maxCompensation: f32,
+          smoothTime: f32,
+          filamentDiameter: f32,
+          pressureAdvance: f32,     // Linear
+          powerLawBaseGain: f32,    // PowerLaw
+          flowIndex: f32,           // PowerLaw
+          crossWlfCompressibility: f32, // CrossWLF
+          meltTempC: f32,           // CrossWLF
+          groupDelay: f32,          // LTI/LPV
+          algorithmId: u32,
+          qGridCount: u32,
+          tempGridCount: u32,
+          momentCount: u32,         // total floats in paData for moments
+          opPointCount: u32,
+          momentsOffset: u32,       // offset into paData for moments
+          opVelOffset: u32,         // offset into paData for op velocities
+          qGridOffset: u32,         // offset into paData for qGrid
+          tempGridOffset: u32,      // offset into paData for tempGrid
+          pValuesOffset: u32,       // offset into paData for pValues
+          _pad0: u32,
+          _pad1: u32,
+        };
+        @group(2) @binding(0) var<uniform> paParams: PaParams;
+        @group(2) @binding(1) var<storage, read> paExtrusionRatios: array<f32>;
+        @group(2) @binding(2) var<storage, read> paData: array<f32>;
 
         // Analytical WSS arcs (group 3) — each arc is 12 floats (48 bytes):
         //   [s0, s1, t0, v0, a0, eta, a_star, duration, type, 0, 0, 0]
@@ -220,40 +251,120 @@ export class NurbsRenderer {
           return d[degree];
         }
 
-        /// Evaluate a 1-D B-spline from PA storage buffers.
-        fn evalPaBSpline(cpBase: u32, cpCount: u32, knotBase: u32, degree: u32, u: f32) -> f32 {
-          if (cpCount == 0u) { return 0.0; }
-          if (degree == 0u) { return paCPs[cpBase]; }
+        // ── Analytical PA evaluation ───────────────────────────────────────
 
-          let knotMin = paKnots[knotBase + degree];
-          let knotMax = paKnots[knotBase + cpCount];
-          let uClamped = clamp(u, knotMin, knotMax);
+        /// Evaluate extruder velocity at arc-length s.
+        /// Uses the WSS arc + per-arc extrusion ratio.
+        fn evalExtruderVelocity(s: f32) -> f32 {
+          if (uniforms.wssArcCount == 0u) { return 0.0; }
+          let idx = findWssArc(s);
+          let arc = readWssArc(idx);
+          let arcS0 = arc[0];
+          let arcT0 = arc[2];
+          let arcV0 = arc[3];
+          let arcA0 = arc[4];
+          let arcEta = arc[5];
+          let arcAStar = arc[6];
+          let arcType = arc[8];
+          let dsLocal = max(s - arcS0, 0.0);
 
-          var k = degree;
-          for (var i = degree; i < cpCount; i = i + 1u) {
-            if (paKnots[knotBase + i] <= uClamped && uClamped < paKnots[knotBase + i + 1u]) {
-              k = i;
-              break;
+          var vPath: f32 = 0.0;
+          if (arcType < 2.5) {
+            let tau = bangTauForDs(arcV0, arcA0, arcEta, dsLocal);
+            vPath = arcV0 + arcA0 * tau + 0.5 * arcEta * tau * tau;
+          } else if (arcType < 3.5) {
+            let tau = singularTauForDs(arcV0, arcAStar, dsLocal);
+            vPath = arcV0 + arcAStar * tau;
+          } else {
+            vPath = arcV0;
+          }
+
+          let ratio = paExtrusionRatios[idx];
+          return vPath * ratio;
+        }
+
+        /// Bilinear interpolation of the CrossWLF pressure LUT.
+        /// All LUT data is packed into paData at offsets given by paParams.
+        fn bilinearInterpLut(q: f32, temp: f32) -> f32 {
+          let qCount = paParams.qGridCount;
+          let tCount = paParams.tempGridCount;
+          if (qCount == 0u || tCount == 0u) { return 0.0; }
+
+          let qOff = paParams.qGridOffset;
+          let tOff = paParams.tempGridOffset;
+          let pOff = paParams.pValuesOffset;
+
+          var qIdx: u32 = 0u;
+          for (var i: u32 = 0u; i < qCount; i = i + 1u) {
+            if (paData[qOff + i] <= q) { qIdx = i; } else { break; }
+          }
+          qIdx = min(qIdx, qCount - 1u);
+          let qIdxHi = min(qIdx + 1u, qCount - 1u);
+          let qFrac = select(0.0,
+                             (q - paData[qOff + qIdx]) / (paData[qOff + qIdxHi] - paData[qOff + qIdx]),
+                             qIdxHi > qIdx);
+
+          var tIdx: u32 = 0u;
+          for (var i: u32 = 0u; i < tCount; i = i + 1u) {
+            if (paData[tOff + i] <= temp) { tIdx = i; } else { break; }
+          }
+          tIdx = min(tIdx, tCount - 1u);
+          let tIdxHi = min(tIdx + 1u, tCount - 1u);
+          let tFrac = select(0.0,
+                             (temp - paData[tOff + tIdx]) / (paData[tOff + tIdxHi] - paData[tOff + tIdx]),
+                             tIdxHi > tIdx);
+
+          let p00 = paData[pOff + tIdx * qCount + qIdx];
+          let p10 = paData[pOff + tIdx * qCount + qIdxHi];
+          let p01 = paData[pOff + tIdxHi * qCount + qIdx];
+          let p11 = paData[pOff + tIdxHi * qCount + qIdxHi];
+          let p0 = mix(p00, p10, qFrac);
+          let p1 = mix(p01, p11, qFrac);
+          return mix(p0, p1, tFrac);
+        }
+
+        /// Evaluate PA offset at arc-length s.
+        fn evalPaOffset(s: f32) -> f32 {
+          let vExt = evalExtruderVelocity(s);
+          let algo = paParams.algorithmId;
+
+          var offset: f32 = 0.0;
+
+          if (algo == 0u) {
+            // Linear: offset = PA * v_extruder
+            offset = paParams.pressureAdvance * vExt;
+          } else if (algo == 1u) {
+            // PowerLaw: offset = baseGain * v^flowIndex
+            if (vExt > 0.0) {
+              offset = paParams.powerLawBaseGain * pow(max(vExt, 0.001), paParams.flowIndex);
+            }
+          } else if (algo == 2u) {
+            // CrossWLF: offset = compressibility * P(Q, T) * area
+            let filamentArea = 3.14159265 * (paParams.filamentDiameter * 0.5) * (paParams.filamentDiameter * 0.5);
+            let Q = vExt * filamentArea;
+            let P = bilinearInterpLut(Q, paParams.meltTempC);
+            offset = paParams.crossWlfCompressibility * P * filamentArea;
+          } else if (algo == 3u) {
+            // LTI Deconv: offset ≈ v_extruder * M_0 (first-order)
+            if (paParams.momentCount > 0u) {
+              offset = vExt * paData[paParams.momentsOffset];
+            }
+          } else if (algo == 4u) {
+            // LPV Deconv: interpolate moments by velocity
+            if (paParams.opPointCount > 0u && paParams.momentCount > 0u) {
+              var opIdx: u32 = 0u;
+              let opOff = paParams.opVelOffset;
+              for (var i: u32 = 0u; i < paParams.opPointCount; i = i + 1u) {
+                if (paData[opOff + i] <= vExt) { opIdx = i; } else { break; }
+              }
+              opIdx = min(opIdx, paParams.opPointCount - 1u);
+              let mc = paParams.momentCount / max(paParams.opPointCount, 1u);
+              offset = vExt * paData[paParams.momentsOffset + opIdx * mc];
             }
           }
-          if (uClamped >= knotMax) { k = cpCount - 1u; }
 
-          var d: array<f32, 64>;
-          for (var j = 0u; j <= degree; j = j + 1u) {
-            d[j] = paCPs[cpBase + k - degree + j];
-          }
-
-          for (var r = 1u; r <= degree; r = r + 1u) {
-            for (var j = degree; j >= r; j = j - 1u) {
-              let i = k - degree + j;
-              let kn0 = paKnots[knotBase + i];
-              let b = paKnots[knotBase + j + degree - r + 1u] - kn0;
-              let alpha = select(0.0, (uClamped - kn0) / b, b != 0.0);
-              d[j] = (1.0 - alpha) * d[j - 1u] + alpha * d[j];
-            }
-          }
-
-          return d[degree];
+          let maxComp = paParams.maxCompensation;
+          return clamp(offset, -maxComp, maxComp);
         }
 
         // ── WSS analytical evaluation ──────────────────────────────────────
@@ -434,21 +545,17 @@ export class NurbsRenderer {
             cv = select(0.0, val / uniforms.maxValue, uniforms.maxValue > 0.0);
           }
 
-          // PA color modes: 5=paOffset, 6=paVelocity
+          // PA color modes: 5=pressureAdvanceOffset, 6=pressureAdvanceVelocity
+          // Analytical evaluation using WSS arcs + extrusion ratios + PA params
           if (uniforms.colorMode >= 5u && uniforms.colorMode <= 6u) {
-            let segIdx = u32(input.segIndexX);
-            let qtyIdx = uniforms.colorMode - 5u;
-            let metaBase = segIdx * 2u * 4u + qtyIdx * 4u;
-            let cpOffset = paMeta[metaBase + 0u];
-            let cpCount = paMeta[metaBase + 1u];
-            let knotOffset = paMeta[metaBase + 2u];
-            let degree = paMeta[metaBase + 3u];
-            if (cpCount > 0u) {
-              let val = evalPaBSpline(cpOffset, cpCount, knotOffset, degree, input.localU);
-              cv = select(0.0, val / uniforms.maxValue, uniforms.maxValue > 0.0);
+            let s = input.localU * uniforms.totalLength;
+            var val: f32 = 0.0;
+            if (uniforms.colorMode == 5u) {
+              val = evalPaOffset(s);
             } else {
-              cv = 0.0;
+              val = evalExtruderVelocity(s);
             }
+            cv = select(0.0, val / uniforms.maxValue, uniforms.maxValue > 0.0);
           }
 
           let sampled = textureSample(colorLUT, colorSampler, cv);
@@ -586,40 +693,39 @@ export class NurbsRenderer {
    * always have a bind group bound for it even before real PA data arrives.
    */
   private createDummyPaBuffers(): void {
-    const dummyCp = new Float32Array(1);
-    const dummyKnot = new Float32Array(1);
-    const dummyMeta = new Uint32Array(16);  // enough for a few PA segments/quantities
+    // PaParams uniform (22 floats/u32s = 88 bytes, round to 96)
+    this.paParamBuffer = this.device.createBuffer({
+      size: 96,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.paParamBuffer, 0, new Uint8Array(96));
 
-    this.paCpBuffer = this.device.createBuffer({
-      size: NurbsRenderer.DUMMY_CP_SIZE,
+    // Dummy extrusion ratios buffer
+    const dummy4 = new Float32Array([0, 0, 0, 0]);
+    this.paExtrusionRatioBuffer = this.device.createBuffer({
+      size: 16,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.paCpBuffer, 0, dummyCp);
+    this.device.queue.writeBuffer(this.paExtrusionRatioBuffer, 0, dummy4 as Float32Array<ArrayBuffer>);
 
-    this.paKnotBuffer = this.device.createBuffer({
-      size: NurbsRenderer.DUMMY_KNOT_SIZE,
+    // Dummy packed PA data buffer
+    this.paDataBuffer = this.device.createBuffer({
+      size: 16,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.paKnotBuffer, 0, dummyKnot);
-
-    this.paMetaBuffer = this.device.createBuffer({
-      size: NurbsRenderer.DUMMY_META_SIZE,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
-    this.device.queue.writeBuffer(this.paMetaBuffer, 0, dummyMeta);
+    this.device.queue.writeBuffer(this.paDataBuffer, 0, dummy4 as Float32Array<ArrayBuffer>);
 
     try {
       const paLayout = this.pipeline!.getBindGroupLayout(2);
       this.paBindGroup = this.device.createBindGroup({
         layout: paLayout,
         entries: [
-          { binding: 0, resource: { buffer: this.paCpBuffer } },
-          { binding: 1, resource: { buffer: this.paKnotBuffer } },
-          { binding: 2, resource: { buffer: this.paMetaBuffer } },
+          { binding: 0, resource: { buffer: this.paParamBuffer } },
+          { binding: 1, resource: { buffer: this.paExtrusionRatioBuffer } },
+          { binding: 2, resource: { buffer: this.paDataBuffer } },
         ],
       });
     } catch {
-      // Pipeline does not require group 2 (should not happen with the current shader)
       this.paBindGroup = null;
     }
     this.hasPaData = false;
@@ -1041,74 +1147,107 @@ export class NurbsRenderer {
   }
 
   /**
-   * Update PA (Pressure Advance) data for GPU-side PA coloring.
-   * Uses the first PA algorithm (Linear) by default. The selected algorithm
-   * can be changed via setPaAlgorithm().
+   * Update PA data for GPU-side analytical PA coloring.
+   * Takes PA parameters + WSS extrusion ratios and uploads them to the GPU.
+   * The shader evaluates PA in closed form using WSS arcs (group 3) +
+   * extrusion ratios + these parameters.
    */
-  updatePaData(paEntry: { allControlPoints: Float32Array; allKnots: Float32Array; quantityMeta: Uint32Array; maxOffset: number; maxVelocity: number }): void {
+  updatePressureAdvanceData(paParams: PressureAdvanceParamBlock, extrusionRatios?: Float32Array): void {
     if (!this.pipeline) return;
 
-    this.hasPaData = paEntry.allControlPoints.length > 0;
-    this.paMaxOffset = paEntry.maxOffset || 1.0;
-    this.paMaxVelocity = paEntry.maxVelocity || 1.0;
+    this.hasPaData = true;
+    this.paMaxOffset = paParams.maxOffset || 1.0;
+    this.paMaxVelocity = paParams.maxVelocity || 1.0;
 
-    if (!this.hasPaData) return;
+    // Pack all PA storage data (moments, opVelocities, qGrid, tempGrid, pValues)
+    // into a single buffer with computed offsets.
+    const moments = paParams.moments;
+    const opVelocities = paParams.opPointVelocities;
+    const qGrid = paParams.qGrid;
+    const tempGrid = paParams.tempGrid;
+    const pValues = paParams.pValues;
 
-    // Create new storage buffers first, then swap. This keeps the previous
-    // (possibly dummy) bind group valid until the replacement is ready, and
-    // prevents a transient "no bind group at group 2" state during updates.
-    const cpSize = Math.max(NurbsRenderer.DUMMY_CP_SIZE, paEntry.allControlPoints.byteLength);
-    const knotSize = Math.max(NurbsRenderer.DUMMY_KNOT_SIZE, paEntry.allKnots.byteLength);
-    const metaSize = Math.max(NurbsRenderer.DUMMY_META_SIZE, paEntry.quantityMeta.byteLength);
+    const momentsOffset = 0;
+    const opVelOffset = momentsOffset + moments.length;
+    const qGridOffset = opVelOffset + opVelocities.length;
+    const tempGridOffset = qGridOffset + qGrid.length;
+    const pValuesOffset = tempGridOffset + tempGrid.length;
+    const totalDataFloats = pValuesOffset + pValues.length;
 
-    const newCpBuffer = this.device.createBuffer({
-      size: cpSize,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
-    // Pass the typed array (not .buffer) so writeBuffer only uploads the
-    // view's byteLength, never the full underlying ArrayBuffer.
-    this.device.queue.writeBuffer(newCpBuffer, 0, paEntry.allControlPoints as Float32Array<ArrayBuffer>);
+    // Pack PaParams uniform (9 floats + 13 u32s = 88 bytes, round to 96)
+    const paUniform = new ArrayBuffer(96);
+    const view = new DataView(paUniform);
+    view.setFloat32(0, paParams.maxCompensation, true);
+    view.setFloat32(4, paParams.smoothTime, true);
+    view.setFloat32(8, paParams.filamentDiameter, true);
+    view.setFloat32(12, paParams.pressureAdvance, true);
+    view.setFloat32(16, paParams.powerLawBaseGain, true);
+    view.setFloat32(20, paParams.flowIndex, true);
+    view.setFloat32(24, paParams.crossWlfCompressibility, true);
+    view.setFloat32(28, paParams.meltTempC, true);
+    view.setFloat32(32, paParams.groupDelay, true);
+    view.setUint32(36, paParams.algorithmId, true);
+    view.setUint32(40, paParams.qGrid.length, true);
+    view.setUint32(44, paParams.tempGrid.length, true);
+    view.setUint32(48, paParams.moments.length, true);
+    view.setUint32(52, paParams.opPointVelocities.length, true);
+    view.setUint32(56, momentsOffset, true);
+    view.setUint32(60, opVelOffset, true);
+    view.setUint32(64, qGridOffset, true);
+    view.setUint32(68, tempGridOffset, true);
+    view.setUint32(72, pValuesOffset, true);
+    // 76..95 = padding
+    this.device.queue.writeBuffer(this.paParamBuffer!, 0, new Uint8Array(paUniform));
 
-    const newKnotBuffer = this.device.createBuffer({
-      size: knotSize,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
-    this.device.queue.writeBuffer(newKnotBuffer, 0, paEntry.allKnots as Float32Array<ArrayBuffer>);
+    // Upload extrusion ratios
+    if (extrusionRatios && extrusionRatios.length > 0) {
+      const ratioArr = new Float32Array(extrusionRatios);
+      if (this.paExtrusionRatioBuffer && this.paExtrusionRatioBuffer.size >= ratioArr.byteLength) {
+        this.device.queue.writeBuffer(this.paExtrusionRatioBuffer, 0, ratioArr as Float32Array<ArrayBuffer>);
+      } else {
+        this.paExtrusionRatioBuffer?.destroy();
+        this.paExtrusionRatioBuffer = this.device.createBuffer({
+          size: Math.max(16, ratioArr.byteLength),
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        this.device.queue.writeBuffer(this.paExtrusionRatioBuffer, 0, ratioArr as Float32Array<ArrayBuffer>);
+      }
+    }
 
-    const newMetaBuffer = this.device.createBuffer({
-      size: metaSize,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
-    this.device.queue.writeBuffer(newMetaBuffer, 0, paEntry.quantityMeta as Uint32Array<ArrayBuffer>);
+    // Pack and upload all PA data into a single buffer
+    if (totalDataFloats > 0) {
+      const dataArr = new Float32Array(totalDataFloats);
+      dataArr.set(moments, momentsOffset);
+      dataArr.set(opVelocities, opVelOffset);
+      dataArr.set(qGrid, qGridOffset);
+      dataArr.set(tempGrid, tempGridOffset);
+      dataArr.set(pValues, pValuesOffset);
 
+      if (this.paDataBuffer && this.paDataBuffer.size >= dataArr.byteLength) {
+        this.device.queue.writeBuffer(this.paDataBuffer, 0, dataArr as Float32Array<ArrayBuffer>);
+      } else {
+        this.paDataBuffer?.destroy();
+        this.paDataBuffer = this.device.createBuffer({
+          size: Math.max(16, dataArr.byteLength),
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        this.device.queue.writeBuffer(this.paDataBuffer, 0, dataArr as Float32Array<ArrayBuffer>);
+      }
+    }
+
+    // Recreate bind group with potentially new buffers
     try {
       const paLayout = this.pipeline.getBindGroupLayout(2);
-      const newBindGroup = this.device.createBindGroup({
+      this.paBindGroup = this.device.createBindGroup({
         layout: paLayout,
         entries: [
-          { binding: 0, resource: { buffer: newCpBuffer } },
-          { binding: 1, resource: { buffer: newKnotBuffer } },
-          { binding: 2, resource: { buffer: newMetaBuffer } },
+          { binding: 0, resource: { buffer: this.paParamBuffer! } },
+          { binding: 1, resource: { buffer: this.paExtrusionRatioBuffer! } },
+          { binding: 2, resource: { buffer: this.paDataBuffer! } },
         ],
       });
-
-      // Swap in the new buffers and bind group, then queue the old ones for destruction.
-      this.deferDestroy(this.paCpBuffer);
-      this.deferDestroy(this.paKnotBuffer);
-      this.deferDestroy(this.paMetaBuffer);
-
-      this.paCpBuffer = newCpBuffer;
-      this.paKnotBuffer = newKnotBuffer;
-      this.paMetaBuffer = newMetaBuffer;
-      this.paBindGroup = newBindGroup;
     } catch {
-      // Bind group creation failed (unexpected with the current shader); keep
-      // the previous bind group so group 2 remains bound and destroy the new
-      // buffers that won't be used.
-      newCpBuffer.destroy();
-      newKnotBuffer.destroy();
-      newMetaBuffer.destroy();
-      this.hasPaData = false;
+      // Keep previous bind group
     }
   }
 
@@ -1149,7 +1288,7 @@ export class NurbsRenderer {
   /**
    * Map color attribute to shader colorMode constant.
    * 0=cpuColorValue, 1=velocity, 2=accel, 3=jerk, 4=time
-   * 5=paOffset, 6=paVelocity
+   * 5=pressureAdvanceOffset, 6=pressureAdvanceVelocity
    */
   private getColorMode(): number {
     switch (this.options.colorAttribute) {
@@ -1157,8 +1296,8 @@ export class NurbsRenderer {
       case 'acceleration': return 2;
       case 'jerk': return 3;
       case 'time': return 4;
-      case 'paOffset': return 5;
-      case 'paVelocity': return 6;
+      case 'pressureAdvanceOffset': return 5;
+      case 'pressureAdvanceVelocity': return 6;
       default: return 0;
     }
   }
@@ -1340,6 +1479,9 @@ export class NurbsRenderer {
     this.renurbsCpBuffer?.destroy();
     this.renurbsKnotBuffer?.destroy();
     this.renurbsMetaBuffer?.destroy();
+    this.paParamBuffer?.destroy();
+    this.paExtrusionRatioBuffer?.destroy();
+    this.paDataBuffer?.destroy();
     for (const r of this.staleResources) r.destroy();
     this.staleResources = [];
     this.cachedPositions = null;
