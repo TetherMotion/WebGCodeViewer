@@ -33,39 +33,41 @@ async function uploadAndProcess(request: APIRequestContext, gcode: string, filen
   return jobId;
 }
 
-test.describe('State profile (TSSP) integration', () => {
-  test('GET /api/trajectory/{jobId}/state returns TSSP binary', async ({ request }) => {
+test.describe('WSS (TWSF) integration', () => {
+  test('GET /api/trajectory/{jobId}/wss returns TWSF binary', async ({ request }) => {
     const jobId = await uploadAndProcess(request, ARC_GCODE, 'arc.gcode');
-    const resp = await request.get(`${BASE}/api/trajectory/${jobId}/state`);
+    const resp = await request.get(`${BASE}/api/trajectory/${jobId}/wss`);
     expect(resp.ok()).toBe(true);
 
     const buffer = await resp.body();
-    expect(buffer.length).toBeGreaterThan(32);
+    expect(buffer.length).toBeGreaterThan(80);
 
     // Magic
     const magic = String.fromCharCode(buffer[0], buffer[1], buffer[2], buffer[3]);
-    expect(magic).toBe('TSSP');
+    expect(magic).toBe('TWSF');
 
-    // Version and sample count
+    // Version
     const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-    expect(view.getUint32(4, true)).toBe(1);
-    const sampleCount = view.getUint32(8, true);
-    expect(sampleCount).toBeGreaterThan(0);
+    expect(view.getUint16(4, true)).toBe(1);
 
-    // Total time and total length
+    // Arc count
+    const arcCount = view.getUint32(8, true);
+    expect(arcCount).toBeGreaterThan(0);
+
+    // Total length and total time (f64 at offsets 12 and 20)
     const totalLength = view.getFloat64(12, true);
     const totalTime = view.getFloat64(20, true);
     expect(totalLength).toBeGreaterThan(70);
     expect(totalLength).toBeLessThan(90);
     expect(totalTime).toBeGreaterThan(0);
 
-    // Max velocity positive
+    // Max velocity positive (f32 at offset 28)
     const maxV = view.getFloat32(28, true);
     expect(maxV).toBeGreaterThan(0);
   });
 
   test('loading arc G-code with velocity color mode produces no 404s', async ({ page, request }) => {
-    const jobId = await uploadAndProcess(request, ARC_GCODE, 'arc_state.gcode');
+    const jobId = await uploadAndProcess(request, ARC_GCODE, 'arc_wss.gcode');
     const networkErrors: string[] = [];
     page.on('response', r => {
       if (r.status() >= 400) networkErrors.push(`${r.status()} ${r.url()}`);
@@ -78,9 +80,9 @@ test.describe('State profile (TSSP) integration', () => {
     expect(networkErrors).toEqual([]);
   });
 
-  test('square G-code state profile has the correct path length', async ({ request }) => {
-    const jobId = await uploadAndProcess(request, SQUARE_GCODE, 'square_state.gcode');
-    const resp = await request.get(`${BASE}/api/trajectory/${jobId}/state`);
+  test('square G-code WSS has the correct path length', async ({ request }) => {
+    const jobId = await uploadAndProcess(request, SQUARE_GCODE, 'square_wss.gcode');
+    const resp = await request.get(`${BASE}/api/trajectory/${jobId}/wss`);
     expect(resp.ok()).toBe(true);
     const buffer = await resp.body();
     const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);

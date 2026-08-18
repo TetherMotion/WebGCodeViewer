@@ -354,11 +354,12 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
             cb(resp);
         }, {drogon::Get});
 
-    // ── GET /api/trajectory/{jobId}/renurbs ──
-    // Get ReNURBS profile binary data (TRNP format) — per-segment NURBS
-    // curves for velocity, acceleration, jerk, and time. WAY smaller than
-    // dense sampled data. Evaluated directly in frontend WGSL shaders.
-    app.registerHandler("/api/trajectory/{jobId}/renurbs",
+    // ── GET /api/trajectory/{jobId}/wss ──
+    // Get the analytical Weighted Switching Structure (TWSF format) —
+    // the Pareto-optimal velocity plan as a list of analytically integrable
+    // arcs. NO sampling. The WebGPU shaders evaluate v(s), a(s), j(s), t(s)
+    // in closed form at the exact points needed for rendering.
+    app.registerHandler("/api/trajectory/{jobId}/wss",
         [jobManager, enableCors](const drogon::HttpRequestPtr& req,
            std::function<void(const drogon::HttpResponsePtr&)>&& cb,
            const std::string& jobId) {
@@ -367,46 +368,16 @@ void mountWebRoutes(std::shared_ptr<JobManager> jobManager, bool enableCors) {
                 return;
             }
 
-            auto binary = jobManager->getReNurbsBinary(jobId);
+            auto binary = jobManager->getWssBinary(jobId);
             if (binary.empty()) {
-                cb(makeErrorResponse(404, "No ReNURBS data available", enableCors));
+                cb(makeErrorResponse(404, "No WSS data available", enableCors));
                 return;
             }
 
             auto resp = drogon::HttpResponse::newHttpResponse();
             resp->setContentTypeString("application/octet-stream");
             resp->addHeader("Content-Disposition",
-                            "attachment; filename=\"profile.trnp\"");
-            resp->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-            resp->setBody(std::string(reinterpret_cast<const char*>(binary.data()),
-                                       binary.size()));
-            if (enableCors) addCorsHeaders(resp);
-            cb(resp);
-        }, {drogon::Get});
-
-    // ── GET /api/trajectory/{jobId}/state ──
-    // Get sampled 1D state profile (TSSP format) — time, velocity,
-    // acceleration, jerk as a 1D RGBA32F texture data source. Sampled
-    // directly from the Pareto analytical velocity profile (WSS).
-    app.registerHandler("/api/trajectory/{jobId}/state",
-        [jobManager, enableCors](const drogon::HttpRequestPtr& req,
-           std::function<void(const drogon::HttpResponsePtr&)>&& cb,
-           const std::string& jobId) {
-            if (jobManager->getJobState(jobId) != JobState::Ready) {
-                cb(makeErrorResponse(404, "Job not ready", enableCors));
-                return;
-            }
-
-            auto binary = jobManager->getStateProfileBinary(jobId);
-            if (binary.empty()) {
-                cb(makeErrorResponse(404, "No state profile available", enableCors));
-                return;
-            }
-
-            auto resp = drogon::HttpResponse::newHttpResponse();
-            resp->setContentTypeString("application/octet-stream");
-            resp->addHeader("Content-Disposition",
-                            "attachment; filename=\"profile.tssp\"");
+                            "attachment; filename=\"profile.twse\"");
             resp->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
             resp->setBody(std::string(reinterpret_cast<const char*>(binary.data()),
                                        binary.size()));

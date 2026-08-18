@@ -6,5 +6,5 @@ export * from './MathUtils';
 export * from './TthrParser';
 export * from './NurbsParser';
 export * from './ReNurbsParser';
-export * from './StateProfileParser';
+export * from './WssParser';
 export * from './MiniplotData';

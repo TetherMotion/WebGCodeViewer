@@ -26,7 +26,7 @@
 #include "tether/motion_planner/geometry/PlanningSegmentConverter.hpp"
 #include "tether/motion_planner/profile_renurbs/ReNURBSProfile.hpp"
 #include "tether/web/PaProfileBuilder.hpp"
-#include "tether/web/StateProfile.hpp"
+#include "tether/web/WssData.hpp"
 
 #include <memory>
 #include <optional>
@@ -96,9 +96,8 @@ struct ProcessResult {
     std::vector<GCode::BlockMetadata> gcodeBlocks;
 
     /// ReNURBS profile — per-segment NURBS curves for v(s), a(s), j(s), t(s).
-    /// Built from the velocity profile (BasicTOPPRA) fitted to NURBS curves.
-    /// WAY smaller than dense samples: O(segments × controlPoints) vs O(samples).
-    /// Used for shader-based velocity/acceleration/jerk visualization.
+    /// DEPRECATED: replaced by wssData (analytical WSS arcs evaluated in
+    /// the shader). Kept for PA profile serialization compatibility.
     std::optional<tether::motion::profile_renurbs::ReNURBSProfile> renurbsProfile;
 
     /// Maximum velocity/acceleration/jerk values across all segments.
@@ -108,10 +107,13 @@ struct ProcessResult {
     float renurbsMaxJerk = 0.0f;
     float renurbsMaxTime = 0.0f;
 
-    /// Uniformly sampled 1D state profile (t, v, a, j) for the WebGPU UI.
-    /// Replaces the ReNURBS profile for velocity/acceleration/jerk/time color
-    /// mapping; sampled directly from the analytical Pareto velocity profile.
-    std::optional<StateProfile> stateProfile;
+    /// Analytical Weighted Switching Structure (WSS) — the Pareto-optimal
+    /// velocity plan as a list of analytically integrable arcs. Transferred
+    /// to the client as-is (no sampling). The WebGPU shaders evaluate
+    /// v(s), a(s), j(s), t(s) in closed form at the exact points needed.
+    /// For WALL arcs, the shader evaluates v_wall(s) from the NURBS path
+    /// curvature + the kinematic limits stored in the WSS.
+    std::optional<WssData> wssData;
 
     /// Pressure advance profiles — one per algorithm (Linear, PowerLaw,
     /// CrossWLF, LTI-Deconv, LPV-Deconv). Each contains pre-PA velocity

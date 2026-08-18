@@ -232,12 +232,13 @@ export class RpcClient {
   }
 
   /**
-   * Fetch ReNURBS profile binary data (TRNP format) via HTTP.
-   * Returns per-segment NURBS curves for velocity, acceleration, jerk,
-   * and time — a WAY smaller representation than dense sampled data.
+   * Fetch the analytical Weighted Switching Structure (TWSF format) via HTTP.
+   * Returns the Pareto-optimal velocity plan as a list of analytically
+   * integrable arcs — NO sampling. The WebGPU shaders evaluate v/a/j/t
+   * in closed form at the exact points needed for rendering.
    */
-  async getReNurbsHttp(jobId: string): Promise<Uint8Array> {
-    const url = `${this.httpBaseUrl}/api/trajectory/${jobId}/renurbs`;
+  async getWssHttp(jobId: string): Promise<Uint8Array> {
+    const url = `${this.httpBaseUrl}/api/trajectory/${jobId}/wss`;
     const resp = await fetch(url);
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
@@ -254,21 +255,6 @@ export class RpcClient {
    */
   async getPaHttp(jobId: string): Promise<Uint8Array> {
     const url = `${this.httpBaseUrl}/api/trajectory/${jobId}/pa`;
-    const resp = await fetch(url);
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => '');
-      throw new ViewerRpcError(`HTTP ${resp.status}: ${text || resp.statusText}`, resp.status);
-    }
-    const buf = await resp.arrayBuffer();
-    return new Uint8Array(buf);
-  }
-
-  /**
-   * Fetch sampled 1D state profile (TSSP format) via HTTP.
-   * Returns (time, velocity, acceleration, jerk) as a 1D RGBA32F texture.
-   */
-  async getStateProfileHttp(jobId: string): Promise<Uint8Array> {
-    const url = `${this.httpBaseUrl}/api/trajectory/${jobId}/state`;
     const resp = await fetch(url);
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');

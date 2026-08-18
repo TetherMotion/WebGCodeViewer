@@ -9,7 +9,7 @@
 #include "tether/web/GCodeProcessor.hpp"
 #include "tether/web/TrajectorySerializer.hpp"
 #include "tether/web/NurbsSerializer.hpp"
-#include "tether/web/StateProfileSerializer.hpp"
+#include "tether/web/WssSerializer.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -99,12 +99,13 @@ public:
     /// @return Binary NBP data, or empty if job not ready
     std::vector<uint8_t> getNurbsBinary(const std::string& jobId) const;
 
-    /// @brief Get serialized ReNURBS profile binary data (TRNP format).
-    /// Returns per-segment NURBS curves for velocity, acceleration, jerk,
-    /// and time — a WAY smaller representation than dense sampled data.
+    /// @brief Get serialized WSS (Weighted Switching Structure) binary data
+    /// (TWSF format). Returns the analytical Pareto-optimal velocity plan
+    /// as a list of arcs — NO sampling. The WebGPU shaders evaluate v/a/j/t
+    /// in closed form at the exact points needed for rendering.
     /// @param jobId Job ID
-    /// @return Binary TRNP data, or empty if not available
-    std::vector<uint8_t> getReNurbsBinary(const std::string& jobId) const;
+    /// @return Binary TWSF data, or empty if not available
+    std::vector<uint8_t> getWssBinary(const std::string& jobId) const;
 
     /// @brief Get serialized PA profiles binary data (TRNP-PA format).
     /// Returns per-algorithm NURBS curves for pressure advance pre/post
@@ -112,13 +113,6 @@ public:
     /// @param jobId Job ID
     /// @return Binary TRNP-PA data, or empty if not available
     std::vector<uint8_t> getPaBinary(const std::string& jobId) const;
-
-    /// @brief Get the sampled analytical state profile (TSSP format).
-    /// Returns a 1D RGBA32F texture data source (time, velocity, acceleration,
-    /// jerk) sampled from the Pareto analytical velocity profile.
-    /// @param jobId Job ID
-    /// @return Binary TSSP data, or empty if not available
-    std::vector<uint8_t> getStateProfileBinary(const std::string& jobId) const;
 
     /// @brief Get block metadata for a job as JSON.
     std::string getBlocksJson(const std::string& jobId) const;

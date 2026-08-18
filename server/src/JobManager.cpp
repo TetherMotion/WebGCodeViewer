@@ -220,20 +220,14 @@ std::vector<uint8_t> JobManager::getNurbsBinary(const std::string& jobId) const
     return {};
 }
 
-std::vector<uint8_t> JobManager::getReNurbsBinary(const std::string& jobId) const
+std::vector<uint8_t> JobManager::getWssBinary(const std::string& jobId) const
 {
     auto job = getJob(jobId);
     if (!job || job->state != JobState::Ready) return {};
 
     try {
-        if (job->result.renurbsProfile &&
-            !job->result.renurbsProfile->perSegment.empty()) {
-            return serializeReNurbsProfile(
-                *job->result.renurbsProfile,
-                job->result.renurbsMaxVelocity,
-                job->result.renurbsMaxAcceleration,
-                job->result.renurbsMaxJerk,
-                job->result.renurbsMaxTime);
+        if (job->result.wssData && !job->result.wssData->arcs.empty()) {
+            return serializeWss(*job->result.wssData);
         }
     } catch (const std::exception& e) {
         return {};
@@ -250,22 +244,6 @@ std::vector<uint8_t> JobManager::getPaBinary(const std::string& jobId) const
     try {
         if (!job->result.paProfiles.empty()) {
             return serializePaProfiles(job->result.paProfiles);
-        }
-    } catch (const std::exception& e) {
-        return {};
-    }
-
-    return {};
-}
-
-std::vector<uint8_t> JobManager::getStateProfileBinary(const std::string& jobId) const
-{
-    auto job = getJob(jobId);
-    if (!job || job->state != JobState::Ready) return {};
-
-    try {
-        if (job->result.stateProfile && !job->result.stateProfile->texels.empty()) {
-            return serializeStateProfile(*job->result.stateProfile);
         }
     } catch (const std::exception& e) {
         return {};

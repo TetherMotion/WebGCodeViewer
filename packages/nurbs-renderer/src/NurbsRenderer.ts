@@ -16,7 +16,7 @@
 import { Mat4 } from "@tether/viewer-core";
 import { NBPData, NBPPiece, tessellatePiece } from "@tether/viewer-core";
 import { TRNPData } from "@tether/viewer-core";
-import { StateProfileData } from "@tether/viewer-core";
+import { WssGpuData } from "@tether/viewer-core";
 import { ColorMap } from "@tether/viewer-core";
 
 export type NurbsColorAttribute = 'pieceIndex' | 'deviation' | 'zHeight' | 'extruderSpeed' | 'motion' | 'solid' | 'feedRate' | 'spindleRpm' | 'toolNumber' | 'coolant' | 'featureType' | 'velocity' | 'acceleration' | 'jerk' | 'time' | 'paOffset' | 'paVelocity';
@@ -71,11 +71,11 @@ export class NurbsRenderer {
   private pieceFeatureTypes: Float32Array | null = null;
   private maxFeatureType: number = 0;
 
-  // Sampled state profile (group 3) — 1D (t, v, a, j) texture loaded from WSS
-  private stateTexture: GPUTexture | null = null;
-  private stateBindGroup: GPUBindGroup | null = null;
-  private stateData: StateProfileData | null = null;
-  private hasStateProfile: boolean = false;
+  // Analytical WSS (group 3) — arcs evaluated in closed form in the shader.
+  private wssArcBuffer: GPUBuffer | null = null;
+  private wssBindGroup: GPUBindGroup | null = null;
+  private wssData: WssGpuData | null = null;
+  private hasWss: boolean = false;
 
   // Resources destroyed during data updates are queued here and flushed at the
   // start of render().  This avoids "used in submit while destroyed" warnings
@@ -150,8 +150,19 @@ export class NurbsRenderer {
           progress: f32,
           colorMode: u32,     // 0=cpuColorValue, 1=velocity, 2=accel, 3=jerk, 4=time
           maxValue: f32,      // for normalization
-          useStateTexture: u32,
-          _pad: array<f32, 4>,
+          useWss: u32,        // 1 if WSS data is available, 0 otherwise
+          totalLength: f32,   // total path arc length (for s = localU * totalLength)
+          wssArcCount: u32,   // number of WSS arcs
+          _pad0: u32,
+          // Kinematic limits for WALL arc evaluation
+          feedRate: f32,
+          maxPathVelocity: f32,
+          maxCentripetalAccel: f32,
+          maxAxisVelX: f32,
+          maxAxisVelY: f32,
+          maxAxisVelZ: f32,
+          _pad1: f32,
+          _pad2: f32,
         };
         @group(0) @binding(0) var<uniform> uniforms: Uniforms;
         @group(0) @binding(1) var colorLUT: texture_1d<f32>;
@@ -167,28 +178,21 @@ export class NurbsRenderer {
         @group(2) @binding(1) var<storage, read> paKnots: array<f32>;
         @group(2) @binding(2) var<storage, read> paMeta: array<u32>;
 
-        // Sampled 1D state profile (group 3) — (time, velocity, acceleration, jerk)
-        // Loaded with textureLoad because rgba32float is not filterable.
-        @group(3) @binding(0) var stateTexture: texture_1d<f32>;
+        // Analytical WSS arcs (group 3) — each arc is 12 floats (48 bytes):
+        //   [s0, s1, t0, v0, a0, eta, a_star, duration, type, 0, 0, 0]
+        @group(3) @binding(0) var<storage, read> wssArcs: array<f32>;
 
         const MAX_CP: u32 = 64u;
 
         /// Evaluate a 1-D B-spline (weights=1) at parameter u using De Boor's algorithm.
-        /// @param cpBase  Index into renurbsCPs of the first control point
-        /// @param cpCount Number of control points
-        /// @param knotBase Index into renurbsKnots of the first knot
-        /// @param degree  B-spline degree
-        /// @param u       Parameter value in [0,1]
         fn evalBSpline1D(cpBase: u32, cpCount: u32, knotBase: u32, degree: u32, u: f32) -> f32 {
           if (cpCount == 0u) { return 0.0; }
           if (degree == 0u) { return renurbsCPs[cpBase]; }
 
-          // Clamp u to knot domain
           let knotMin = renurbsKnots[knotBase + degree];
           let knotMax = renurbsKnots[knotBase + cpCount];
           let uClamped = clamp(u, knotMin, knotMax);
 
-          // Find knot span k
           var k = degree;
           for (var i = degree; i < cpCount; i = i + 1u) {
             if (renurbsKnots[knotBase + i] <= uClamped && uClamped < renurbsKnots[knotBase + i + 1u]) {
@@ -198,7 +202,6 @@ export class NurbsRenderer {
           }
           if (uClamped >= knotMax) { k = cpCount - 1u; }
 
-          // De Boor recursion (1-D, weights=1)
           var d: array<f32, 64>;
           for (var j = 0u; j <= degree; j = j + 1u) {
             d[j] = renurbsCPs[cpBase + k - degree + j];
@@ -217,8 +220,7 @@ export class NurbsRenderer {
           return d[degree];
         }
 
-        /// Evaluate a 1-D B-spline from PA storage buffers (same algorithm,
-        /// different buffer bindings).
+        /// Evaluate a 1-D B-spline from PA storage buffers.
         fn evalPaBSpline(cpBase: u32, cpCount: u32, knotBase: u32, degree: u32, u: f32) -> f32 {
           if (cpCount == 0u) { return 0.0; }
           if (degree == 0u) { return paCPs[cpBase]; }
@@ -254,11 +256,122 @@ export class NurbsRenderer {
           return d[degree];
         }
 
+        // ── WSS analytical evaluation ──────────────────────────────────────
+
+        /// Read a WSS arc by index. Returns 12 floats packed as 3 vec4s.
+        fn readWssArc(idx: u32) -> array<f32, 12> {
+          let base = idx * 12u;
+          var a: array<f32, 12>;
+          for (var i = 0u; i < 12u; i = i + 1u) {
+            a[i] = wssArcs[base + i];
+          }
+          return a;
+        }
+
+        /// Binary search for the WSS arc containing arc-length s.
+        /// Returns the arc index. Arcs are sorted by s0.
+        fn findWssArc(s: f32) -> u32 {
+          let n = uniforms.wssArcCount;
+          if (n == 0u) { return 0u; }
+          var lo: u32 = 0u;
+          var hi: u32 = n;
+          while (lo < hi) {
+            let mid = (lo + hi) / 2u;
+            let arcS1 = wssArcs[mid * 12u + 1u];
+            if (arcS1 < s) {
+              lo = mid + 1u;
+            } else {
+              hi = mid;
+            }
+          }
+          return min(lo, n - 1u);
+        }
+
+        /// Solve for τ in a BANG arc given Δs.
+        /// Cubic: (η/6)τ³ + (a0/2)τ² + v0·τ − ds = 0
+        /// Newton's method with constant-velocity initial guess.
+        fn bangTauForDs(v0: f32, a0: f32, eta: f32, ds: f32) -> f32 {
+          if (ds <= 0.0) { return 0.0; }
+          var tau = ds / max(v0, 1e-6);
+          for (var iter = 0; iter < 12; iter = iter + 1) {
+            let f = v0 * tau + 0.5 * a0 * tau * tau
+                  + (1.0 / 6.0) * eta * tau * tau * tau - ds;
+            let fp = v0 + a0 * tau + 0.5 * eta * tau * tau;
+            if (abs(fp) < 1e-15) { break; }
+            let dtau = f / fp;
+            tau = tau - dtau;
+            if (abs(dtau) < 1e-10) { break; }
+          }
+          return max(tau, 0.0);
+        }
+
+        /// Solve for τ in a SINGULAR arc given Δs.
+        /// Quadratic: v0·τ + ½·a*·τ² = ds
+        fn singularTauForDs(v0: f32, aStar: f32, ds: f32) -> f32 {
+          if (ds <= 0.0) { return 0.0; }
+          if (abs(aStar) < 1e-14) { return ds / max(v0, 1e-6); }
+          let disc = v0 * v0 + 2.0 * aStar * ds;
+          return (-v0 + sqrt(max(disc, 0.0))) / aStar;
+        }
+
+        /// Evaluate the WSS at arc-length s.
+        /// Returns vec4(time, velocity, acceleration, jerk).
+        /// For WALL arcs, v_wall is computed from the vertex curvature
+        /// (passed as the curvature parameter) and kinematic limits.
+        fn evalWssAtS(s: f32, curvature: f32) -> vec4<f32> {
+          if (uniforms.wssArcCount == 0u) {
+            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+          }
+
+          let idx = findWssArc(s);
+          let arc = readWssArc(idx);
+          let arcS0 = arc[0];
+          let arcT0 = arc[2];
+          let arcV0 = arc[3];
+          let arcA0 = arc[4];
+          let arcEta = arc[5];
+          let arcAStar = arc[6];
+          let arcDuration = arc[7];
+          let arcType = arc[8];
+
+          let dsLocal = max(s - arcS0, 0.0);
+
+          if (arcType < 2.5) {
+            // BANG_PLUS (0) or BANG_MINUS (1)
+            let tau = bangTauForDs(arcV0, arcA0, arcEta, dsLocal);
+            let a = arcA0 + arcEta * tau;
+            let v = arcV0 + arcA0 * tau + 0.5 * arcEta * tau * tau;
+            let j = arcEta;
+            let t = arcT0 + tau;
+            return vec4<f32>(t, v, a, j);
+          } else if (arcType < 3.5) {
+            // SINGULAR (2)
+            let tau = singularTauForDs(arcV0, arcAStar, dsLocal);
+            let v = arcV0 + arcAStar * tau;
+            let a = arcAStar;
+            let j = 0.0;
+            let t = arcT0 + tau;
+            return vec4<f32>(t, v, a, j);
+          } else {
+            // WALL (3): v = v_wall(s) from curvature + limits
+            let vWall = min(uniforms.feedRate, uniforms.maxPathVelocity);
+            let vCurv = select(uniforms.feedRate,
+                               sqrt(uniforms.maxCentripetalAccel / max(curvature, 1e-10)),
+                               curvature > 1e-8);
+            let v = min(vWall, vCurv);
+            // WALL arcs have a ≈ 0, j = 0
+            // Time is approximated as t0 + dsLocal / v
+            let tau = select(arcDuration, dsLocal / max(v, 1e-6), v > 1e-6);
+            let t = arcT0 + tau;
+            return vec4<f32>(t, v, 0.0, 0.0);
+          }
+        }
+
         struct VertexInput {
           @location(0) position: vec3<f32>,
           @location(1) colorValue: f32,
           @location(2) sampleIdx: f32,
-          @location(3) segIndexU: vec2<f32>,  // x=segmentIndex, y=normalized arc length [0,1]
+          @location(3) segIndexUC: vec3<f32>,  // x=segmentIndex, y=normalized arc length, z=curvature
         };
 
         struct VertexOutput {
@@ -267,6 +380,7 @@ export class NurbsRenderer {
           @location(1) dimmed: f32,
           @location(2) localU: f32,
           @location(3) segIndexX: f32,
+          @location(4) curvature: f32,
         };
 
         @vertex
@@ -274,11 +388,10 @@ export class NurbsRenderer {
           var output: VertexOutput;
           output.clipPosition = uniforms.viewProj * vec4<f32>(input.position, 1.0);
 
-          // Pass through the CPU-computed color value and the per-vertex parameters
-          // needed to evaluate the state/ReNURBS/PA color source in the fragment shader.
           output.colorValue = input.colorValue;
-          output.localU = input.segIndexU.y;
-          output.segIndexX = input.segIndexU.x;
+          output.localU = input.segIndexUC.y;
+          output.segIndexX = input.segIndexUC.x;
+          output.curvature = input.segIndexUC.z;
 
           let cutoff = uniforms.progress * f32(1000000.0);
           if (input.sampleIdx > cutoff) {
@@ -291,38 +404,26 @@ export class NurbsRenderer {
 
         @fragment
         fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-          // Determine the color value used to sample the LUT.  For CPU color modes
-          // this is the input color value (negative means retraction highlight).
-          // For state/ReNURBS/PA color modes it is computed here in the fragment
-          // stage so that textureSample (which is not allowed in the vertex stage)
-          // can be used for the 1D state profile texture.
           var cv = input.colorValue;
 
           if (uniforms.colorMode > 0u && uniforms.colorMode <= 4u) {
             var val: f32 = 0.0;
-            if (uniforms.useStateTexture != 0u) {
-              // rgba32float is not filterable, so we linearly interpolate by hand.
-              let width = f32(textureDimensions(stateTexture, 0));
-              let u = input.localU * (width - 1.0);
-              let x0 = u32(floor(u));
-              let x1 = min(x0 + 1u, u32(width) - 1u);
-              let frac = u - f32(x0);
-              let t0 = textureLoad(stateTexture, i32(x0), 0);
-              let t1 = textureLoad(stateTexture, i32(x1), 0);
-              let texel = mix(t0, t1, frac);
-              // texel = (time, velocity, acceleration, jerk)
+            if (uniforms.useWss != 0u) {
+              // Analytical WSS evaluation: compute s from normalized arc length,
+              // then evaluate the WSS arc in closed form.
+              let s = input.localU * uniforms.totalLength;
+              let state = evalWssAtS(s, input.curvature);
               switch (uniforms.colorMode) {
-                case 1u: { val = texel.y; }        // velocity
-                case 2u: { val = abs(texel.z); }   // acceleration
-                case 3u: { val = abs(texel.w); }   // jerk
-                case 4u: { val = texel.x; }        // time
+                case 1u: { val = state.y; }        // velocity
+                case 2u: { val = abs(state.z); }   // acceleration
+                case 3u: { val = abs(state.w); }   // jerk
+                case 4u: { val = state.x; }        // time
                 default: { val = 0.0; }
               }
             } else {
+              // Fallback: ReNURBS B-spline evaluation (legacy path)
               let segIdx = u32(input.segIndexX);
-              // Quantity index: colorMode 1=velocity(0), 2=accel(1), 3=jerk(2), 4=time(3)
               let qtyIdx = uniforms.colorMode - 1u;
-              // Quantity metadata: 4 u32 per (segment, quantity): cpOffset, cpCount, knotOffset, degree
               let metaBase = segIdx * 4u * 4u + qtyIdx * 4u;
               let cpOffset = renurbsMeta[metaBase + 0u];
               let cpCount = renurbsMeta[metaBase + 1u];
@@ -330,16 +431,13 @@ export class NurbsRenderer {
               let degree = renurbsMeta[metaBase + 3u];
               val = evalBSpline1D(cpOffset, cpCount, knotOffset, degree, input.localU);
             }
-            // Normalize to [0,1] using maxValue
             cv = select(0.0, val / uniforms.maxValue, uniforms.maxValue > 0.0);
           }
 
           // PA color modes: 5=paOffset, 6=paVelocity
           if (uniforms.colorMode >= 5u && uniforms.colorMode <= 6u) {
             let segIdx = u32(input.segIndexX);
-            // PA quantity: 0=pressure_offset (mode 5), 1=extruder_velocity (mode 6)
             let qtyIdx = uniforms.colorMode - 5u;
-            // PA has 2 quantities per segment
             let metaBase = segIdx * 2u * 4u + qtyIdx * 4u;
             let cpOffset = paMeta[metaBase + 0u];
             let cpCount = paMeta[metaBase + 1u];
@@ -354,7 +452,6 @@ export class NurbsRenderer {
           }
 
           let sampled = textureSample(colorLUT, colorSampler, cv);
-          // Feature #3: Retraction highlight — original CPU colorValue < 0 means red
           let retractionColor = vec3<f32>(1.0, 0.2, 0.1);
           let baseColor = mix(sampled.rgb, retractionColor,
                               select(0.0, 1.0, input.colorValue < 0.0));
@@ -395,8 +492,8 @@ export class NurbsRenderer {
             attributes: [{ shaderLocation: 2, offset: 0, format: 'float32' }],
           },
           {
-            arrayStride: 8,
-            attributes: [{ shaderLocation: 3, offset: 0, format: 'float32x2' }],
+            arrayStride: 12,
+            attributes: [{ shaderLocation: 3, offset: 0, format: 'float32x3' }],
           },
         ],
       },
@@ -415,7 +512,7 @@ export class NurbsRenderer {
 
     this.uniformBuffer = this.device.createBuffer({
       label: 'NurbsRenderer.uniformBuffer',
-      size: 96,
+      size: 128,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -440,8 +537,8 @@ export class NurbsRenderer {
     // has been loaded yet.
     this.createDummyPaBuffers();
 
-    // Create dummy 1D state profile texture for group 3.
-    this.createDummyStateTexture();
+    // Create dummy WSS arc buffer for group 3.
+    this.createDummyWssBuffer();
   }
 
   /**
@@ -529,86 +626,70 @@ export class NurbsRenderer {
   }
 
   /**
-   * Create a minimal 1x1 state profile texture for group 3. The pipeline auto
+   * Create a minimal 1-float WSS arc buffer for group 3. The pipeline auto
    * layout exposes @group(3), so a bind group must always be available.
    */
-  private createDummyStateTexture(): void {
-    this.stateTexture = this.device.createTexture({
-      size: [1],
-      dimension: '1d',
-      format: 'rgba32float',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  private createDummyWssBuffer(): void {
+    const dummySize = 48; // 1 arc × 12 floats × 4 bytes
+    this.wssArcBuffer = this.device.createBuffer({
+      size: dummySize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    const dummy = new Float32Array([0, 0, 0, 0]);
-    this.device.queue.writeTexture(
-      { texture: this.stateTexture },
-      dummy,
-      { bytesPerRow: 16 },
-      { width: 1 },
-    );
+    this.device.queue.writeBuffer(this.wssArcBuffer, 0, new Float32Array(12));
 
     try {
-      const stateLayout = this.pipeline!.getBindGroupLayout(3);
-      this.stateBindGroup = this.device.createBindGroup({
-        layout: stateLayout,
+      const wssLayout = this.pipeline!.getBindGroupLayout(3);
+      this.wssBindGroup = this.device.createBindGroup({
+        layout: wssLayout,
         entries: [
-          { binding: 0, resource: this.stateTexture.createView() },
+          { binding: 0, resource: { buffer: this.wssArcBuffer } },
         ],
       });
     } catch {
-      this.stateBindGroup = null;
+      this.wssBindGroup = null;
     }
-    this.hasStateProfile = false;
-    this.stateData = null;
+    this.hasWss = false;
+    this.wssData = null;
   }
 
   /**
-   * Update the 1D state profile texture from TSSP data. This replaces the
-   * ReNURBS profile for velocity/acceleration/jerk/time color mapping.
+   * Update the WSS arc storage buffer from parsed TWSF data.
+   * The arcs are uploaded as a flat Float32Array for direct shader evaluation.
    */
-  updateStateProfile(data: StateProfileData): void {
-    if (data.texels.length === 0 || data.sampleCount === 0) {
-      this.createDummyStateTexture();
+  updateWss(data: WssGpuData): void {
+    if (data.arcBuffer.length === 0 || data.arcs.length === 0) {
+      this.createDummyWssBuffer();
       return;
     }
 
-    if (this.stateTexture && (this.stateTexture.width < data.sampleCount || this.stateTexture.format !== 'rgba32float')) {
-      this.deferDestroy(this.stateTexture);
-      this.stateTexture = null;
+    if (this.wssArcBuffer) {
+      this.deferDestroy(this.wssArcBuffer);
+      this.wssArcBuffer = null;
     }
 
-    const sampleCount = data.sampleCount;
-    if (!this.stateTexture) {
-      this.stateTexture = this.device.createTexture({
-        size: [sampleCount],
-        dimension: '1d',
-        format: 'rgba32float',
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      });
-    }
-
-    const texels = new Float32Array(data.texels);
-    this.device.queue.writeTexture(
-      { texture: this.stateTexture },
-      texels,
-      { bytesPerRow: texels.byteLength },
-      { width: sampleCount },
-    );
+    const byteSize = data.arcBuffer.byteLength;
+    // WebGPU requires buffer sizes to be multiples of 4
+    const paddedSize = Math.ceil(byteSize / 4) * 4;
+    this.wssArcBuffer = this.device.createBuffer({
+      size: paddedSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.wssArcBuffer, 0, data.arcBuffer as Float32Array<ArrayBuffer>);
 
     try {
-      const stateLayout = this.pipeline!.getBindGroupLayout(3);
-      this.stateBindGroup = this.device.createBindGroup({
-        layout: stateLayout,
+      const wssLayout = this.pipeline!.getBindGroupLayout(3);
+      this.wssBindGroup = this.device.createBindGroup({
+        layout: wssLayout,
         entries: [
-          { binding: 0, resource: this.stateTexture.createView() },
+          { binding: 0, resource: { buffer: this.wssArcBuffer } },
         ],
       });
     } catch {
-      this.stateBindGroup = null;
+      this.wssBindGroup = null;
     }
 
-    this.stateData = data;
-    this.hasStateProfile = true;
+    this.wssData = data;
+    this.hasWss = true;
   }
 
   /**
@@ -753,14 +834,47 @@ export class NurbsRenderer {
         colorValue = -1.0;  // sentinel value → shader renders red
       }
 
+      // Compute per-vertex curvature for WALL arc v_wall(s) evaluation.
+      // Uses the Menger curvature formula: κ = 4*Area / (|a||b||c|)
+      // where a, b, c are the side lengths of the triangle formed by three
+      // consecutive points. For endpoints, use the nearest interior triangle.
+      const curvatures = new Float32Array(segments + 1);
+      if (segments >= 2) {
+        for (let j = 0; j <= segments; j++) {
+          const j0 = Math.max(0, j - 1);
+          const j1 = j;
+          const j2 = Math.min(segments, j + 1);
+          const p0x = positions[j0 * 3], p0y = positions[j0 * 3 + 1], p0z = positions[j0 * 3 + 2];
+          const p1x = positions[j1 * 3], p1y = positions[j1 * 3 + 1], p1z = positions[j1 * 3 + 2];
+          const p2x = positions[j2 * 3], p2y = positions[j2 * 3 + 1], p2z = positions[j2 * 3 + 2];
+          // Side lengths
+          const a = Math.hypot(p1x - p0x, p1y - p0y, p1z - p0z);
+          const b = Math.hypot(p2x - p1x, p2y - p1y, p2z - p1z);
+          const c = Math.hypot(p2x - p0x, p2y - p0y, p2z - p0z);
+          if (a < 1e-12 || b < 1e-12 || c < 1e-12) {
+            curvatures[j] = 0;
+          } else {
+            // Triangle area via cross product
+            const ux = p1x - p0x, uy = p1y - p0y, uz = p1z - p0z;
+            const vx = p2x - p0x, vy = p2y - p0y, vz = p2z - p0z;
+            const cx = uy * vz - uz * vy;
+            const cy = uz * vx - ux * vz;
+            const cz = ux * vy - uy * vx;
+            const area = 0.5 * Math.hypot(cx, cy, cz);
+            curvatures[j] = (4 * area) / (a * b * c);
+          }
+        }
+      }
+
       for (let j = 0; j <= segments; j++) {
         allPositions.push(positions[j * 3], positions[j * 3 + 1], positions[j * 3 + 2]);
         allColors.push(colorValue);
         allSampleIndices.push(vertexOffset + j);
-        // Per-vertex segment index + normalized arc length for state profile sampling.
-        // y = global arc length / total path length, used to sample the 1D state texture.
+        // Per-vertex: segment index, normalized arc length, curvature.
+        // y = global arc length / total path length, used to evaluate the WSS.
+        // z = curvature κ (1/mm), used for WALL arc v_wall(s) computation.
         const sNorm = totalLength > 0.0 ? (pieceStartS + pieceDists[j]) / totalLength : 0.0;
-        allSegIndexU.push(i, sNorm);
+        allSegIndexU.push(i, sNorm, curvatures[j]);
       }
 
       // Line indices: connect consecutive vertices within this piece
@@ -1019,16 +1133,15 @@ export class NurbsRenderer {
   }
 
   /**
-   * Get the max value from the sampled state profile for the current color
-   * attribute.
+   * Get the max value from the analytical WSS for the current color attribute.
    */
-  private getStateMaxValue(): number {
-    if (!this.stateData) return 1.0;
+  private getWssMaxValue(): number {
+    if (!this.wssData) return 1.0;
     switch (this.options.colorAttribute) {
-      case 'velocity': return this.stateData.maxVelocity || 1.0;
-      case 'acceleration': return this.stateData.maxAcceleration || 1.0;
-      case 'jerk': return this.stateData.maxJerk || 1.0;
-      case 'time': return this.stateData.totalTime || 1.0;
+      case 'velocity': return this.wssData.maxVelocity || 1.0;
+      case 'acceleration': return this.wssData.maxAcceleration || 1.0;
+      case 'jerk': return this.wssData.maxJerk || 1.0;
+      case 'time': return this.wssData.totalTime || 1.0;
       default: return 1.0;
     }
   }
@@ -1156,45 +1269,57 @@ export class NurbsRenderer {
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.options.visible || !this.pipeline || !this.positionBuffer || this.indexCount < 2) return;
     if (!this.uniformBuffer || !this.bindGroup || !this.colorBuffer || !this.sampleIdxBuffer || !this.indexBuffer) return;
-    if (!this.segIndexUBuffer || !this.renurbsBindGroup || !this.stateBindGroup) return;
+    if (!this.segIndexUBuffer || !this.renurbsBindGroup || !this.wssBindGroup) return;
 
     // Destroy resources replaced during previous data updates.  This is done
     // after the previous frame's queue.submit() has finished using them.
     this.flushStaleResources();
 
-    // Uniforms: viewProj(16 floats) + progress(1) + colorMode(u32) + maxValue(1)
-    //           + useStateTexture(u32) + pad(4 floats) = 96 bytes
+    // Uniforms: viewProj(64) + progress(4) + colorMode(4) + maxValue(4)
+    //           + useWss(4) + totalLength(4) + wssArcCount(4) + _pad0(4)
+    //           + feedRate(4) + maxPathVelocity(4) + maxCentripetalAccel(4)
+    //           + maxAxisVelX(4) + maxAxisVelY(4) + maxAxisVelZ(4)
+    //           + _pad1(4) + _pad2(4) = 120 bytes (buffer is 128)
     const cm = this.getColorMode();
     const isPaMode = cm === 5 || cm === 6;
     const isKinematicMode = cm >= 1 && cm <= 4;
-    const hasState = this.hasStateProfile && isKinematicMode;
+    const hasWss = this.hasWss && isKinematicMode;
     const colorMode = isKinematicMode
-      ? (hasState ? cm : 0)
+      ? (hasWss ? cm : 0)
       : (isPaMode ? (this.hasPaData ? cm : 0) : cm);
     const maxValue = isPaMode
       ? (cm === 5 ? this.paMaxOffset : this.paMaxVelocity)
-      : (hasState ? this.getStateMaxValue() : (this.hasReNurbs ? this.getReNurbsMaxValue() : 1.0));
+      : (hasWss ? this.getWssMaxValue() : (this.hasReNurbs ? this.getReNurbsMaxValue() : 1.0));
 
-    const uniformData = new ArrayBuffer(96);
+    const uniformData = new ArrayBuffer(128);
     const view = new DataView(uniformData);
     for (let i = 0; i < 16; i++) view.setFloat32(i * 4, viewProj[i], true);
     view.setFloat32(64, this.progress, true);
     view.setUint32(68, colorMode, true);
     view.setFloat32(72, maxValue, true);
-    view.setUint32(76, hasState ? 1 : 0, true);
-    for (let i = 0; i < 4; i++) view.setFloat32(80 + i * 4, 0, true); // pad
+    view.setUint32(76, hasWss ? 1 : 0, true);
+    view.setFloat32(80, this.wssData?.totalLength ?? 0, true);
+    view.setUint32(84, this.wssData?.arcs.length ?? 0, true);
+    view.setUint32(88, 0, true); // _pad0
+    // Kinematic limits
+    view.setFloat32(92, this.wssData?.limits.feedRate ?? 0, true);
+    view.setFloat32(96, this.wssData?.limits.maxPathVelocity ?? 0, true);
+    view.setFloat32(100, this.wssData?.limits.maxCentripetalAcceleration ?? 0, true);
+    view.setFloat32(104, this.wssData?.limits.maxAxisVelocityX ?? 0, true);
+    view.setFloat32(108, this.wssData?.limits.maxAxisVelocityY ?? 0, true);
+    view.setFloat32(112, this.wssData?.limits.maxAxisVelocityZ ?? 0, true);
+    view.setFloat32(116, 0, true); // _pad1
+    view.setFloat32(120, 0, true); // _pad2
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.setBindGroup(1, this.renurbsBindGroup);
-    // Group 2 is always bound: it points to real PA data after updatePaData() or
-    // to the dummy buffers created in init() before PA data is loaded.
     if (this.paBindGroup) {
       pass.setBindGroup(2, this.paBindGroup);
     }
-    // Group 3: 1D state profile texture (real or dummy).
-    pass.setBindGroup(3, this.stateBindGroup);
+    // Group 3: WSS arc storage buffer (real or dummy).
+    pass.setBindGroup(3, this.wssBindGroup);
     pass.setVertexBuffer(0, this.positionBuffer);
     pass.setVertexBuffer(1, this.colorBuffer);
     pass.setVertexBuffer(2, this.sampleIdxBuffer);
@@ -1209,7 +1334,7 @@ export class NurbsRenderer {
     this.indexBuffer?.destroy();
     this.uniformBuffer?.destroy();
     this.colorLUTTexture?.destroy();
-    this.stateTexture?.destroy();
+    this.wssArcBuffer?.destroy();
     this.sampleIdxBuffer?.destroy();
     this.segIndexUBuffer?.destroy();
     this.renurbsCpBuffer?.destroy();

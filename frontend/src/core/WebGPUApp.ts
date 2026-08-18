@@ -19,7 +19,7 @@ import { ColorMap } from "@tether/viewer-core";
 import { parseTTHR, TTHRData, extractZLayer } from "@tether/viewer-core";
 import { parseNBP, NBPData } from "@tether/viewer-core";
 import { type AnalysisSection } from "@tether/viewer-core/generated";
-import { parseTSSP, StateProfileData, stateProfileToTrnp } from "@tether/viewer-core";
+import { parseTWSF, WssGpuData, wssToTrnp } from "@tether/viewer-core";
 import { parseTRNP, TRNPData, parseTRNPPa, TRNPPaData } from "@tether/viewer-core";
 import { ToolpathRenderer, ColorAttribute } from '../renderers/ToolpathRenderer';
 import { GridRenderer } from "@tether/ground-grid";
@@ -97,7 +97,7 @@ export class WebGPUApp {
   private fullData: TTHRData | null = null;  // unfiltered data (for layer reset)
   private currentNBP: NBPData | null = null;
   private currentTRNP: TRNPData | null = null;
-  private currentStateProfile: StateProfileData | null = null;
+  private currentWss: WssGpuData | null = null;
   private currentPaData: TRNPPaData | null = null;
   private gpuPlot: GpuPlot | null = null;
   private paControls: PaControls | null = null;
@@ -122,7 +122,7 @@ export class WebGPUApp {
   private printerMode: 'realtime' | 'simulation' = 'realtime';
   private printerSpeed: number = 1;     // speed multiplier
   private printerDirection: 'forward' | 'backward' = 'forward';
-  private autoLayerTracking: boolean = true;  // auto-shift Z layer in realtime mode
+  private autoLayerTracking: boolean = false; // auto-shift Z layer in realtime mode (gated by UI checkbox)
   private lastAutoLayerIdx: number = -1;     // last auto-selected layer (to avoid redundant updates)
 
   // Analysis features
@@ -490,6 +490,23 @@ export class WebGPUApp {
     // Layer slider → filter toolpath by Z-layer
     this.controlPanel.on('layerChanged', (layerIdx) => {
       this.applyLayerFilter(layerIdx);
+    });
+
+    // "Show only current Z layer" checkbox → toggle auto-layer-tracking
+    this.controlPanel.on('toggleAutoLayerFilter', (enabled) => {
+      this.autoLayerTracking = enabled;
+      // When re-enabled, reset so auto-tracking resumes from the current
+      // position. When disabled, restore the full toolpath.
+      this.lastAutoLayerIdx = -1;
+      if (!enabled) {
+        this.applyLayerFilter(-1);
+        this.controlPanel.setLayerValue(-1);
+      } else {
+        // Immediately apply the auto-layer filter for the current position
+        // (updatePlayPosition is only called from the render loop when
+        // playing or progress < 1.0, so we must trigger it manually here).
+        this.updatePlayPosition();
+      }
     });
 
     // Time slider → set playback position
@@ -1221,6 +1238,14 @@ export class WebGPUApp {
         this.playProgress += dt * this.playSpeed * this.printerSpeed;
         if (this.playProgress >= 1.0) {
           this.playProgress = 1.0;
+          // Print completed — unless the user opted into "show only current
+          // Z layer", restore the full toolpath instead of leaving it
+          // filtered to the last auto-tracked layer.
+          if (!this.autoLayerTracking && this.lastAutoLayerIdx >= 0) {
+            this.lastAutoLayerIdx = -1;
+            this.applyLayerFilter(-1);
+            this.controlPanel.setLayerValue(-1);
+          }
         }
         this.controlPanel.setTimePosition(this.playProgress);
         this.updatePlayPosition();
@@ -1321,7 +1346,10 @@ export class WebGPUApp {
           this.printerFrameRenderer.setBedTemperature(machineState.bedTemp);
         }
       }
-      // Auto Z-layer tracking in realtime mode
+      // Auto Z-layer tracking — gated by the "Show only current Z layer"
+      // checkbox (default off). When enabled, the toolpath is filtered to
+      // the current Z layer as the print head moves. When disabled (default),
+      // the entire toolpath stays visible alongside the printer frame.
       if (this.autoLayerTracking && this.printerMode === 'realtime') {
         this.autoUpdateLayer(pos[2]);
       }
@@ -1626,9 +1654,10 @@ export class WebGPUApp {
     const state = this.paControls.getState();
     const series: PlotSeries[] = [];
 
-    // Motion profile series from the sampled WSS state profile.
-    const motionTrnp = this.currentStateProfile
-      ? stateProfileToTrnp(this.currentStateProfile)
+    // Motion profile series from the analytical WSS (sampled on CPU for now;
+    // Phase 7 will replace this with a WebGPU compute shader miniplot).
+    const motionTrnp = this.currentWss
+      ? wssToTrnp(this.currentWss)
       : null;
     if (motionTrnp) {
       if (state.showVelocity) {
@@ -1814,7 +1843,7 @@ export class WebGPUApp {
     // wrong layer filters, and wrong bbox display.
     this.currentNBP = null;
     this.currentTRNP = null;
-    this.currentStateProfile = null;
+    this.currentWss = null;
     this.currentPaData = null;
     this.currentData = null;
     this.fullData = null;
@@ -1856,20 +1885,20 @@ export class WebGPUApp {
         }
       }
 
-      // Fetch sampled 1D state profile (TSSP format) — (t, v, a, j) sampled
-      // directly from the WSS and resampled to a uniform arc-length grid.
-      // This is the preferred data source for kinematic coloring.
+      // Fetch the analytical Weighted Switching Structure (TWSF format) —
+      // the Pareto-optimal velocity plan as a list of analytically integrable
+      // arcs. NO sampling. The WebGPU shaders evaluate v/a/j/t in closed form.
       try {
-        const stateBinary = await this.rpcClient.getStateProfileHttp(jobId);
-        this.currentStateProfile = parseTSSP(stateBinary);
-        this.nurbsRenderer?.updateStateProfile(this.currentStateProfile);
-        console.info(`State profile loaded: ${this.currentStateProfile.sampleCount} samples, ` +
-                     `${stateBinary.byteLength} bytes`);
+        const wssBinary = await this.rpcClient.getWssHttp(jobId);
+        this.currentWss = parseTWSF(wssBinary);
+        this.nurbsRenderer?.updateWss(this.currentWss);
+        console.info(`WSS loaded: ${this.currentWss.arcs.length} arcs, ` +
+                     `${wssBinary.byteLength} bytes, totalLength=${this.currentWss.totalLength.toFixed(1)}mm`);
       } catch (e) {
-        // State profile is optional — if it fails, the renderer falls back to
+        // WSS is optional — if it fails, the renderer falls back to
         // ReNURBS or piece-level coloring.
-        console.info('State profile not available');
-        this.currentStateProfile = null;
+        console.info('WSS not available:', (e as Error).message);
+        this.currentWss = null;
       }
 
       // Fetch pressure advance profiles (TRNP-PA format) — per-algorithm

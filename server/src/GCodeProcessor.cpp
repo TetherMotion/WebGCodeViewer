@@ -436,22 +436,22 @@ ProcessResult GCodeProcessor::process(
 
     if (progress) progress(0.6);
 
-    // ── Step 3b: Build ReNURBS profile (velocity/accel/jerk as NURBS curves) ──
-    // Constructs a PathAdapter from the PiecewiseNurbsPath, runs BasicTOPPRA
-    // to get a sampled VelocityProfile, then fits per-segment NURBS curves
-    // via buildReNURBSProfile(). This produces a WAY smaller representation
-    // than dense sampling: O(segments × controlPoints) vs O(samples).
-    // The resulting curves are evaluated in the frontend shader directly.
+    // ── Step 3b: Extract analytical WSS (Weighted Switching Structure) ──
+    // Runs the analytical ParetoTimeEnergyOptimalVelocityPlanner to solve
+    // the time-energy optimal control problem. The solution is a list of
+    // weighted arcs (BANG/SINGULAR/WALL) — a compact analytical structure
+    // that is transferred to the client as-is (NO sampling).
     //
-    // PERF: BasicTOPPRA's evaluateAtArcLength is O(segments) per sample, making
-    // the overall complexity O(segments × numSamples). For large files (>5K
-    // segments) this is too slow for interactive use. Skip ReNURBS for large
-    // files — the viewer falls back to piece-level coloring which works fine.
+    // The WebGPU shaders evaluate v(s), a(s), j(s), t(s) in closed form at
+    // the exact points needed for rendering. For WALL arcs, the shader
+    // evaluates v_wall(s) from the NURBS path curvature + kinematic limits.
+    //
+    // Memory: O(arcs) ≈ O(segments). For a 69K-segment file: ~3.3 MB.
+    // Compare: dense sampling at 1ms over a 4-hour print = 14M samples ×
+    // 32 bytes = 448 MB. The WSS is ~135× smaller and exactly analytical.
     Timer step3b;
-    constexpr std::size_t kMaxSegmentsForReNurbs = 5000;
     try {
-        if (result.nurbsPath && !result.nurbsPath->pieces().empty() &&
-            result.nurbsPath->numPieces() <= kMaxSegmentsForReNurbs) {
+        if (result.nurbsPath && !result.nurbsPath->pieces().empty()) {
             // Build PathAdapter from the NURBS path
             MotionPlanner::PathAdapter<3, double> pathAdapter(*result.nurbsPath);
 
@@ -468,12 +468,10 @@ ProcessResult GCodeProcessor::process(
             }
             limits.axis.jerkLimitEnabled = limits.path.jerkLimitEnabled;
 
-            // Run ParetoTimeEnergyOptimalVelocityPlanner to get a sampled
-            // velocity profile AND the analytical WSS (Weighted Switching
-            // Structure) needed by the analytical PA algorithms.
+            // Run ParetoTimeEnergyOptimalVelocityPlanner to get the WSS.
+            // numSamples is only used for the optional SampledVelocityProfile
+            // (needed by the PA builder); the WSS itself is analytical.
             MotionPlanner::analytical::ParetoTimeEnergyOptimalVelocityPlanner<3, double> profiler(limits);
-            // Use the first segment's feed rate as the global feed rate.
-            // Feed rate in G-code is mm/min; convert to mm/s.
             double feedRate = config.maxVelocity;
             for (const auto& seg : parseResult.segments) {
                 if (seg.feedRate > 0.0) {
@@ -481,16 +479,11 @@ ProcessResult GCodeProcessor::process(
                     break;
                 }
             }
-            // Number of samples for the velocity profile — enough resolution
-            // for the ReNURBS fitter to capture the profile shape.
-            // Cap at 20000 to avoid O(n²) blowup on large files (69K segments
-            // × 20 = 1.4M samples would take minutes; 20K is sufficient for
-            // smooth profile fitting and completes in <1s).
             std::size_t numSamples = std::min<std::size_t>(
                 20000, std::max<std::size_t>(
                     200, pathAdapter.numSegments() * 20));
-            WGV_LOG(std::format("Step 3b: ParetoPlanner — {} segments, feedRate={:.1} mm/s, numSamples={}",
-                pathAdapter.numSegments(), feedRate, numSamples));
+            WGV_LOG(std::format("Step 3b: ParetoPlanner — {} segments, feedRate={:.1} mm/s",
+                pathAdapter.numSegments(), feedRate));
             Timer toppraTimer;
             WGV_LOG("Step 3b: ParetoPlanner calling computeProfile...");
             auto velocityProfile = profiler.computeProfile(
@@ -500,152 +493,89 @@ ProcessResult GCodeProcessor::process(
             }
             WGV_LOG_TIME("Step 3b: ParetoPlanner computeProfile returned (analytical)", toppraTimer);
 
-            // Extract the WSS (analytical trajectory source) for PA computation
+            // Extract the WSS (analytical trajectory source)
             auto wss = profiler.weightedSource();
 
-            // Sample the analytical Pareto profile into a 1D state texture
-            // that the WebGPU UI can use directly, avoiding the ReNURBS
-            // conversion and its expensive O(n^3) spline fitting.
-            //
-            // We sample the WSS by *time* (forward evaluation, cheap) and
-            // then resample onto a uniform arc-length grid (1D texture).
-            // Sampling by arc-length is slow because it requires inverting
-            // the WSS time-to-s mapping, especially for WALL arcs.
-            constexpr std::size_t kStateSourceSamples = 512;
-            constexpr std::size_t kStateTextureSamples = 1024;
-            StateProfile stateProfile;
+            // ── Transfer WSS arcs directly (no sampling) ──
+            // Each arc is converted to a WssArcEntry (48 bytes, f32) for
+            // direct GPU upload. The shader evaluates v/a/j/t in closed form.
             if (wss && wss->totalTime() > 0.0) {
-                Timer stateTimer;
-                const double T = wss->totalTime();
-                const double L = wss->totalLength();
-                stateProfile.totalLength = L;
-                stateProfile.totalTime = T;
-                stateProfile.texels.resize(kStateTextureSamples * 4);
-
-                // Time samples: monotonic in both t and s.
-                std::vector<double> srcS(kStateSourceSamples);
-                std::vector<double> srcT(kStateSourceSamples);
-                std::vector<double> srcV(kStateSourceSamples);
-                std::vector<double> srcA(kStateSourceSamples);
-                std::vector<double> srcJ(kStateSourceSamples);
-
+                Timer wssTimer;
                 const auto& arcs = wss->arcs();
+                WssData wssData;
+                wssData.arcs.reserve(arcs.size());
+                wssData.totalLength = wss->totalLength();
+                wssData.totalTime = wss->totalTime();
 
-                auto findArcByTime = [&](double t) -> size_t {
-                    size_t lo = 0, hi = arcs.size();
-                    while (lo < hi) {
-                        size_t mid = (lo + hi) / 2;
-                        if (arcs[mid].t0 <= t) lo = mid + 1;
-                        else hi = mid;
-                    }
-                    if (lo == 0) return 0;
-                    if (lo >= arcs.size()) return arcs.size() - 1;
-                    // lo is first arc with t0 > t; the active arc is lo-1
-                    return (arcs[lo - 1].t0 + arcs[lo - 1].duration >= t) ? (lo - 1) : lo;
-                };
+                // Kinematic limits for WALL arc evaluation in the shader
+                wssData.limits.feedRate = static_cast<float>(feedRate);
+                wssData.limits.maxPathVelocity = static_cast<float>(config.maxVelocity);
+                wssData.limits.maxCentripetalAcceleration = static_cast<float>(
+                    limits.path.maxCentripetalAcceleration);
+                wssData.limits.maxAxisVelocityX = static_cast<float>(config.maxVelocity);
+                wssData.limits.maxAxisVelocityY = static_cast<float>(config.maxVelocity);
+                wssData.limits.maxAxisVelocityZ = static_cast<float>(config.maxVelocity);
 
+                // Compute max v/a/j by scanning arc endpoints.
+                // For BANG arcs, max |a| is at the endpoint; max |v| is at
+                // whichever endpoint is larger. For SINGULAR, a is constant.
+                // For WALL, v = v_wall(s) ≤ feedRate.
                 double maxV = 0.0, maxA = 0.0, maxJ = 0.0;
-                const double dt = T / static_cast<double>(kStateSourceSamples - 1);
-                WGV_LOG(std::format("Step 3b: StateProfile start sampling — {} arcs", arcs.size()));
-                for (std::size_t i = 0; i < kStateSourceSamples; ++i) {
-                    const double t = std::min(static_cast<double>(i) * dt, T);
+                for (const auto& arc : arcs) {
+                    WssArcEntry entry{};
+                    entry.s0 = static_cast<float>(arc.s0);
+                    entry.s1 = static_cast<float>(arc.s1);
+                    entry.t0 = static_cast<float>(arc.t0);
+                    entry.v0 = static_cast<float>(arc.v0);
+                    entry.a0 = static_cast<float>(arc.a0);
+                    entry.eta = static_cast<float>(arc.eta);
+                    entry.a_star = static_cast<float>(arc.a_star);
+                    entry.duration = static_cast<float>(arc.duration);
 
-                    // Evaluate the WSS arc at time t without going through the
-                    // full WSS methods, which call the constraint evaluator for
-                    // every sample and are very slow (they evaluate the NURBS
-                    // path at arc length to get curvature/velocity limit).
-                    // BANG/SINGULAR arcs are pure polynomial; use closed form.
-                    // WALL arcs fall back to the (slower) WSS methods.
-                    const size_t arcIdx = findArcByTime(t);
-                    const auto& arc = arcs[arcIdx];
-                    const double tau = std::clamp(t - arc.t0, 0.0, arc.duration);
-                    double s, v, a, j;
-
-                    if (arc.type == WeightedArcType::SINGULAR) {
-                        const double acc = arc.a_star;
-                        v = arc.v0 + acc * tau;
-                        s = arc.s0 + arc.v0 * tau + 0.5 * acc * tau * tau;
-                        a = acc;
-                        j = 0.0;
-                    } else if (arc.type == WeightedArcType::WALL) {
-                        // Fast approximation: WALL arcs are velocity-limited,
-                        // so they move at the local velocity limit v_wall(s).
-                        // Computing the exact v_wall(s) from the path curvature
-                        // requires an expensive arc-length-to-parameter NURBS
-                        // inversion, so we approximate with the average
-                        // constant velocity over the arc. This is exact when
-                        // the velocity limit is constant (e.g. circular arcs).
-                        const double vWall = (arc.s1 - arc.s0) / std::max(arc.duration, 1e-12);
-                        v = vWall;
-                        s = arc.s0 + vWall * tau;
-                        a = 0.0;
-                        j = 0.0;
-                    } else {
-                        // BANG_PLUS or BANG_MINUS
-                        const double e = arc.eta;
-                        a = arc.a0 + e * tau;
-                        v = arc.v0 + arc.a0 * tau + 0.5 * e * tau * tau;
-                        s = arc.s0 + arc.v0 * tau
-                            + 0.5 * arc.a0 * tau * tau
-                            + (1.0 / 6.0) * e * tau * tau * tau;
-                        j = e;
+                    using WAT = MotionPlanner::analytical::WeightedArcType;
+                    switch (arc.type) {
+                        case WAT::BANG_PLUS:  entry.type = 0.0f; break;
+                        case WAT::BANG_MINUS: entry.type = 1.0f; break;
+                        case WAT::SINGULAR:   entry.type = 2.0f; break;
+                        case WAT::WALL:       entry.type = 3.0f; break;
                     }
+                    wssData.arcs.push_back(entry);
 
-                    srcT[i] = t;
-                    srcS[i] = s;
-                    srcV[i] = v;
-                    srcA[i] = a;
-                    srcJ[i] = j;
-                    maxV = std::max(maxV, std::abs(v));
-                    maxA = std::max(maxA, std::abs(a));
-                    maxJ = std::max(maxJ, std::abs(j));
+                    // Track max values for normalization
+                    if (arc.type == WAT::SINGULAR) {
+                        maxA = std::max(maxA, std::abs(arc.a_star));
+                        maxJ = std::max(maxJ, 0.0); // SINGULAR: j = 0
+                        // v at end of arc
+                        double vEnd = arc.v0 + arc.a_star * arc.duration;
+                        maxV = std::max({maxV, std::abs(arc.v0), std::abs(vEnd)});
+                    } else if (arc.type == WAT::WALL) {
+                        // v ≤ feedRate; a ≈ 0; j = 0
+                        maxV = std::max(maxV, feedRate);
+                    } else {
+                        // BANG
+                        double aEnd = arc.a0 + arc.eta * arc.duration;
+                        double vEnd = arc.v0 + arc.a0 * arc.duration
+                                    + 0.5 * arc.eta * arc.duration * arc.duration;
+                        maxV = std::max({maxV, std::abs(arc.v0), std::abs(vEnd)});
+                        maxA = std::max({maxA, std::abs(arc.a0), std::abs(aEnd)});
+                        maxJ = std::max(maxJ, std::abs(arc.eta));
+                    }
                 }
 
-                // Resample onto a uniform arc-length grid for the 1D texture.
-                // srcS is sorted (increasing t => increasing s), so a simple
-                // linear scan is enough.
-                std::size_t srcIdx = 0;
-                const double ds = L / static_cast<double>(kStateTextureSamples - 1);
-                for (std::size_t i = 0; i < kStateTextureSamples; ++i) {
-                    const double sU = std::min(static_cast<double>(i) * ds, L);
-                    while (srcIdx + 1 < kStateSourceSamples && srcS[srcIdx + 1] < sU) {
-                        ++srcIdx;
-                    }
+                wssData.maxVelocity = static_cast<float>(maxV);
+                wssData.maxAcceleration = static_cast<float>(maxA);
+                wssData.maxJerk = static_cast<float>(maxJ);
 
-                    double t, v, a, j;
-                    if (srcIdx + 1 >= kStateSourceSamples || srcS[srcIdx + 1] <= srcS[srcIdx]) {
-                        t = srcT[srcIdx];
-                        v = srcV[srcIdx];
-                        a = srcA[srcIdx];
-                        j = srcJ[srcIdx];
-                    } else {
-                        const double alpha = (sU - srcS[srcIdx]) /
-                                             (srcS[srcIdx + 1] - srcS[srcIdx]);
-                        t = srcT[srcIdx] + alpha * (srcT[srcIdx + 1] - srcT[srcIdx]);
-                        v = srcV[srcIdx] + alpha * (srcV[srcIdx + 1] - srcV[srcIdx]);
-                        a = srcA[srcIdx] + alpha * (srcA[srcIdx + 1] - srcA[srcIdx]);
-                        j = srcJ[srcIdx] + alpha * (srcJ[srcIdx + 1] - srcJ[srcIdx]);
-                    }
+                WGV_LOG(std::format("Step 3b: WSS extracted — {} arcs, totalLength={:.1} mm, totalTime={:.2}s",
+                    wssData.arcs.size(), wssData.totalLength, wssData.totalTime));
+                WGV_LOG_TIME("Step 3b: WSS arc extraction", wssTimer);
 
-                    stateProfile.texels[i * 4 + 0] = static_cast<float>(t);
-                    stateProfile.texels[i * 4 + 1] = static_cast<float>(v);
-                    stateProfile.texels[i * 4 + 2] = static_cast<float>(a);
-                    stateProfile.texels[i * 4 + 3] = static_cast<float>(j);
-                }
-
-                stateProfile.maxVelocity = static_cast<float>(maxV);
-                stateProfile.maxAcceleration = static_cast<float>(maxA);
-                stateProfile.maxJerk = static_cast<float>(maxJ);
-
-                WGV_LOG_TIME(std::format("Step 3b: sampled StateProfile — {}x{} samples",
-                    kStateSourceSamples, kStateTextureSamples), stateTimer);
+                result.wssData = std::move(wssData);
+                result.renurbsMaxVelocity = result.wssData->maxVelocity;
+                result.renurbsMaxAcceleration = result.wssData->maxAcceleration;
+                result.renurbsMaxJerk = result.wssData->maxJerk;
+                result.renurbsMaxTime = static_cast<float>(result.wssData->totalTime);
             }
-
-            result.stateProfile = std::move(stateProfile);
-            result.renurbsMaxVelocity = result.stateProfile ? result.stateProfile->maxVelocity : 0.0f;
-            result.renurbsMaxAcceleration = result.stateProfile ? result.stateProfile->maxAcceleration : 0.0f;
-            result.renurbsMaxJerk = result.stateProfile ? result.stateProfile->maxJerk : 0.0f;
-            result.renurbsMaxTime = result.stateProfile ? static_cast<float>(result.stateProfile->totalTime) : 0.0f;
 
             // ── Step 3c: Compute pressure advance profiles ──
             // Uses analytical PA algorithms (closed-form computation on WSS
@@ -656,20 +586,12 @@ ProcessResult GCodeProcessor::process(
             Timer paTimer;
             try {
                 // Build extrusion ratios from segment data
-                // ratio = |E_delta| / segmentLength (0 for non-extruding moves)
                 std::vector<double> extrusionRatios;
                 extrusionRatios.reserve(parseResult.segments.size());
                 for (const auto& seg : parseResult.segments) {
                     if (seg.isRapid || seg.segmentLength < 1e-12) {
                         extrusionRatios.push_back(0.0);
                     } else {
-                        // exitVelocity was repurposed for extruder speed (mm/s)
-                        // ratio = extruderSpeed * time / segmentLength
-                        // = extruderSpeed / (segmentLength / segmentTime)
-                        // = extruderSpeed / pathVelocity
-                        // But we don't have pathVelocity here directly.
-                        // Use a simpler approximation: if extruderSpeed > 0,
-                        // ratio = 1.0 (full extrusion), else 0.0
                         extrusionRatios.push_back(seg.exitVelocity > 1e-9 ? 1.0 : 0.0);
                     }
                 }
@@ -694,10 +616,7 @@ ProcessResult GCodeProcessor::process(
             } catch (const std::exception& e) {
                 WGV_LOG(std::format("Step 3c: PA profiles FAILED (optional, continuing): {}", e.what()));
             }
-        WGV_LOG_TIME("Step 3b total: ReNURBS + PA", step3b);
-        } else if (result.nurbsPath) {
-            WGV_LOG(std::format("Step 3b: SKIPPED — {} pieces exceeds limit {} (too slow for TOPPRA)",
-                result.nurbsPath->numPieces(), kMaxSegmentsForReNurbs));
+        WGV_LOG_TIME("Step 3b total: WSS + PA", step3b);
         }
     } catch (const std::exception& e) {
         WGV_LOG(std::format("Step 3b FAILED (optional, continuing): {}", e.what()));
