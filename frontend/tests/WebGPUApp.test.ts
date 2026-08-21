@@ -1177,6 +1177,13 @@ describe('WebGPUApp', () => {
       expect(setViewDirectionSpy).toHaveBeenCalledWith('top');
     });
 
+    it('also updates the NavigationCube projection UI to orthographic', () => {
+      const navCube = (app as any).navCube;
+      const navProjSpy = vi.spyOn(navCube, 'setProjectionMode');
+      (app as any).isolateZLayerForLine(0);
+      expect(navProjSpy).toHaveBeenCalledWith('orthographic');
+    });
+
     it('applies layer filter when block found in NBP and layer range matches', () => {
       (app as any).currentNBP = {
         header: makeNBPData(10).header,

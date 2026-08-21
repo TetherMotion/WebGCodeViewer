@@ -151,6 +151,38 @@ export class Camera {
     return rot;
   }
 
+  /**
+   * Fit the orthographic frustum to the XY bounding rectangle of the given
+   * bounds, expanded by `padding` (fraction of the side length) on both sides.
+   *
+   * Unlike {@link fitToBounds} (which uses the bounding-sphere radius so the
+   * whole object fits from any angle), this is meant for the top-down ortho
+   * view used when isolating a G-code selection: the visible rectangle becomes
+   * the projection's bounding rectangle of the highlighted traces plus the
+   * requested margin, so the selection is framed tightly instead of being
+   * zoomed out to the diagonal of its bounding box.
+   *
+   * The Z component is only used to position the orbit target; the frustum
+   * size is determined entirely from X/Y and the viewport aspect ratio.
+   */
+  fitToOrthoRect(min: Vec3, max: Vec3, padding: number = 0.03): void {
+    const w = max.x - min.x;
+    const h = max.y - min.y;
+    const cx = (min.x + max.x) / 2;
+    const cy = (min.y + max.y) / 2;
+    const cz = (min.z + max.z) / 2;
+    // Expand the rect by `padding` on both sides (total +2*padding per axis).
+    const halfW = (w * (1 + 2 * padding)) / 2;
+    const halfH = (h * (1 + 2 * padding)) / 2;
+    // Ortho frustum: half-height = _orthoScale, half-width = _orthoScale * aspect.
+    // Pick the smallest scale that still fits the padded rect in both axes.
+    this._orthoScale = Math.max(1, Math.max(halfH, halfW / this._aspect));
+    // Eye distance is irrelevant for ortho sizing, but keep it bounded so the
+    // target stays well within the near/far planes.
+    this.orbitDistance = Math.max(1, 2 * Math.max(halfW, halfH) + 10);
+    this.setTarget({ x: cx, y: cy, z: cz });
+  }
+
   fitToBounds(min: Vec3, max: Vec3, padding: number = 1.2): void {
     const center = {
       x: (min.x + max.x) / 2,

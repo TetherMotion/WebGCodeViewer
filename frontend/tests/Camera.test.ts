@@ -222,4 +222,63 @@ describe('Camera', () => {
     const v = cam.viewMatrix;
     expect(v.length).toBe(16);
   });
+
+  // ── fitToOrthoRect: G-code selection framing in top-down ortho view ──
+
+  it('fitToOrthoRect frames the XY bounding rect + 3% on both sides (square aspect)', () => {
+    const cam = new Camera();
+    cam.setAspect(1.0);
+    cam.fitToOrthoRect(
+      { x: 0, y: 0, z: 5 },
+      { x: 100, y: 50, z: 5 },
+    );
+    cam.update(1.0);
+    // Padded rect: x ∈ [-3, 103] (half-width 53), y ∈ [-1.5, 51.5] (half-height 26.5).
+    // Square viewport → orthoScale = max(26.5, 53/1) = 53.
+    expect(cam.orthoScale).toBeCloseTo(53, 5);
+    const t = cam.target;
+    expect(t.x).toBeCloseTo(50, 5);
+    expect(t.y).toBeCloseTo(25, 5);
+    expect(t.z).toBeCloseTo(5, 5);
+  });
+
+  it('fitToOrthoRect respects viewport aspect ratio', () => {
+    const cam = new Camera();
+    // Landscape viewport (wider than tall): width is the looser constraint.
+    cam.setAspect(2.0);
+    cam.fitToOrthoRect(
+      { x: 0, y: 0, z: 0 },
+      { x: 100, y: 10, z: 0 },
+    );
+    // Padded half-width = 53, half-height = 5.3.
+    // orthoScale = max(5.3, 53/2) = max(5.3, 26.5) = 26.5.
+    expect(cam.orthoScale).toBeCloseTo(26.5, 5);
+  });
+
+  it('fitToOrthoRect uses height when portrait viewport constrains width', () => {
+    const cam = new Camera();
+    cam.setAspect(0.5);
+    cam.fitToOrthoRect(
+      { x: 0, y: 0, z: 0 },
+      { x: 10, y: 100, z: 0 },
+    );
+    // Padded half-width = 5.3, half-height = 53.
+    // orthoScale = max(53, 5.3/0.5) = max(53, 10.6) = 53.
+    expect(cam.orthoScale).toBeCloseTo(53, 5);
+  });
+
+  it('fitToOrthoRect frames tightly, unlike the bounding-sphere fitToBounds', () => {
+    const cam = new Camera();
+    cam.setAspect(1.0);
+    // A long thin selection: 200 x 1.
+    cam.fitToOrthoRect(
+      { x: -100, y: -0.5, z: 0 },
+      { x: 100, y: 0.5, z: 0 },
+    );
+    const orthoScale = cam.orthoScale;
+    // Padded half-width = 106. orthoScale should be 106, NOT the bounding
+    // sphere radius (~100) which fitToBounds would use.
+    expect(orthoScale).toBeCloseTo(106, 5);
+    expect(orthoScale).toBeLessThan(150);
+  });
 });

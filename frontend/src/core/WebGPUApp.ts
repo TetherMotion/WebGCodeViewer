@@ -2431,6 +2431,7 @@ export class WebGPUApp {
   private isolateZLayerForLine(lineNum: number): void {
     // 1. Switch to orthographic + top view
     this.camera.setProjectionMode('orthographic');
+    this.navCube.setProjectionMode('orthographic');
     this.setViewDirection('top');
 
     // 2. Find the block for this line
@@ -2553,6 +2554,7 @@ export class WebGPUApp {
     // Same Z-layer: switch to ortho + top, isolate the layer, zoom to the
     // XY bounds of the selected pieces.
     this.camera.setProjectionMode('orthographic');
+    this.navCube.setProjectionMode('orthographic');
     this.setViewDirection('top');
     this.applyLayerFilter(commonLayerIdx);
     this.controlPanel.setLayerValue(commonLayerIdx);
@@ -2574,7 +2576,9 @@ export class WebGPUApp {
       // Use the layer Z for the bounds so the grid is repositioned correctly.
       const layer = this.zLayers[commonLayerIdx];
       const z = layer ? layer.zHeight : 0;
-      this.fitCameraToBounds(
+      // Frame the ortho top view on the XY bounding rectangle of the selected
+      // traces + 3% padding on both sides (see Camera.fitToOrthoRect).
+      this.fitCameraToSelectionRect(
         { x: minX, y: minY, z },
         { x: maxX, y: maxY, z },
       );
@@ -2726,6 +2730,21 @@ export class WebGPUApp {
   private fitCameraToBounds(min: { x: number; y: number; z: number }, max: { x: number; y: number; z: number }): void {
     this.camera.fitToBounds(min, max);
     // Reposition grid to be centered on the bbox midpoint
+    const cx = (min.x + max.x) / 2;
+    const cy = (min.y + max.y) / 2;
+    if (this.gridRenderer) {
+      const ticks = this.gridRenderer.setCenter(cx, cy);
+      this.gridLabelRenderer?.updateLabels(ticks);
+    }
+  }
+
+  /**
+   * Frame the orthographic top-down view on the XY bounding rectangle of a
+   * G-code selection, expanded by 3% on both sides. Repositions the grid to
+   * the rectangle's center just like {@link fitCameraToBounds}.
+   */
+  private fitCameraToSelectionRect(min: { x: number; y: number; z: number }, max: { x: number; y: number; z: number }): void {
+    this.camera.fitToOrthoRect(min, max, 0.03);
     const cx = (min.x + max.x) / 2;
     const cy = (min.y + max.y) / 2;
     if (this.gridRenderer) {
