@@ -53,6 +53,19 @@ export class NurbsRenderer {
   // Stored as a flat Float32Array of XYZ triples, matching the GPU vertex buffer.
   private cachedPositions: Float32Array | null = null;
 
+  // Per-piece vertex ranges: [startVertex, vertexCount] for each piece.
+  // Used to build thick-line highlight instances for selected pieces.
+  private pieceVertexRanges: { start: number; count: number }[] = [];
+
+  // Thick-line highlight (cylinder rendering for selected pieces)
+  private highlightPieces: Set<number> = new Set();
+  private thickPipeline: GPURenderPipeline | null = null;
+  private thickUniformBuffer: GPUBuffer | null = null;
+  private thickBindGroup: GPUBindGroup | null = null;
+  private thickInstanceBuffer: GPUBuffer | null = null;
+  private thickInstanceCount: number = 0;
+  private highlightThickness: number = 0.4; // mm
+
   // Per-piece feed rates (mm/min), set externally for feedRate color attribute
   private pieceFeedRates: Float32Array | null = null;
   private maxFeedRate: number = 0;
@@ -646,6 +659,91 @@ export class NurbsRenderer {
 
     // Create dummy WSS arc buffer for group 3.
     this.createDummyWssBuffer();
+
+    // ── Thick-line cylinder pipeline for highlighted pieces ──
+    const thickShader = this.device.createShaderModule({
+      code: `
+        struct ThickUniforms {
+          viewProj: mat4x4<f32>,
+          cameraEye: vec3<f32>,
+          thickness: f32,
+        };
+        @group(0) @binding(0) var<uniform> u: ThickUniforms;
+        @group(0) @binding(1) var<storage, read> instances: array<vec4<f32>>;
+
+        struct VertexOutput {
+          @builtin(position) clipPos: vec4<f32>,
+        };
+
+        @vertex
+        fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VertexOutput {
+          let cornerId = vi % 6u;
+          let d0 = instances[ii * 2u];
+          let d1 = instances[ii * 2u + 1u];
+          let p0 = d0.xyz;
+          let p1 = vec3<f32>(d0.w, d1.x, d1.y);
+
+          let dir = normalize(p1 - p0 + vec3<f32>(0.0001, 0.0001, 0.0001));
+          let toCam = normalize(u.cameraEye - p0);
+          let perp = normalize(cross(dir, toCam));
+          let halfThick = u.thickness * 0.5;
+
+          var pos: vec3<f32>;
+          switch (cornerId) {
+            case 0u: { pos = p0 - perp * halfThick; }
+            case 1u: { pos = p0 + perp * halfThick; }
+            case 2u: { pos = p1 - perp * halfThick; }
+            case 3u: { pos = p0 + perp * halfThick; }
+            case 4u: { pos = p1 + perp * halfThick; }
+            case 5u: { pos = p1 - perp * halfThick; }
+            default: { pos = p0; }
+          }
+
+          let nudge = normalize(u.cameraEye - pos) * 0.01;
+          pos = pos + nudge;
+
+          var output: VertexOutput;
+          output.clipPos = u.viewProj * vec4<f32>(pos, 1.0);
+          return output;
+        }
+
+        @fragment
+        fn fs_main() -> @location(0) vec4<f32> {
+          return vec4<f32>(1.0, 0.95, 0.3, 1.0);
+        }
+      `,
+    });
+
+    this.thickPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: thickShader, entryPoint: 'vs_main', buffers: [] },
+      fragment: { module: thickShader, entryPoint: 'fs_main', targets: [{ format }] },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: {
+        format: 'depth32float',
+        depthCompare: 'less-equal',
+        depthWriteEnabled: true,
+      },
+    });
+
+    this.thickUniformBuffer = this.device.createBuffer({
+      size: 80,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Dummy instance buffer (replaced when setHighlightPieces is called)
+    this.thickInstanceBuffer = this.device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    this.thickBindGroup = this.device.createBindGroup({
+      layout: this.thickPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.thickUniformBuffer } },
+        { binding: 1, resource: { buffer: this.thickInstanceBuffer } },
+      ],
+    });
   }
 
   /**
@@ -826,9 +924,11 @@ export class NurbsRenderer {
     let vertexOffset = 0;
     let totalSegments = 0;
     let pieceStartS = 0.0;
+    this.pieceVertexRanges = [];
 
     for (let i = 0; i < pieces.length; i++) {
       const piece = pieces[i];
+      const pieceStartVertex = vertexOffset;
 
       // Adaptive tessellation: more segments for higher-degree curves
       // and longer pieces
@@ -989,6 +1089,7 @@ export class NurbsRenderer {
       }
 
       pieceStartS += pieceDists[segments];
+      this.pieceVertexRanges.push({ start: pieceStartVertex, count: segments + 1 });
       vertexOffset += segments + 1;
       totalSegments += segments;
     }
@@ -1405,6 +1506,15 @@ export class NurbsRenderer {
     ];
   }
 
+  /**
+   * Get the tessellated positions and per-piece vertex ranges for CPU-side
+   * raycasting. Returns null if no data is loaded.
+   */
+  getTessellatedPositions(): { positions: Float32Array; pieceRanges: { start: number; count: number }[] } | null {
+    if (!this.cachedPositions || this.sampleCount === 0) return null;
+    return { positions: this.cachedPositions, pieceRanges: this.pieceVertexRanges };
+  }
+
   render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
     if (!this.options.visible || !this.pipeline || !this.positionBuffer || this.indexCount < 2) return;
     if (!this.uniformBuffer || !this.bindGroup || !this.colorBuffer || !this.sampleIdxBuffer || !this.indexBuffer) return;
@@ -1465,6 +1575,82 @@ export class NurbsRenderer {
     pass.setVertexBuffer(3, this.segIndexUBuffer);
     pass.setIndexBuffer(this.indexBuffer, 'uint32');
     pass.drawIndexed(this.indexCount);
+
+    // Draw thick cylinder segments for highlighted pieces
+    if (this.highlightPieces.size > 0 && this.thickPipeline && this.thickBindGroup && this.thickInstanceCount > 0) {
+      const thickData = new Float32Array(20);
+      for (let i = 0; i < 16; i++) thickData[i] = viewProj[i];
+      // cameraEye will be set by the caller via setCameraEye()
+      thickData[16] = this.cameraEye[0];
+      thickData[17] = this.cameraEye[1];
+      thickData[18] = this.cameraEye[2];
+      thickData[19] = this.highlightThickness;
+      this.device.queue.writeBuffer(this.thickUniformBuffer!, 0, thickData as Float32Array<ArrayBuffer>);
+
+      pass.setPipeline(this.thickPipeline);
+      pass.setBindGroup(0, this.thickBindGroup);
+      pass.draw(6, this.thickInstanceCount);
+    }
+  }
+
+  /** Set the camera eye position for thick-line billboarding. */
+  private cameraEye: [number, number, number] = [0, 0, 1000];
+  setCameraEye(eye: { x: number; y: number; z: number }): void {
+    this.cameraEye = [eye.x, eye.y, eye.z];
+  }
+
+  /**
+   * Highlight specific pieces by index. Builds a thick-line instance buffer
+   * from the tessellated positions of the selected pieces.
+   */
+  setHighlightPieces(pieceIndices: Set<number> | null): void {
+    this.highlightPieces = pieceIndices ?? new Set();
+    this.buildThickInstances();
+  }
+
+  private buildThickInstances(): void {
+    if (!this.cachedPositions || this.highlightPieces.size === 0) {
+      this.thickInstanceCount = 0;
+      return;
+    }
+
+    const instances: number[] = [];
+    for (const pi of this.highlightPieces) {
+      if (pi < 0 || pi >= this.pieceVertexRanges.length) continue;
+      const range = this.pieceVertexRanges[pi];
+      // Build a thick-line instance for each tessellated segment in this piece
+      for (let v = range.start; v < range.start + range.count - 1; v++) {
+        const p0x = this.cachedPositions[v * 3];
+        const p0y = this.cachedPositions[v * 3 + 1];
+        const p0z = this.cachedPositions[v * 3 + 2];
+        const p1x = this.cachedPositions[(v + 1) * 3];
+        const p1y = this.cachedPositions[(v + 1) * 3 + 1];
+        const p1z = this.cachedPositions[(v + 1) * 3 + 2];
+        instances.push(p0x, p0y, p0z, p1x);
+        instances.push(p1y, p1z, 1.0, 0.0);
+      }
+    }
+
+    this.thickInstanceCount = instances.length / 8;
+    if (this.thickInstanceCount === 0) return;
+
+    const arr = new Float32Array(instances);
+    this.thickInstanceBuffer?.destroy();
+    this.thickInstanceBuffer = this.device.createBuffer({
+      size: arr.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.thickInstanceBuffer, 0, arr as Float32Array<ArrayBuffer>);
+
+    if (this.thickPipeline) {
+      this.thickBindGroup = this.device.createBindGroup({
+        layout: this.thickPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: this.thickUniformBuffer! } },
+          { binding: 1, resource: { buffer: this.thickInstanceBuffer } },
+        ],
+      });
+    }
   }
 
   destroy(): void {
@@ -1482,6 +1668,8 @@ export class NurbsRenderer {
     this.paParamBuffer?.destroy();
     this.paExtrusionRatioBuffer?.destroy();
     this.paDataBuffer?.destroy();
+    this.thickUniformBuffer?.destroy();
+    this.thickInstanceBuffer?.destroy();
     for (const r of this.staleResources) r.destroy();
     this.staleResources = [];
     this.cachedPositions = null;

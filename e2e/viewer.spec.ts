@@ -737,7 +737,7 @@ test.describe('G-code upload and render', () => {
     collector.assertNoWebGPUErrors();
   });
 
-  test('miniplot toggle shows and renders without errors', async ({ page, request }) => {
+  test('miniplot renders without errors', async ({ page, request }) => {
     const collector = setupErrorCollector(page);
 
     // Upload via API
@@ -768,13 +768,7 @@ test.describe('G-code upload and render', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
-    // Click the Miniplot toggle button
-    await openMenu(page, 'Plot');
-    const miniplotBtn = page.locator('#top-panel button', { hasText: 'Miniplot' });
-    await miniplotBtn.click();
-    await page.waitForTimeout(1000);
-
-    // Verify miniplot container is visible
+    // The miniplot is always visible now — verify container is visible
     const container = page.locator('#miniplot-container');
     await expect(container).toBeVisible({ timeout: 10000 });
 
@@ -789,15 +783,15 @@ test.describe('G-code upload and render', () => {
     // Wait for rendering
     await page.waitForTimeout(2000);
 
-    // Switch axis to X
-    const axisSelect = page.locator('.miniplot-group select');
-    if (await axisSelect.count() > 0) {
-      await axisSelect.selectOption('X');
+    // Switch quantity to Acceleration
+    const quantitySelect = page.locator('#miniplot-quantity-select');
+    if (await quantitySelect.count() > 0) {
+      await quantitySelect.selectOption('Acceleration');
       await page.waitForTimeout(1000);
     }
 
-    collector.assertNoErrors('miniplot toggle and render');
-    collector.assertNoWarnings('miniplot toggle and render');
+    collector.assertNoErrors('miniplot render');
+    collector.assertNoWarnings('miniplot render');
     collector.assertNoWebGPUErrors();
   });
 });

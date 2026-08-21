@@ -224,7 +224,7 @@ describe('WebGPUApp', () => {
 
     it('defers camera params when a job is loading but data not yet available', () => {
       (app as any).currentJobId = 'job-loading';
-      // currentNBP and fullData are null → defer
+      // currentNBP is null → defer
       const cam: Camera = (app as any).camera;
       const setOrbitSpy = vi.spyOn(cam, 'setOrbit');
       app.applyCameraFromUrl('1.0,0.2,300');
@@ -484,12 +484,6 @@ describe('WebGPUApp', () => {
       const bounds = (app as any).getCurrentBounds();
       expect(bounds).toEqual({ zMin: 1, zMax: 21 });
     });
-
-    it('returns Z bounds from TTHR fullData when no NBP', () => {
-      (app as any).fullData = makeTTHRData(5);
-      const bounds = (app as any).getCurrentBounds();
-      expect(bounds).toEqual({ zMin: 0, zMax: 10 });
-    });
   });
 
   describe('getCurrentFullBounds', () => {
@@ -497,25 +491,13 @@ describe('WebGPUApp', () => {
       expect((app as any).getCurrentFullBounds()).toBeNull();
     });
 
-    it('returns full bounds from NBP data (preferred)', () => {
+    it('returns full bounds from NBP data', () => {
       (app as any).currentNBP = makeNBPData(2, {
         boundsMin: [1, 2, 3],
         boundsMax: [11, 12, 13],
       });
       const bounds = (app as any).getCurrentFullBounds();
       expect(bounds).toEqual({ min: [1, 2, 3], max: [11, 12, 13] });
-    });
-
-    it('returns full bounds from fullData when no NBP', () => {
-      (app as any).fullData = makeTTHRData(5);
-      const bounds = (app as any).getCurrentFullBounds();
-      expect(bounds).toEqual({ min: [0, 0, 0], max: [5, 5, 10] });
-    });
-
-    it('returns full bounds from currentData as last resort', () => {
-      (app as any).currentData = makeTTHRData(3);
-      const bounds = (app as any).getCurrentFullBounds();
-      expect(bounds).toEqual({ min: [0, 0, 0], max: [3, 5, 10] });
     });
   });
 
@@ -524,19 +506,10 @@ describe('WebGPUApp', () => {
   describe('applyLayerFilter', () => {
     it('resets to full data when layerIdx is -1', () => {
       (app as any).currentNBP = makeNBPData(4);
-      (app as any).fullData = makeTTHRData(10);
-      (app as any).currentData = makeTTHRData(3);
       const nurbsRenderer = { updateData: vi.fn(), setProgress: vi.fn(), getPositionAt: vi.fn().mockReturnValue(null) };
-      const toolpathRenderer = { updateData: vi.fn(), setProgress: vi.fn(), getPositionAt: vi.fn().mockReturnValue(null) };
-      const crossSectionRenderer = { updateData: vi.fn() };
       (app as any).nurbsRenderer = nurbsRenderer;
-      (app as any).toolpathRenderer = toolpathRenderer;
-      (app as any).crossSectionRenderer = crossSectionRenderer;
       (app as any).applyLayerFilter(-1);
       expect(nurbsRenderer.updateData).toHaveBeenCalled();
-      expect(toolpathRenderer.updateData).toHaveBeenCalled();
-      // currentData should be reset to fullData
-      expect((app as any).currentData).toBe((app as any).fullData);
     });
 
     it('filters NBP pieces to the selected layer range', () => {
@@ -556,12 +529,12 @@ describe('WebGPUApp', () => {
       expect(filteredNBP.header.pieceCount).toBe(4);
     });
 
-    it('does nothing when layerIdx out of range and no fullData', () => {
+    it('does nothing when layerIdx out of range', () => {
       (app as any).currentNBP = makeNBPData(2);
       (app as any).zLayers = [];
       const nurbsRenderer = { updateData: vi.fn(), setProgress: vi.fn(), getPositionAt: vi.fn().mockReturnValue(null) };
       (app as any).nurbsRenderer = nurbsRenderer;
-      // layerIdx 5 is out of range, no fullData → fallback returns early
+      // layerIdx 5 is out of range → returns early
       (app as any).applyLayerFilter(5);
       expect(nurbsRenderer.updateData).not.toHaveBeenCalled();
     });
@@ -762,10 +735,13 @@ describe('WebGPUApp', () => {
       expect(el.innerHTML).toContain('30.0');
     });
 
-    it('displays bounding box dimensions from fullData', () => {
+    it('displays bounding box dimensions from NBP data', () => {
       const el = document.createElement('div');
       (app as any).bboxEl = el;
-      (app as any).fullData = makeTTHRData(5);
+      (app as any).currentNBP = makeNBPData(5, {
+        boundsMin: [0, 0, 0],
+        boundsMax: [5, 5, 10],
+      });
       (app as any).updateBBoxDisplay();
       expect(el.innerHTML).toContain('Bounding Box');
     });
@@ -948,14 +924,14 @@ describe('WebGPUApp', () => {
     });
 
     it('destroys renderers when present', () => {
-      const toolpathRenderer = { destroy: vi.fn() };
+      const tthrRenderer = { destroy: vi.fn() };
       const nurbsRenderer = { destroy: vi.fn() };
       const gridRenderer = { destroy: vi.fn() };
-      (app as any).toolpathRenderer = toolpathRenderer;
+      (app as any).tthrRenderer = tthrRenderer;
       (app as any).nurbsRenderer = nurbsRenderer;
       (app as any).gridRenderer = gridRenderer;
       (app as any).destroy();
-      expect(toolpathRenderer.destroy).toHaveBeenCalled();
+      expect(tthrRenderer.destroy).toHaveBeenCalled();
       expect(nurbsRenderer.destroy).toHaveBeenCalled();
       expect(gridRenderer.destroy).toHaveBeenCalled();
     });
@@ -1180,13 +1156,12 @@ describe('WebGPUApp', () => {
       expect(cs.updateData).not.toHaveBeenCalled();
     });
 
-    it('updates from TTHR when only currentData is available', () => {
+    it('does nothing when no NBP data is available', () => {
       const cs = { updateFromNurbs: vi.fn(), updateData: vi.fn() };
       (app as any).crossSectionRenderer = cs;
-      (app as any).currentData = makeTTHRData(3);
       (app as any).updateCrossSection();
-      expect(cs.updateData).toHaveBeenCalled();
       expect(cs.updateFromNurbs).not.toHaveBeenCalled();
+      expect(cs.updateData).not.toHaveBeenCalled();
     });
   });
 

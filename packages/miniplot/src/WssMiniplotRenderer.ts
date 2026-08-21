@@ -280,7 +280,7 @@ export class WssMiniplotRenderer {
           if (uniforms.arcCount == 0u) { return 0.0; }
           let idx = findArcByTime(t);
           let arc = arcs[idx];
-          let tau = max(t - arc.t0, 0.0);
+          let tau = clamp(t - arc.t0, 0.0, arc.duration);
           let arcKind = arc.kind;
 
           if (arcKind < 2.5) {
@@ -300,7 +300,7 @@ export class WssMiniplotRenderer {
           if (uniforms.arcCount == 0u) { return 0.0; }
           let idx = findArcByTime(t);
           let arc = arcs[idx];
-          let tau = max(t - arc.t0, 0.0);
+          let tau = clamp(t - arc.t0, 0.0, arc.duration);
           let arcKind = arc.kind;
 
           if (arcKind < 2.5) {
@@ -449,11 +449,11 @@ export class WssMiniplotRenderer {
 
           var v: f32;
           switch (uniforms.quantity) {
-            case 0u: { v = evalPathVelocity(t); }
-            case 1u: { v = evalAcceleration(t); }
-            case 2u: { v = evalJerk(t); }
-            case 3u: { v = evalExtruderVelocity(t); }
-            case 4u: { v = evalPaOffset(t); }
+            case 0u: { v = evalPathVelocity(t); break; }
+            case 1u: { v = evalAcceleration(t); break; }
+            case 2u: { v = evalJerk(t); break; }
+            case 3u: { v = evalExtruderVelocity(t); break; }
+            case 4u: { v = evalPaOffset(t); break; }
             default: { v = evalPathVelocity(t); }
           }
 

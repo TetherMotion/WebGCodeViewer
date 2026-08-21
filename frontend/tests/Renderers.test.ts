@@ -14,7 +14,7 @@ import { CrossSectionRenderer } from "@tether/cross-section";
 import { ToolChangeMarkerRenderer } from "@tether/scene-decorators";
 import { PrinterFrameRenderer } from "@tether/scene-decorators";
 import { NurbsRenderer } from "@tether/nurbs-renderer";
-import { ToolpathRenderer } from '../src/renderers/ToolpathRenderer';
+import { TthrRenderer } from "@tether/tthr-renderer";
 import { DirectionCubeRenderer } from "@tether/nav-overlay";
 import { GridLabelRenderer } from "@tether/ground-grid";
 import { mat4Identity } from "@tether/viewer-core";
@@ -957,7 +957,7 @@ describe('NurbsRenderer', () => {
   });
 });
 
-describe('ToolpathRenderer', () => {
+describe('TthrRenderer', () => {
   let device: ReturnType<typeof createMockDevice>;
 
   beforeEach(() => {
@@ -965,13 +965,13 @@ describe('ToolpathRenderer', () => {
   });
 
   it('init creates pipeline', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     expect(r.options.visible).toBe(true);
   });
 
   it('render does nothing when invisible', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.options.visible = false;
     const pass = createMockRenderPass();
@@ -980,7 +980,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('render does nothing with no data', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     const pass = createMockRenderPass();
     r.render(pass, mat4Identity());
@@ -988,7 +988,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('setProgress clamps value', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.setProgress(1.5);
     r.setProgress(-0.5);
@@ -996,21 +996,21 @@ describe('ToolpathRenderer', () => {
   });
 
   it('clearHighlight works', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.clearHighlight();
     expect(true).toBe(true);
   });
 
   it('getPositionAt returns null with no data', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     const emptyData = { header: { sampleCount: 0, axisCount: 3 } } as any;
     expect(r.getPositionAt(0.5, emptyData)).toBeNull();
   });
 
   it('destroy cleans up', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.destroy();
     expect(true).toBe(true);
@@ -1045,7 +1045,7 @@ describe('ToolpathRenderer', () => {
   }
 
   it('updateData with positions then render draws indexed lines', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.updateData(makeTHRData());
     const pass = createMockRenderPass();
@@ -1058,7 +1058,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('updateData with no positions does nothing', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     const data = { header: { sampleCount: 0, axisCount: 3 } } as TTHRData;
     r.updateData(data);
@@ -1068,7 +1068,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('updateData with velocity color attribute', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.options.colorAttribute = 'velocity';
     r.updateData(makeTHRData());
@@ -1078,7 +1078,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('updateData with acceleration color attribute', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.options.colorAttribute = 'acceleration';
     r.updateData(makeTHRData());
@@ -1088,7 +1088,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('updateData with jerk color attribute', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.options.colorAttribute = 'jerk';
     r.updateData(makeTHRData());
@@ -1098,7 +1098,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('updateData with curvature color attribute', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.options.colorAttribute = 'curvature';
     r.updateData(makeTHRData());
@@ -1108,7 +1108,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('updateData with deviation color attribute', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.options.colorAttribute = 'deviation';
     r.updateData(makeTHRData());
@@ -1118,7 +1118,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('updateData with zHeight color attribute', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.options.colorAttribute = 'zHeight';
     r.updateData(makeTHRData());
@@ -1128,7 +1128,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('updateData with motion color attribute fills default', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.options.colorAttribute = 'motion';
     r.updateData(makeTHRData());
@@ -1138,7 +1138,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('updateData with solid color attribute fills default', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.options.colorAttribute = 'solid';
     r.updateData(makeTHRData());
@@ -1148,7 +1148,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('render with progress < 1 still draws', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.updateData(makeTHRData());
     r.setProgress(0.5);
@@ -1158,7 +1158,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('setHighlight with block indices does not throw', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     const data = makeTHRData();
     r.updateData(data);
@@ -1167,7 +1167,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('setHighlight with empty set clears highlight', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     const data = makeTHRData();
     r.updateData(data);
@@ -1176,7 +1176,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('setHighlight with null clears highlight', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     const data = makeTHRData();
     r.updateData(data);
@@ -1185,14 +1185,14 @@ describe('ToolpathRenderer', () => {
   });
 
   it('setHighlight before updateData does nothing', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.setHighlight(new Set([0]));
     expect(true).toBe(true);
   });
 
   it('clearHighlight after updateData does not throw', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.updateData(makeTHRData());
     r.clearHighlight();
@@ -1200,7 +1200,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('getPositionAt returns position for valid data', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     const data = makeTHRData();
     // frac 0 → first sample [0,0,0]
@@ -1218,7 +1218,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('getPositionAt clamps out-of-range fractions', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     const data = makeTHRData();
     const pNeg = r.getPositionAt(-1, data);
@@ -1230,7 +1230,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('render does nothing with fewer than 2 samples', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.updateData(makeTHRData({
       header: {
@@ -1247,7 +1247,7 @@ describe('ToolpathRenderer', () => {
   });
 
   it('destroy after updateData cleans up buffers', async () => {
-    const r = new ToolpathRenderer(device);
+    const r = new TthrRenderer(device);
     await r.init('bgra8unorm');
     r.updateData(makeTHRData());
     r.destroy();

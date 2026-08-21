@@ -534,12 +534,12 @@ ProcessResult GCodeProcessor::process(
                 // whichever endpoint is larger. For SINGULAR, a is constant.
                 // For WALL, v = v_wall(s) ≤ feedRate.
                 double maxV = 0.0, maxA = 0.0, maxJ = 0.0;
+                double prevVEnd = 0.0;  // ending velocity of previous arc
                 for (const auto& arc : arcs) {
                     WssArcEntry entry{};
                     entry.s0 = static_cast<float>(arc.s0);
                     entry.s1 = static_cast<float>(arc.s1);
                     entry.t0 = static_cast<float>(arc.t0);
-                    entry.v0 = static_cast<float>(arc.v0);
                     entry.a0 = static_cast<float>(arc.a0);
                     entry.eta = static_cast<float>(arc.eta);
                     entry.a_star = static_cast<float>(arc.a_star);
@@ -552,6 +552,29 @@ ProcessResult GCodeProcessor::process(
                         case WAT::SINGULAR:   entry.type = 2.0f; break;
                         case WAT::WALL:       entry.type = 3.0f; break;
                     }
+
+                    // Compute the ending velocity of this arc.
+                    // The Tether library sometimes sets an incorrect v0 for
+                    // arcs (e.g. using the initial start velocity instead of
+                    // the previous arc's ending velocity). Use prevVEnd when
+                    // it's significantly different from the library's v0.
+                    double v0 = arc.v0;
+                    if (prevVEnd > 1e-6 && std::abs(v0 - prevVEnd) > 1e-3) {
+                        v0 = prevVEnd;
+                    }
+                    double vEnd;
+                    if (arc.type == WAT::SINGULAR) {
+                        vEnd = v0 + arc.a_star * arc.duration;
+                    } else if (arc.type == WAT::WALL) {
+                        vEnd = v0;  // WALL: constant velocity
+                    } else {
+                        // BANG_PLUS or BANG_MINUS
+                        vEnd = v0 + arc.a0 * arc.duration
+                             + 0.5 * arc.eta * arc.duration * arc.duration;
+                    }
+                    entry.v0 = static_cast<float>(v0);
+                    prevVEnd = vEnd;
+
                     wssData.arcs.push_back(entry);
 
                     // Map extrusion ratio to this arc via segment index at midpoint
@@ -565,18 +588,14 @@ ProcessResult GCodeProcessor::process(
                     if (arc.type == WAT::SINGULAR) {
                         maxA = std::max(maxA, std::abs(arc.a_star));
                         maxJ = std::max(maxJ, 0.0); // SINGULAR: j = 0
-                        // v at end of arc
-                        double vEnd = arc.v0 + arc.a_star * arc.duration;
-                        maxV = std::max({maxV, std::abs(arc.v0), std::abs(vEnd)});
+                        maxV = std::max({maxV, std::abs(v0), std::abs(vEnd)});
                     } else if (arc.type == WAT::WALL) {
                         // v ≤ feedRate; a ≈ 0; j = 0
-                        maxV = std::max(maxV, feedRate);
+                        maxV = std::max({maxV, std::abs(v0), feedRate});
                     } else {
                         // BANG
                         double aEnd = arc.a0 + arc.eta * arc.duration;
-                        double vEnd = arc.v0 + arc.a0 * arc.duration
-                                    + 0.5 * arc.eta * arc.duration * arc.duration;
-                        maxV = std::max({maxV, std::abs(arc.v0), std::abs(vEnd)});
+                        maxV = std::max({maxV, std::abs(v0), std::abs(vEnd)});
                         maxA = std::max({maxA, std::abs(arc.a0), std::abs(aEnd)});
                         maxJ = std::max(maxJ, std::abs(arc.eta));
                     }

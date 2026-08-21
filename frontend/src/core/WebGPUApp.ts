@@ -16,12 +16,12 @@ import {
 import { Camera } from "@tether/viewer-core";
 import { RpcClient } from './RpcClient';
 import { ColorMap } from "@tether/viewer-core";
-import { parseTTHR, TTHRData, extractZLayer } from "@tether/viewer-core";
+import { parseTTHR } from "@tether/viewer-core";
 import { parseNBP, NBPData } from "@tether/viewer-core";
 import { type AnalysisSection } from "@tether/viewer-core/generated";
-import { parseTWSF, WssGpuData, wssToTrnp } from "@tether/viewer-core";
+import { parseTWSF, WssGpuData } from "@tether/viewer-core";
 import { parseTRNP, TRNPData, parseTWPA, PressureAdvanceParamBlock } from "@tether/viewer-core";
-import { ToolpathRenderer, ColorAttribute } from '../renderers/ToolpathRenderer';
+import { TthrRenderer } from "@tether/tthr-renderer";
 import { GridRenderer } from "@tether/ground-grid";
 import { CrossSectionRenderer } from "@tether/cross-section";
 import { PointCloudRenderer } from "@tether/compare";
@@ -31,7 +31,7 @@ import { PrintHeadMarker } from "@tether/scene-decorators";
 import { PrinterFrameRenderer } from "@tether/scene-decorators";
 import { DirectionCubeRenderer } from "@tether/nav-overlay";
 import { NurbsRenderer, NurbsColorAttribute } from "@tether/nurbs-renderer";
-import { GpuPlot, PlotSeries, PressureAdvanceControls, PressureAdvanceAlgorithmId, PressureAdvancePlotRenderer } from "@tether/pressure-advance-plot";
+import { ALGORITHM_NAMES } from "@tether/pressure-advance-plot";
 import type { MiniplotData } from "@tether/viewer-core";
 import { WssMiniplotRenderer, type WssPlotQuantity } from "@tether/miniplot";
 import { GridLabels } from "@tether/ground-grid";
@@ -62,7 +62,7 @@ export class WebGPUApp {
   private camera: Camera;
   private rpcClient: RpcClient;
 
-  private toolpathRenderer: ToolpathRenderer | null = null;
+  private tthrRenderer: TthrRenderer | null = null;
   private gridRenderer: GridRenderer | null = null;
   private crossSectionRenderer: CrossSectionRenderer | null = null;
   private pointCloudRenderer: PointCloudRenderer | null = null;
@@ -80,6 +80,7 @@ export class WebGPUApp {
   private miniplotLabel: HTMLElement | null = null;
   private miniplotVisible: boolean = true;
   private miniplotData: MiniplotData | null = null;
+  private selectedPaAlgorithm: number = 0; // 0=Linear, 1=PowerLaw, 2=CrossWLF, 3=LTI, 4=LPV
 
   private resizeObserver: ResizeObserver | null = null;
   private gizmoResizeObserver: ResizeObserver | null = null;
@@ -90,18 +91,11 @@ export class WebGPUApp {
   private navCube: NavigationCube;
 
   private currentJobId: string | null = null;
-  private currentData: TTHRData | null = null;
-  private fullData: TTHRData | null = null;  // unfiltered data (for layer reset)
   private currentNBP: NBPData | null = null;
   private currentTRNP: TRNPData | null = null;
   private currentWss: WssGpuData | null = null;
   private currentPressureAdvanceData: PressureAdvanceParamBlock[] | null = null;
-  private gpuPlot: GpuPlot | null = null;
-  private pressureAdvancePlotRenderer: PressureAdvancePlotRenderer | null = null;
-  private pressureAdvanceControls: PressureAdvanceControls | null = null;
-  private plotCanvas: HTMLCanvasElement | null = null;
-  private plotOverlayCanvas: HTMLCanvasElement | null = null;
-  private plotContainer: HTMLDivElement | null = null;
+  // NOTE: PA plot panel removed — PA visualization is now integrated into the miniplot.
   private currentFilename: string = '';
   private zLayers: { layerIndex: number; zHeight: number; pieceStart: number; pieceEnd: number; pieceCount: number }[] = [];
   private animationId: number | null = null;
@@ -246,7 +240,7 @@ export class WebGPUApp {
   private setupEventHandlers(): void {
     this.controlPanel.on('uploadFile', (file) => this.handleUpload(file));
     this.controlPanel.on('colorAttributeChanged', (attr) => {
-      // Map ToolpathRenderer color attributes to NurbsRenderer attributes
+      // Map color attributes to NurbsRenderer attributes
       const nurbsAttrMap: Record<string, NurbsColorAttribute> = {
         'deviation': 'deviation',
         'zHeight': 'zHeight',
@@ -261,20 +255,12 @@ export class WebGPUApp {
       };
       const nurbsAttr = nurbsAttrMap[attr] || 'pieceIndex';
 
-      if (this.toolpathRenderer) {
-        this.toolpathRenderer.options.colorAttribute = attr as ColorAttribute;
-        if (this.currentData) this.toolpathRenderer.updateData(this.currentData);
-      }
       if (this.nurbsRenderer) {
         this.nurbsRenderer.options.colorAttribute = nurbsAttr;
         if (this.currentNBP) this.nurbsRenderer.updateData(this.currentNBP);
       }
     });
     this.controlPanel.on('colorMapChanged', (map) => {
-      if (this.toolpathRenderer) {
-        this.toolpathRenderer.options.colorMap = new ColorMap(map as any);
-        if (this.currentData) this.toolpathRenderer.updateData(this.currentData);
-      }
       if (this.nurbsRenderer) {
         this.nurbsRenderer.options.colorMap = new ColorMap(map as any);
         if (this.currentNBP) this.nurbsRenderer.updateData(this.currentNBP);
@@ -304,7 +290,7 @@ export class WebGPUApp {
     // Feature #2: Line width adjustment
     this.controlPanel.on('lineWidthChanged', (width) => {
       if (this.nurbsRenderer) this.nurbsRenderer.options.lineWidth = width;
-      if (this.toolpathRenderer) this.toolpathRenderer.options.lineWidth = width;
+      // Line width is handled by the NURBS renderer
     });
     // Feature #3: Toggle retraction highlighting
     this.controlPanel.on('toggleRetractions', () => {
@@ -436,11 +422,19 @@ export class WebGPUApp {
       });
     }
 
+    // Wire the PA algorithm selector in the miniplot toolbar
+    const algoSelect = document.getElementById('miniplot-algorithm-select');
+    if (algoSelect) {
+      algoSelect.addEventListener('change', () => {
+        this.selectedPaAlgorithm = parseInt((algoSelect as HTMLSelectElement).value) || 0;
+        this.applySelectedPaAlgorithm();
+        this.updateMiniplotLabel();
+      });
+    }
+
     // G-code viewer → highlight toolpath
     this.gcodeViewer.on('blockSelected', (blockIndex) => {
-      if (this.toolpathRenderer && this.currentData) {
-        this.toolpathRenderer.setHighlight(new Set([blockIndex]), this.currentData);
-      }
+      this.nurbsRenderer?.setHighlightPieces(new Set([blockIndex]));
     });
     this.gcodeViewer.on('lineSelected', (line) => {
       // Update miniplot highlight
@@ -456,12 +450,7 @@ export class WebGPUApp {
       this.isolateZLayerForLine(lineNum);
     });
     this.gcodeViewer.on('highlightMotion', (blockIndex) => {
-      if (this.toolpathRenderer && this.currentData) {
-        this.toolpathRenderer.setHighlight(new Set([blockIndex]), this.currentData);
-      }
-      // Also highlight in NURBS renderer if we have piece data
-      // (NurbsRenderer doesn't have per-piece highlighting yet, but we can
-      // at least focus the camera on the block's piece)
+      this.nurbsRenderer?.setHighlightPieces(new Set([blockIndex]));
     });
 
     // Bookmark toggle from G-code viewer
@@ -665,8 +654,9 @@ export class WebGPUApp {
       alphaMode: 'premultiplied',
     });
 
-    this.toolpathRenderer = new ToolpathRenderer(this.device);
-    await this.toolpathRenderer.init(this.format);
+    // TTHR renderer (for point-sampled trajectories, e.g. servo actual paths)
+    this.tthrRenderer = new TthrRenderer(this.device);
+    await this.tthrRenderer.init(this.format);
 
     this.gridRenderer = new GridRenderer(this.device);
     await this.gridRenderer.init(this.format);
@@ -703,7 +693,7 @@ export class WebGPUApp {
     this.dirCubeRenderer = new DirectionCubeRenderer(this.device, this.navCube.dirCanvas);
     await this.dirCubeRenderer.init();
 
-    // NURBS renderer (replaces ToolpathRenderer for large files)
+    // NURBS renderer — primary toolpath renderer
     this.nurbsRenderer = new NurbsRenderer(this.device);
     await this.nurbsRenderer.init(this.format);
 
@@ -769,11 +759,9 @@ export class WebGPUApp {
           this.lastFpsTime = now;
           if (this.statsEl) {
             const pieces = this.currentNBP?.pieces.length ?? 0;
-            const samples = this.currentData?.header.sampleCount ?? 0;
             this.statsEl.innerHTML = `
               <div>FPS: <span class="stats-value">${this.currentFps}</span></div>
               <div>Pieces: <span class="stats-value">${pieces}</span></div>
-              <div>Samples: <span class="stats-value">${samples}</span></div>
               <div>Canvas: <span class="stats-value">${this.canvas.width}×${this.canvas.height}</span></div>
             `;
           }
@@ -1073,38 +1061,32 @@ export class WebGPUApp {
   }
 
   /**
-   * Handle canvas click — raycast to find nearest toolpath sample,
+   * Handle canvas click — raycast to find nearest toolpath piece,
    * then highlight the corresponding G-code block.
    */
   private handleCanvasClick(e: MouseEvent): void {
-    if (!this.currentData || !this.currentData.blockIndex) return;
+    const tess = this.nurbsRenderer?.getTessellatedPositions();
+    if (!tess || !this.currentNBP) return;
 
     const rect = this.canvas.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
-    // Simple approach: find the nearest sample by projecting all positions
-    // to screen space and finding the closest one to the click point.
-    // This is not a true raycast but works well enough for line strips.
-    const n = this.currentData.header.sampleCount;
-    const axes = this.currentData.header.axisCount;
-    const positions = this.currentData.positions;
-    if (!positions) return;
-
+    // Find the nearest tessellated vertex by projecting to screen space.
+    const { positions, pieceRanges } = tess;
+    const n = positions.length / 3;
     const viewProj = this.camera.viewProjectionMatrix;
     let bestIdx = -1;
     let bestDist = Infinity;
     const maxDist = 0.05; // 5% of screen space
 
     for (let i = 0; i < n; i++) {
-      const px = positions[i * axes];
-      const py = positions[i * axes + 1];
-      const pz = positions[i * axes + 2];
+      const px = positions[i * 3];
+      const py = positions[i * 3 + 1];
+      const pz = positions[i * 3 + 2];
 
-      // Transform to clip space
       const clipX = viewProj[0] * px + viewProj[4] * py + viewProj[8] * pz + viewProj[12];
       const clipY = viewProj[1] * px + viewProj[5] * py + viewProj[9] * pz + viewProj[13];
-      const clipZ = viewProj[2] * px + viewProj[6] * py + viewProj[10] * pz + viewProj[14];
       const clipW = viewProj[3] * px + viewProj[7] * py + viewProj[11] * pz + viewProj[15];
 
       if (clipW <= 0) continue;
@@ -1120,24 +1102,32 @@ export class WebGPUApp {
     }
 
     if (bestIdx >= 0 && bestDist < maxDist) {
-      const blockIdx = this.currentData.blockIndex[bestIdx];
-      this.gcodeViewer.highlightBlock(blockIdx);
-      if (this.toolpathRenderer) {
-        this.toolpathRenderer.setHighlight(new Set([blockIdx]), this.currentData);
+      // Map vertex index → piece index via pieceRanges
+      let blockIdx = -1;
+      for (let pi = 0; pi < pieceRanges.length; pi++) {
+        const r = pieceRanges[pi];
+        if (bestIdx >= r.start && bestIdx < r.start + r.count) {
+          blockIdx = pi;
+          break;
+        }
       }
-      // Point inspection: show coordinates at clicked sample
+      if (blockIdx < 0) return;
+
+      this.gcodeViewer.highlightBlock(blockIdx);
+      this.nurbsRenderer?.setHighlightPieces(new Set([blockIdx]));
+
+      // Point inspection: show coordinates at clicked vertex
       if (this.positionOverlay) {
-        const px = positions[bestIdx * axes];
-        const py = positions[bestIdx * axes + 1];
-        const pz = positions[bestIdx * axes + 2];
+        const px = positions[bestIdx * 3];
+        const py = positions[bestIdx * 3 + 1];
+        const pz = positions[bestIdx * 3 + 2];
         let feedRate: number | undefined;
         let toolNumber: number | undefined;
         let machineState: ReturnType<typeof this.getMachineStateAtLine> | undefined;
         if (this.gcodeMetadata) {
           feedRate = this.blockFeedRates.get(blockIdx);
           toolNumber = this.blockTools.get(blockIdx);
-          // Find the line number for this block
-          const block = this.currentNBP?.blocks.find(b => b.blockIndex === blockIdx);
+          const block = this.currentNBP.blocks.find(b => b.blockIndex === blockIdx);
           if (block) {
             machineState = this.getMachineStateAtLine(this.gcodeMetadata, block.lineNumber);
           }
@@ -1160,7 +1150,7 @@ export class WebGPUApp {
     } else {
       // Click away from toolpath — clear highlight
       this.gcodeViewer.clearHighlight();
-      if (this.toolpathRenderer) this.toolpathRenderer.clearHighlight();
+      this.nurbsRenderer?.setHighlightPieces(null);
     }
   }
 
@@ -1276,11 +1266,9 @@ export class WebGPUApp {
           this.lastFpsTime = now;
           if (this.statsEl) {
             const pieces = this.currentNBP?.pieces.length ?? 0;
-            const samples = this.currentData?.header.sampleCount ?? 0;
             this.statsEl.innerHTML = `
               <div>FPS: <span class="stats-value">${this.currentFps}</span></div>
               <div>Pieces: <span class="stats-value">${pieces}</span></div>
-              <div>Samples: <span class="stats-value">${samples}</span></div>
               <div>Canvas: <span class="stats-value">${this.canvas.width}×${this.canvas.height}</span></div>
             `;
           }
@@ -1302,16 +1290,9 @@ export class WebGPUApp {
   private updatePlayPosition(): void {
     let pos: [number, number, number] | null = null;
 
-    // Try NURBS renderer first (preferred path for most files)
     if (this.nurbsRenderer) {
       this.nurbsRenderer.setProgress(this.playProgress);
       pos = this.nurbsRenderer.getPositionAt(this.playProgress);
-    }
-
-    // Fall back to ToolpathRenderer (TTHR data)
-    if (!pos && this.toolpathRenderer && this.currentData) {
-      this.toolpathRenderer.setProgress(this.playProgress);
-      pos = this.toolpathRenderer.getPositionAt(this.playProgress, this.currentData);
     }
 
     if (pos) {
@@ -1432,8 +1413,9 @@ export class WebGPUApp {
     const viewProj = this.camera.viewProjectionMatrix;
     this.gridRenderer?.render(pass, viewProj);
     this.gridLabelRenderer?.render(pass, viewProj);
+    this.nurbsRenderer?.setCameraEye(this.camera.eye);
     this.nurbsRenderer?.render(pass, viewProj);
-    this.toolpathRenderer?.render(pass, viewProj, this.camera.eye);
+    this.tthrRenderer?.render(pass, viewProj, this.camera.eye);
     this.crossSectionRenderer?.render(pass, viewProj);
     this.pointCloudRenderer?.render(pass, viewProj);
     this.printerFrameRenderer?.render(pass, viewProj);
@@ -1584,9 +1566,7 @@ export class WebGPUApp {
     // Pass PA parameters to the miniplot so PA quantities (PA Offset,
     // Extruder Velocity) can be evaluated in the compute shader.
     if (this.currentPressureAdvanceData && this.currentPressureAdvanceData.length > 0) {
-      // Use the first (default) algorithm; the user can switch algorithms
-      // via the PA controls in the future.
-      this.miniplotRenderer.setPaData(this.currentPressureAdvanceData[0]);
+      this.applySelectedPaAlgorithm();
     }
   }
 
@@ -1639,184 +1619,53 @@ export class WebGPUApp {
     this.miniplotLabel.textContent = `${label}  |  t: ${view.tMin.toFixed(3)}s – ${view.tMax.toFixed(3)}s  |  scroll=zoom, drag=pan, dblclick=reset`;
   }
 
-  // ── Pressure Advance Plot ────────────────────────────────────────────────
+  // ── Pressure Advance (integrated into miniplot) ──────────────────────────
 
   /**
-   * Set up the PA plot panel with WebGPU canvas, overlay canvas, and controls.
-   * Called after PA data is loaded.
+   * Set up PA data for the miniplot and NurbsRenderer.
+   * Called after PA data is loaded. The PA algorithm selector and quantity
+   * dropdown in the miniplot toolbar control which PA curve is displayed.
    */
-  private setupPressureAdvancePlot(): void {
+  private setupPressureAdvanceData(): void {
     if (!this.currentPressureAdvanceData || !this.device) return;
 
-    // Create plot container if not already created
-    if (!this.plotContainer) {
-      this.plotContainer = document.createElement('div');
-      this.plotContainer.id = 'pa-plot-container';
-      this.plotContainer.style.cssText = `
-        position: absolute; bottom: 0; left: 0; right: 0;
-        height: 220px; background: rgba(10, 10, 15, 0.95);
-        border-top: 1px solid rgba(100, 100, 120, 0.3);
-        display: none; z-index: 50;
-      `;
-      this.canvas.parentElement?.appendChild(this.plotContainer);
+    // Send PA data for the selected algorithm to the miniplot + NurbsRenderer
+    this.applySelectedPaAlgorithm();
 
-      // Create WebGPU canvas for the plot
-      this.plotCanvas = document.createElement('canvas');
-      this.plotCanvas.width = 800;
-      this.plotCanvas.height = 200;
-      this.plotCanvas.style.cssText = 'display: block; width: 100%; height: 100%;';
-      this.plotContainer.appendChild(this.plotCanvas);
-
-      // Create 2D overlay canvas for grid/axes/text
-      this.plotOverlayCanvas = document.createElement('canvas');
-      this.plotOverlayCanvas.width = 800;
-      this.plotOverlayCanvas.height = 200;
-      this.plotOverlayCanvas.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;';
-      this.plotContainer.appendChild(this.plotOverlayCanvas);
-
-      // Create PA controls panel
-      this.pressureAdvanceControls = new PressureAdvanceControls(this.plotContainer, (state) => {
-        this.updatePressureAdvancePlotSeries();
-      });
-    }
-
-    // Initialize the GpuPlot (for motion profile series)
-    if (!this.gpuPlot && this.plotCanvas) {
-      this.gpuPlot = new GpuPlot(this.device, this.plotCanvas, {
-        width: 800, height: 200,
-        xLabel: 'Time (s)', yLabel: 'Value',
-        title: 'Motion Profile & Pressure Advance',
-      });
-      this.gpuPlot.init(this.format).then(() => {
-        this.updatePressureAdvancePlotSeries();
-        this.renderPressureAdvancePlot();
-      }).catch((e) => {
-        console.error('Failed to init PA plot:', e);
-      });
-    } else if (this.gpuPlot) {
-      this.updatePressureAdvancePlotSeries();
-      this.renderPressureAdvancePlot();
-    }
-
-    // Initialize the PressureAdvancePlotRenderer (for analytical PA series)
-    // It draws on top of the GpuPlot canvas, reusing the host's line pipeline
-    // + plot rect + MSAA texture so the PA line stays aligned with the motion
-    // profile series.
-    if (!this.pressureAdvancePlotRenderer && this.plotCanvas && this.device) {
-      this.pressureAdvancePlotRenderer = new PressureAdvancePlotRenderer(
-        this.device, this.plotCanvas);
-      if (this.gpuPlot) {
-        this.pressureAdvancePlotRenderer.setHost(this.gpuPlot);
+    // Populate the algorithm selector with names from the PA data
+    const algoSelect = document.getElementById('miniplot-algorithm-select') as HTMLSelectElement | null;
+    if (algoSelect && this.currentPressureAdvanceData.length > 0) {
+      // Clear existing options and rebuild from loaded PA data
+      algoSelect.innerHTML = '';
+      for (const entry of this.currentPressureAdvanceData) {
+        const opt = document.createElement('option');
+        opt.value = String(entry.algorithmId);
+        opt.textContent = ALGORITHM_NAMES[entry.algorithmId] || `Algorithm ${entry.algorithmId}`;
+        if (entry.algorithmId === this.selectedPaAlgorithm) opt.selected = true;
+        algoSelect.appendChild(opt);
       }
-      this.pressureAdvancePlotRenderer.init(this.format).then(() => {
-        this.updatePressureAdvancePlotSeries();
-        this.renderPressureAdvancePlot();
-      }).catch((e) => {
-        console.error('Failed to init PA plot renderer:', e);
-      });
-    } else if (this.pressureAdvancePlotRenderer && this.gpuPlot) {
-      this.pressureAdvancePlotRenderer.setHost(this.gpuPlot);
     }
+  }
 
-    // Show the plot container
-    if (this.plotContainer) {
-      this.plotContainer.style.display = 'block';
+  /**
+   * Apply the currently selected PA algorithm to the miniplot and NurbsRenderer.
+   */
+  private applySelectedPaAlgorithm(): void {
+    if (!this.currentPressureAdvanceData) return;
+    const paEntry = this.currentPressureAdvanceData.find(
+      e => e.algorithmId === this.selectedPaAlgorithm);
+    if (!paEntry) return;
+
+    // Send PA params to the miniplot renderer
+    if (this.miniplotRenderer) {
+      this.miniplotRenderer.setPaData(paEntry);
     }
 
     // Send PA data to NurbsRenderer for PA color modes
-    if (this.nurbsRenderer && this.currentPressureAdvanceData) {
-      // Default to first algorithm (Linear) for coloring
-      const paEntry = this.currentPressureAdvanceData[0];
-      if (paEntry) {
-        const ratios = this.currentWss?.extrusionRatios;
-        this.nurbsRenderer.updatePressureAdvanceData(paEntry, ratios);
-      }
+    if (this.nurbsRenderer) {
+      const ratios = this.currentWss?.extrusionRatios;
+      this.nurbsRenderer.updatePressureAdvanceData(paEntry, ratios);
     }
-  }
-
-  /**
-   * Update the plot series based on current PA controls state and TRNP data.
-   */
-  private updatePressureAdvancePlotSeries(): void {
-    if (!this.gpuPlot || !this.pressureAdvanceControls) return;
-
-    const state = this.pressureAdvanceControls.getState();
-    const series: PlotSeries[] = [];
-
-    // Motion profile series from the analytical WSS (sampled to TRNP for the
-    // PA plot; the miniplot at the bottom of the screen uses WssMiniplotRenderer
-    // which evaluates the WSS analytically in a compute shader).
-    const motionTrnp = this.currentWss
-      ? wssToTrnp(this.currentWss)
-      : null;
-    if (motionTrnp) {
-      if (state.showVelocity) {
-        series.push({
-          name: 'Velocity (mm/s)',
-          color: [0.2, 0.8, 1.0],
-          visible: true,
-          segments: motionTrnp.segments,
-          quantityIndex: 1,  // state texel (t, v, a, j) -> index 1 = velocity
-          yLabel: 'mm/s',
-          normalizeMax: motionTrnp.header.maxVelocity || 1,
-        });
-      }
-      if (state.showAcceleration) {
-        series.push({
-          name: 'Acceleration (mm/s²)',
-          color: [1.0, 0.6, 0.2],
-          visible: true,
-          segments: motionTrnp.segments,
-          quantityIndex: 2,
-          yLabel: 'mm/s²',
-          normalizeMax: motionTrnp.header.maxAcceleration || 1,
-        });
-      }
-      if (state.showJerk) {
-        series.push({
-          name: 'Jerk (mm/s³)',
-          color: [1.0, 0.3, 0.5],
-          visible: true,
-          segments: motionTrnp.segments,
-          quantityIndex: 3,
-          yLabel: 'mm/s³',
-          normalizeMax: motionTrnp.header.maxJerk || 1,
-        });
-      }
-    }
-
-    // PA series (analytical evaluation from WSS arcs + PA parameters)
-    if (this.currentPressureAdvanceData && this.currentWss) {
-      const paEntry = this.currentPressureAdvanceData.find(
-        e => e.algorithmId === state.selectedAlgorithm);
-      if (paEntry) {
-        // The PressureAdvancePlotRenderer evaluates PA analytically on the GPU
-        // using the WSS arcs + extrusion ratios + PA parameters.
-        // It is initialized in setupPressureAdvancePlot() and updated here.
-        if (this.pressureAdvancePlotRenderer) {
-          this.pressureAdvancePlotRenderer.setWssData(this.currentWss);
-          this.pressureAdvancePlotRenderer.setPaParams(paEntry);
-        }
-      }
-    }
-
-    this.gpuPlot.setSeries(series);
-    this.renderPressureAdvancePlot();
-  }
-
-  /**
-   * Render the PA plot (GPU + overlay).
-   */
-  private renderPressureAdvancePlot(): void {
-    if (!this.gpuPlot || !this.plotOverlayCanvas) return;
-    // Render motion profile series (velocity, acceleration, jerk)
-    this.gpuPlot.render();
-    // Render analytical PA series (offset, extruder velocity) on top
-    if (this.pressureAdvancePlotRenderer) {
-      this.pressureAdvancePlotRenderer.render();
-    }
-    const ctx = this.plotOverlayCanvas.getContext('2d');
-    if (ctx) this.gpuPlot.renderOverlay(ctx);
   }
 
   /**
@@ -1917,27 +1766,17 @@ export class WebGPUApp {
 
   private async loadJobData(jobId: string): Promise<void> {
     console.info(`Loading job data for ${jobId}...`);
-    // BUG 2 FIX: Clear all stale data from previous job before loading new data.
-    // Without this, if file A loaded as NBP and file B falls back to TTHR,
-    // currentNBP would still point to file A's data, causing wrong bounds,
-    // wrong layer filters, and wrong bbox display.
+    // Clear all stale data from previous job before loading new data.
     this.currentNBP = null;
     this.currentTRNP = null;
     this.currentWss = null;
     this.currentPressureAdvanceData = null;
-    this.currentData = null;
-    this.fullData = null;
     this.zLayers = [];
     this.miniplotData = null;
     this.remoteAnalysisSections = [];
     if (this.remoteAnalysisAbort) {
       this.remoteAnalysisAbort.abort();
       this.remoteAnalysisAbort = null;
-    }
-
-    // Hide PA plot panel
-    if (this.plotContainer) {
-      this.plotContainer.style.display = 'none';
     }
 
     // Fetch NURBS path data — compact curve representation (typically <1MB
@@ -1992,7 +1831,7 @@ export class WebGPUApp {
         this.currentPressureAdvanceData = parseTWPA(paBinary);
         console.info(`PA data loaded: ${this.currentPressureAdvanceData.length} algorithms, ` +
                      `${paBinary.byteLength} bytes`);
-        this.setupPressureAdvancePlot();
+        this.setupPressureAdvanceData();
         // Push PA params to the miniplot so PA quantities can be evaluated.
         this.updateMiniplotData();
       } catch (e) {
@@ -2001,19 +1840,8 @@ export class WebGPUApp {
         this.currentPressureAdvanceData = null;
       }
     } catch (e) {
-      console.error('Failed to load NURBS data, falling back to TTHR:', e);
-      // Fallback to TTHR (sampled data) if NURBS conversion fails
-      const binaryData = await this.rpcClient.getBinaryHttp(jobId);
-      this.currentData = parseTTHR(binaryData);
-      this.fullData = this.currentData;
-      this.toolpathRenderer?.updateData(this.currentData!);
-      this.crossSectionRenderer?.updateData(this.currentData!);
-
-      const h = this.currentData!.header;
-      this.fitCameraToBounds(
-        { x: h.boundsMin[0], y: h.boundsMin[1], z: h.boundsMin[2] },
-        { x: h.boundsMax[0], y: h.boundsMax[1], z: h.boundsMax[2] },
-      );
+      console.error('Failed to load NURBS data:', e);
+      this.controlPanel.setStatus(`Failed to load NURBS data: ${e instanceof Error ? e.message : String(e)}`, 'error');
     }
 
     // Load blocks (G-code metadata with line numbers)
@@ -2174,14 +2002,9 @@ export class WebGPUApp {
    */
   private applyLayerFilter(layerIdx: number): void {
     if (layerIdx < 0) {
-      // Show all layers — reset NBP and TTHR data
+      // Show all layers — reset NBP data
       if (this.currentNBP) {
         this.nurbsRenderer?.updateData(this.currentNBP);
-      }
-      if (this.fullData) {
-        this.currentData = this.fullData;
-        this.toolpathRenderer?.updateData(this.currentData);
-        this.crossSectionRenderer?.updateData(this.currentData);
       }
       this.updatePlayPosition();
       return;
@@ -2190,7 +2013,6 @@ export class WebGPUApp {
     // Use actual Z-layer data from the server
     if (layerIdx < this.zLayers.length) {
       const layer = this.zLayers[layerIdx];
-      const zHeight = layer.zHeight;
 
       // Filter NBP pieces to only this layer's piece range
       if (this.currentNBP) {
@@ -2201,31 +2023,9 @@ export class WebGPUApp {
         };
         this.nurbsRenderer?.updateData(filteredNBP);
       }
-
-      // Also filter TTHR data if available
-      if (this.fullData) {
-        const zTol = 0.02; // 20µm tolerance
-        this.currentData = extractZLayer(this.fullData, zHeight - zTol, zHeight + zTol);
-        this.toolpathRenderer?.updateData(this.currentData);
-        this.crossSectionRenderer?.updateData(this.currentData);
-      }
       this.updatePlayPosition();
       return;
     }
-
-    // Fallback: old estimation method
-    if (!this.fullData) return;
-    const h = this.fullData.header;
-    const zMin = h.boundsMin[2];
-    const zMax = h.boundsMax[2];
-    const totalLayers = Math.max(1, this.zLayers.length || Math.ceil((zMax - zMin) / 0.2));
-    const layerHeight = (zMax - zMin) / totalLayers;
-    const layerZMin = zMin + layerIdx * layerHeight;
-    const layerZMax = layerZMin + layerHeight;
-    this.currentData = extractZLayer(this.fullData, layerZMin, layerZMax);
-    this.toolpathRenderer?.updateData(this.currentData);
-    this.crossSectionRenderer?.updateData(this.currentData);
-    this.updatePlayPosition();
   }
 
   /**
@@ -2483,7 +2283,7 @@ export class WebGPUApp {
       totalDuration: this.totalDuration,
       pathLength: this.currentNBP?.header.totalLength ?? 0,
       bounds: { min: bounds.min as [number, number, number], max: bounds.max as [number, number, number] },
-      sampleCount: this.currentData?.header.sampleCount ?? 0,
+      sampleCount: 0,
       pieceCount: this.currentNBP?.pieces.length ?? 0,
       materialUsage: this.jobSummary?.materialUsage,
       remoteSections: this.remoteAnalysisSections,
@@ -2509,7 +2309,7 @@ export class WebGPUApp {
       job: {
         filename: this.gcodeViewer?.filename ?? 'unknown',
         pieceCount: this.currentNBP?.pieces.length ?? 0,
-        sampleCount: this.currentData?.header.sampleCount ?? 0,
+        sampleCount: 0,
         pathLength: this.currentNBP?.header.totalLength ?? 0,
         duration: this.totalDuration,
         durationFormatted: formatTime(this.totalDuration),
@@ -2593,7 +2393,7 @@ export class WebGPUApp {
     this.resizeObserver = null;
     this.gizmoResizeObserver = null;
     this.dirCubeResizeObserver = null;
-    this.toolpathRenderer?.destroy();
+    this.tthrRenderer?.destroy();
     this.nurbsRenderer?.destroy();
     this.gridRenderer?.destroy();
     this.gridLabelRenderer?.destroy();
@@ -2662,18 +2462,6 @@ export class WebGPUApp {
         }
       }
     }
-
-    // Fallback: if no NBP blocks, try to find Z from TTHR data
-    if (this.fullData && this.fullData.blockIndex) {
-      // Find the sample for this block
-      // This is less precise but works for TTHR-only mode
-      const n = this.fullData.header.sampleCount;
-      const axes = this.fullData.header.axisCount;
-      // Find first sample with this block
-      // We don't have line→block mapping here, so use the layer slider approach
-      // Just switch to top view and let user pick a layer
-      return;
-    }
   }
 
   /**
@@ -2714,20 +2502,32 @@ export class WebGPUApp {
       this.updateMiniplotLabel();
     }
 
-    // ── 3D view: same-Z-layer detection + ortho/top + zoom ──
-    if (lines.length === 0) return;
+    // ── 3D view: highlight selected blocks + same-Z-layer detection + zoom ──
+    if (lines.length === 0) {
+      // Clear highlight when selection is empty
+      this.nurbsRenderer?.setHighlightPieces(null);
+      return;
+    }
     if (!this.currentNBP || this.currentNBP.pieces.length === 0) return;
     if (!this.gcodeViewer) return;
 
     // Map selected lines → piece indices (blockIndex ≈ pieceIndex).
     const lineToBlock = this.gcodeViewer.lineToBlockMap;
     const pieceIndices: number[] = [];
+    const blockSet = new Set<number>();
     for (const ln of lines) {
       const blockIdx = lineToBlock.get(ln);
       if (blockIdx !== undefined && blockIdx >= 0 && blockIdx < this.currentNBP.pieces.length) {
         pieceIndices.push(blockIdx);
+        blockSet.add(blockIdx);
       }
     }
+
+    // Highlight the selected blocks in the NurbsRenderer (thick cylinder).
+    if (this.nurbsRenderer && blockSet.size > 0) {
+      this.nurbsRenderer.setHighlightPieces(blockSet);
+    }
+
     if (pieceIndices.length === 0) return;
 
     // Determine whether all selected pieces lie in the same Z-layer.
@@ -2843,7 +2643,7 @@ export class WebGPUApp {
     const parts = camParam.split(',').map(parseFloat);
     if (parts.length >= 3 && parts.every(v => !isNaN(v))) {
       const params = { angle: parts[0], elevation: parts[1], distance: parts[2] };
-      if (this.currentJobId && !this.currentNBP && !this.fullData) {
+      if (this.currentJobId && !this.currentNBP) {
         // Job is loading but data not yet available — defer until data loads
         this.pendingCamParams = params;
         console.info(`Camera params deferred until job data loads: angle=${params.angle}, elev=${params.elevation}, dist=${params.distance}`);
@@ -2896,35 +2696,23 @@ export class WebGPUApp {
   }
 
   /**
-   * Get the current Z bounds from NBP or TTHR data.
+   * Get the current Z bounds from NBP data.
    */
   private getCurrentBounds(): { zMin: number; zMax: number } | null {
     if (this.currentNBP) {
       const h = this.currentNBP.header;
       return { zMin: h.boundsMin[2], zMax: h.boundsMax[2] };
     }
-    if (this.fullData) {
-      const h = this.fullData.header;
-      return { zMin: h.boundsMin[2], zMax: h.boundsMax[2] };
-    }
     return null;
   }
 
   /**
-   * BUG 1 FIX: Get full 3D bounds from NBP or TTHR data.
-   * Used by resetView to fit the camera regardless of which data format is loaded.
+   * Get full 3D bounds from NBP data.
+   * Used by resetView to fit the camera.
    */
   private getCurrentFullBounds(): { min: number[]; max: number[] } | null {
     if (this.currentNBP) {
       const h = this.currentNBP.header;
-      return { min: h.boundsMin, max: h.boundsMax };
-    }
-    if (this.fullData) {
-      const h = this.fullData.header;
-      return { min: h.boundsMin, max: h.boundsMax };
-    }
-    if (this.currentData) {
-      const h = this.currentData.header;
       return { min: h.boundsMin, max: h.boundsMax };
     }
     return null;
@@ -2955,9 +2743,6 @@ export class WebGPUApp {
     if (this.currentNBP) {
       const h = this.currentNBP.header;
       bounds = { min: h.boundsMin, max: h.boundsMax };
-    } else if (this.fullData) {
-      const h = this.fullData.header;
-      bounds = { min: h.boundsMin, max: h.boundsMax };
     }
     if (!bounds) {
       this.bboxEl.innerHTML = '<div class="bbox-title">No data loaded</div>';
@@ -2975,14 +2760,12 @@ export class WebGPUApp {
   }
 
   /**
-   * Update the cross-section renderer from current data (NBP or TTHR).
+   * Update the cross-section renderer from current NBP data.
    */
   private updateCrossSection(): void {
     if (!this.crossSectionRenderer) return;
     if (this.currentNBP) {
       this.crossSectionRenderer.updateFromNurbs(this.currentNBP);
-    } else if (this.currentData) {
-      this.crossSectionRenderer.updateData(this.currentData);
     }
   }
 }

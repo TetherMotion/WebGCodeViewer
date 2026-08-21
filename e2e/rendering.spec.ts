@@ -347,12 +347,7 @@ test.describe('Canvas pixel verification', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    // Toggle miniplot
-    await openMenu(page, 'Plot');
-    const miniplotBtn = page.locator('#top-panel button', { hasText: 'Miniplot' });
-    await miniplotBtn.click();
-    await page.waitForTimeout(1000);
-
+    // Miniplot is always visible now
     const container = page.locator('#miniplot-container');
     await expect(container).toBeVisible({ timeout: 10000 });
 
@@ -1054,13 +1049,7 @@ test.describe('Miniplot rendering verification', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
-    // Toggle miniplot
-    await openMenu(page, 'Plot');
-    const miniplotBtn = page.locator('#top-panel button', { hasText: 'Miniplot' });
-    await miniplotBtn.click();
-    await page.waitForTimeout(2000);
-
-    // Verify miniplot container is visible
+    // Miniplot is always visible now
     const container = page.locator('#miniplot-container');
     await expect(container).toBeVisible({ timeout: 10000 });
 
@@ -1094,10 +1083,7 @@ test.describe('Miniplot rendering verification', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
-    await openMenu(page, 'Plot');
-    await page.locator('#top-panel button', { hasText: 'Miniplot' }).click();
-    await page.waitForTimeout(1000);
-
+    // Miniplot is always visible now
     const canvas = page.locator('#miniplot-canvas');
     const container = page.locator('#miniplot-container');
     await expect(container).toBeVisible({ timeout: 10000 });

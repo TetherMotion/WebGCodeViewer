@@ -1,22 +1,27 @@
 /**
- * @file ToolpathRenderer.ts
- * @brief WebGPU renderer for G-code toolpath line strips with color mapping.
+ * @file TthrRenderer.ts
+ * @brief WebGPU renderer for TTHR sampled trajectory data (line strips with
+ *        color mapping, highlight, and thick-line cylinder rendering).
+ *
+ *        This package is independent from the NURBS renderer and is intended
+ *        for rendering point-sampled trajectories (e.g. servo actual paths,
+ *        comparison overlays) rather than the analytical NURBS toolpath.
  */
 
 import type { TTHRData } from "@tether/viewer-core";
 import { ColorMap } from "@tether/viewer-core";
 import { Mat4 } from "@tether/viewer-core";
 
-export type ColorAttribute = 'velocity' | 'acceleration' | 'jerk' | 'curvature' | 'deviation' | 'zHeight' | 'motion' | 'segment' | 'solid';
+export type TthrColorAttribute = 'velocity' | 'acceleration' | 'jerk' | 'curvature' | 'deviation' | 'zHeight' | 'motion' | 'segment' | 'solid';
 
-export interface ToolpathRenderOptions {
-  colorAttribute: ColorAttribute;
+export interface TthrRenderOptions {
+  colorAttribute: TthrColorAttribute;
   colorMap: ColorMap;
   lineWidth: number;
   visible: boolean;
 }
 
-export class ToolpathRenderer {
+export class TthrRenderer {
   private pipeline: GPURenderPipeline | null = null;
   private positionBuffer: GPUBuffer | null = null;
   private colorBuffer: GPUBuffer | null = null;
@@ -38,7 +43,7 @@ export class ToolpathRenderer {
   private thickInstanceCount: number = 0;
   private highlightThickness: number = 0.4; // mm, world-space thickness
 
-  options: ToolpathRenderOptions = {
+  options: TthrRenderOptions = {
     colorAttribute: 'velocity',
     colorMap: new ColorMap('viridis'),
     lineWidth: 2.0,

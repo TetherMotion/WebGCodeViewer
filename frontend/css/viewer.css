@@ -1634,7 +1634,8 @@ input[type="checkbox"] {
     height: 28px;
 }
 
-#miniplot-quantity-label {
+#miniplot-quantity-label,
+#miniplot-algorithm-label {
     display: flex;
     align-items: center;
     gap: 4px;
@@ -1642,7 +1643,8 @@ input[type="checkbox"] {
     font-weight: bold;
 }
 
-#miniplot-quantity-select {
+#miniplot-quantity-select,
+#miniplot-algorithm-select {
     font-family: var(--font-mono);
     font-size: 11px;
     background: var(--bg-panel);
@@ -1653,7 +1655,8 @@ input[type="checkbox"] {
     cursor: pointer;
 }
 
-#miniplot-quantity-select:hover {
+#miniplot-quantity-select:hover,
+#miniplot-algorithm-select:hover {
     border-color: var(--accent);
 }
 

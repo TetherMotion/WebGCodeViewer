@@ -158,15 +158,13 @@ async function waitForJobLoaded(page: Page, timeout = 15000): Promise<void> {
 
 // ─── Helper: get renderer state from the browser ───────────────────────
 //
-// Evaluates browser-side JS to inspect the NurbsRenderer and ToolpathRenderer
-// state. The app instance is attached to window.__wgvApp for testing (see main.ts).
+// Evaluates browser-side JS to inspect the NurbsRenderer state.
+// The app instance is attached to window.__wgvApp for testing (see main.ts).
 
 async function getRendererState(page: Page): Promise<{
   hasNBP: boolean;
   nbpPieces: number;
   nbpControlPoints: number;
-  hasTTHR: boolean;
-  tthrSamples: number;
   cameraDistance: number;
   cameraAngle: number;
   cameraElevation: number;
@@ -175,18 +173,14 @@ async function getRendererState(page: Page): Promise<{
     const app = (window as any).__wgvApp;
     if (!app) return {
       hasNBP: false, nbpPieces: 0, nbpControlPoints: 0,
-      hasTTHR: false, tthrSamples: 0,
       cameraDistance: 0, cameraAngle: 0, cameraElevation: 0,
     };
     const nbp = app.currentNBP;
-    const data = app.currentData;
     const cam = app.camera;
     return {
       hasNBP: !!nbp,
       nbpPieces: nbp?.header.pieceCount ?? 0,
       nbpControlPoints: nbp?.header.totalControlPoints ?? 0,
-      hasTTHR: !!data,
-      tthrSamples: data?.header.sampleCount ?? 0,
       cameraDistance: cam?.orbitDistance ?? 0,
       cameraAngle: cam?.orbitAngle ?? 0,
       cameraElevation: cam?.orbitElevation ?? 0,
@@ -226,13 +220,10 @@ test.describe('G-code loading via URL parameter', () => {
 
     const state = await getRendererState(page);
     // The square has 4 extruding moves → at least 1 NURBS piece
-    expect(state.hasNBP || state.hasTTHR, 'Either NBP or TTHR data must be loaded').toBe(true);
+    expect(state.hasNBP, 'NBP data must be loaded').toBe(true);
     if (state.hasNBP) {
       expect(state.nbpPieces, 'NURBS piece count must be > 0').toBeGreaterThan(0);
       expect(state.nbpControlPoints, 'NURBS control point count must be > 0').toBeGreaterThan(0);
-    }
-    if (state.hasTTHR) {
-      expect(state.tthrSamples, 'TTHR sample count must be > 0').toBeGreaterThan(0);
     }
   });
 
@@ -305,7 +296,7 @@ test.describe('Various G-code types load and display correctly', () => {
     await waitForJobLoaded(page);
 
     const state = await getRendererState(page);
-    expect(state.hasNBP || state.hasTTHR).toBe(true);
+    expect(state.hasNBP).toBe(true);
     // Layered G-code has moves at Z=0 and Z=5, so the bounds should
     // span at least 5mm in Z.
     expect(state.cameraDistance).toBeGreaterThan(0);
@@ -320,7 +311,7 @@ test.describe('Various G-code types load and display correctly', () => {
     await waitForJobLoaded(page);
 
     const state = await getRendererState(page);
-    expect(state.hasNBP || state.hasTTHR).toBe(true);
+    expect(state.hasNBP).toBe(true);
     if (state.hasNBP) {
       // Arc G-code should produce at least 2 pieces (arc + line)
       expect(state.nbpPieces).toBeGreaterThanOrEqual(2);
@@ -337,7 +328,7 @@ test.describe('Various G-code types load and display correctly', () => {
     await waitForJobLoaded(page);
 
     const state = await getRendererState(page);
-    expect(state.hasNBP || state.hasTTHR).toBe(true);
+    expect(state.hasNBP).toBe(true);
     // Complex G-code has 11 moves → multiple pieces
     if (state.hasNBP) {
       expect(state.nbpPieces).toBeGreaterThanOrEqual(5);
@@ -383,7 +374,6 @@ test.describe('Error handling during G-code display', () => {
     // No data should be loaded
     const state = await getRendererState(page);
     expect(state.hasNBP).toBe(false);
-    expect(state.hasTTHR).toBe(false);
 
     collector.assertClean('page load without G-code');
   });
@@ -404,7 +394,7 @@ test.describe('Sequential G-code loading', () => {
     await waitForJobLoaded(page);
 
     const state1 = await getRendererState(page);
-    expect(state1.hasNBP || state1.hasTTHR).toBe(true);
+    expect(state1.hasNBP).toBe(true);
 
     // Load second file via navigation
     const { jobId: job2, status: status2 } = await uploadAndProcess(request, COMPLEX_GCODE, 'seq2.gcode');
@@ -415,12 +405,12 @@ test.describe('Sequential G-code loading', () => {
     await waitForJobLoaded(page);
 
     const state2 = await getRendererState(page);
-    expect(state2.hasNBP || state2.hasTTHR).toBe(true);
+    expect(state2.hasNBP).toBe(true);
 
     // The second file should have more pieces/samples than the first
     // (complex G-code has 11 moves vs square's 4)
-    const count1 = state1.hasNBP ? state1.nbpPieces : state1.tthrSamples;
-    const count2 = state2.hasNBP ? state2.nbpPieces : state2.tthrSamples;
+    const count1 = state1.nbpPieces;
+    const count2 = state2.nbpPieces;
     expect(count2, 'Second file should have more segments than first').toBeGreaterThan(count1);
   });
 });
@@ -457,7 +447,7 @@ test.describe('Drag-and-drop upload displays G-code', () => {
     await waitForJobLoaded(page, 30000);
 
     const state = await getRendererState(page);
-    expect(state.hasNBP || state.hasTTHR, 'Data must be loaded after drag-and-drop').toBe(true);
+    expect(state.hasNBP, 'Data must be loaded after drag-and-drop').toBe(true);
 
     collector.assertClean('drag-and-drop upload');
   });

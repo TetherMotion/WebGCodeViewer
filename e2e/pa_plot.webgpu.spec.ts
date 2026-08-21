@@ -2,6 +2,40 @@ import { test, expect, type Page } from '@playwright/test';
 
 const BASE = 'http://localhost:8099';
 
+/// Count pixels in a PNG screenshot that look like the velocity curve color
+/// (blue [0.29, 0.62, 1.0]). This avoids needing a screenshot baseline and
+/// catches regressions where the miniplot compute shader fails to draw.
+async function countVelocityPixels(page: Page, pngBase64: string): Promise<number> {
+  return page.evaluate((base64) => {
+    return new Promise<number>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { resolve(0); return; }
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, img.width, img.height);
+        const data = imageData.data;
+        let count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          // Velocity color is ~[74, 158, 255]; be tolerant of AA/DPR variation.
+          if (b > 200 && r < 100 && g < 180) {
+            count++;
+          }
+        }
+        resolve(count);
+      };
+      img.onerror = () => resolve(0);
+      img.src = `data:image/png;base64,${base64}`;
+    });
+  }, pngBase64);
+}
+
 // A small G-code with extrusion so PA data is computed.
 const GCODE = [
   'G1 X0 Y0 Z0 F600',
@@ -37,8 +71,8 @@ async function uploadViaUi(page: Page, filename: string, content: string) {
   await page.waitForTimeout(3000);
 }
 
-test.describe('Motion profile & Pressure advance plot', () => {
-  test('renders both motion and PA series without errors', async ({ page }) => {
+test.describe('Pressure advance in miniplot', () => {
+  test('PA algorithm selector and PA Offset quantity work without errors', async ({ page }) => {
     const consoleErrors: string[] = [];
     page.on('console', msg => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
@@ -47,47 +81,38 @@ test.describe('Motion profile & Pressure advance plot', () => {
 
     await uploadViaUi(page, 'pa_test.gcode', GCODE);
 
-    // The PA plot container should become visible after PA data loads.
-    const container = page.locator('#pa-plot-container');
-    await expect(container).toBeVisible({ timeout: 20000 });
+    // The miniplot section should be visible (always visible now).
+    const section = page.locator('#miniplot-section');
+    await expect(section).toBeVisible({ timeout: 10000 });
 
-    // The WebGPU canvas inside the container should have non-zero dimensions.
-    const canvas = container.locator('canvas').first();
+    // The PA algorithm selector should be present in the miniplot toolbar.
+    const algoSelect = page.locator('#miniplot-algorithm-select');
+    await expect(algoSelect).toBeVisible({ timeout: 20000 });
+
+    // Select "PA Offset" as the quantity.
+    const quantitySelect = page.locator('#miniplot-quantity-select');
+    await quantitySelect.selectOption('PA Offset');
+    await page.waitForTimeout(1000);
+
+    // Switch to a different PA algorithm (PowerLaw).
+    await algoSelect.selectOption('1');
+    await page.waitForTimeout(1000);
+
+    // Switch to another algorithm (CrossWLF).
+    await algoSelect.selectOption('2');
+    await page.waitForTimeout(1000);
+
+    // Switch back to velocity.
+    await quantitySelect.selectOption('Velocity');
+    await page.waitForTimeout(500);
+
+    expect(consoleErrors, 'No console errors during PA miniplot render').toEqual([]);
+
+    // Regression: the Velocity curve must actually be drawn.
+    const canvas = page.locator('#miniplot-canvas');
     await expect(canvas).toBeVisible();
-    const box = await canvas.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.width).toBeGreaterThan(0);
-    expect(box!.height).toBeGreaterThan(0);
-
-    // Wait for rendering to settle.
-    await page.waitForTimeout(2000);
-
-    // Verify the canvas has non-transparent pixels (the plot was actually
-    // drawn, not left blank). Sample a small region in the centre.
-    const hasContent = await page.evaluate(() => {
-      const c = document.querySelector('#pa-plot-container canvas') as HTMLCanvasElement;
-      if (!c || c.width === 0) return false;
-      try {
-        const ctx = c.getContext('2d');
-        if (!ctx) return true; // 2D context may not work on a WebGPU canvas
-        const data = ctx.getImageData(
-          Math.floor(c.width / 4), Math.floor(c.height / 4),
-          Math.min(10, c.width / 2), Math.min(10, c.height / 2),
-        ).data;
-        let nonZero = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          if (data[i] > 20 || data[i + 1] > 20 || data[i + 2] > 20) nonZero++;
-        }
-        return nonZero > 0;
-      } catch {
-        // getImageData on a WebGPU canvas throws — that's expected; the
-        // canvas is rendered by WebGPU, not 2D context. Presence of the
-        // visible canvas + no console errors is the real check.
-        return true;
-      }
-    });
-    expect(hasContent).toBe(true);
-
-    expect(consoleErrors, 'No console errors during PA plot render').toEqual([]);
+    const screenshot = (await canvas.screenshot({ type: 'png' })).toString('base64');
+    const velocityPixels = await countVelocityPixels(page, screenshot);
+    expect(velocityPixels, 'Velocity curve should be visible in the miniplot').toBeGreaterThan(10);
   });
 });
