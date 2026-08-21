@@ -115,11 +115,22 @@ export class WssMiniplotRenderer {
   /// Time-range selection band (G-code line selection). null = no band.
   private selectionRange: SelectionRange | null = null;
 
+  // Debug state for G-code selection diagnostics (temporary)
+  private _debugLoggedEmptyRender = false;
+  private _debugLastRenderStateKey = '';
+
   private viewRangeCallback: (() => void) | null = null;
+  private clickCallback: ((time: number) => void) | null = null;
   private isDragging = false;
   private dragStartX = 0;
   private dragStartTMin = 0;
   private dragTSpan = 0;
+  // Click-vs-drag detection: if the mouse moves less than this many pixels
+  // between mousedown and mouseup, it's a click.
+  private mouseDownX = 0;
+  private mouseDownY = 0;
+  private mouseDownTime = 0;
+  private static readonly CLICK_THRESHOLD_PX = 5;
 
   // GPU resources
   private arcBuffer: GPUBuffer | null = null;
@@ -758,7 +769,7 @@ export class WssMiniplotRenderer {
     this.canvas.addEventListener('wheel', e => this.onWheel(e), { passive: false });
     this.canvas.addEventListener('mousedown', e => this.onMouseDown(e));
     window.addEventListener('mousemove', e => this.onMouseMove(e));
-    window.addEventListener('mouseup', () => this.onMouseUp());
+    window.addEventListener('mouseup', e => this.onMouseUp(e));
     this.canvas.addEventListener('dblclick', () => this.resetZoom());
   }
 
@@ -1038,16 +1049,34 @@ export class WssMiniplotRenderer {
    */
   setSelectionRange(tMin: number | null, tMax: number | null): void {
     if (tMin === null || tMax === null) {
+      console.debug('[GCODE_SEL] setSelectionRange: clearing (null range), resetting zoom');
       this.selectionRange = null;
       this.resetZoom();
       return;
     }
-    if (!isFinite(tMin) || !isFinite(tMax) || tMax <= tMin) return;
+    if (!isFinite(tMin) || !isFinite(tMax) || tMax <= tMin) {
+      console.debug('[GCODE_SEL] setSelectionRange: rejecting invalid range', { tMin, tMax });
+      return;
+    }
     this.selectionRange = { tMin, tMax };
     // Zoom to the selection with a ~10% margin on each side.
     const span = tMax - tMin;
     const margin = span * 0.1;
-    this.setViewRange(tMin - margin, tMax + margin);
+    const newViewMin = tMin - margin;
+    const newViewMax = tMax + margin;
+    console.debug('[GCODE_SEL] setSelectionRange: setting range', {
+      selTMin: tMin,
+      selTMax: tMax,
+      span,
+      margin,
+      newViewMin,
+      newViewMax,
+      totalRange: { ...this.totalRange },
+      hasWssData: !!this.wssData,
+      wssArcCount: this.wssData?.arcs.length ?? 0,
+      yRange: { ...this.yRange },
+    });
+    this.setViewRange(newViewMin, newViewMax);
   }
 
   getAxisLabel(): string {
@@ -1060,6 +1089,25 @@ export class WssMiniplotRenderer {
 
   onViewRangeChange(callback: () => void): void {
     this.viewRangeCallback = callback;
+  }
+
+  /**
+   * Register a callback fired when the user *clicks* (not drags) on the plot.
+   * The callback receives the time value at the clicked position.
+   */
+  onPlotClick(callback: (time: number) => void): void {
+    this.clickCallback = callback;
+  }
+
+  /**
+   * Convert a client X coordinate to the corresponding time value in the
+   * current view range. Returns NaN if the canvas is not available.
+   */
+  pixelToTime(clientX: number): number {
+    if (!this.canvas) return NaN;
+    const rect = this.canvas.getBoundingClientRect();
+    const mouseX = clientX - rect.left;
+    return this.viewRange.tMin + (mouseX / rect.width) * (this.viewRange.tMax - this.viewRange.tMin);
   }
 
   handleWheel(_deltaY: number, _mouseX: number): boolean {
@@ -1150,7 +1198,54 @@ export class WssMiniplotRenderer {
 
   render(): void {
     if (!this.context || !this.canvas || !this.computePipeline || !this.renderBindGroup) return;
-    if (!this.wssData || this.wssData.arcs.length === 0 || !this.arcBuffer) return;
+    if (!this.wssData || this.wssData.arcs.length === 0 || !this.arcBuffer) {
+      // Only log once when entering this state
+      if (!this._debugLoggedEmptyRender) {
+        this._debugLoggedEmptyRender = true;
+        console.debug('[GCODE_SEL] render: early return — no WSS data', {
+          hasContext: !!this.context,
+          hasCanvas: !!this.canvas,
+          hasComputePipeline: !!this.computePipeline,
+          hasRenderBindGroup: !!this.renderBindGroup,
+          hasWssData: !!this.wssData,
+          wssArcCount: this.wssData?.arcs.length ?? 0,
+          hasArcBuffer: !!this.arcBuffer,
+        });
+      }
+      return;
+    }
+    this._debugLoggedEmptyRender = false;
+
+    // Check if any arcs overlap the current view range.
+    // Only log when the view range or selection changes to avoid flooding.
+    const vMin = this.viewRange.tMin;
+    const vMax = this.viewRange.tMax;
+    const selKey = this.selectionRange ? `${this.selectionRange.tMin},${this.selectionRange.tMax}` : 'null';
+    const stateKey = `${vMin},${vMax},${selKey},${this.quantity}`;
+    if (stateKey !== this._debugLastRenderStateKey) {
+      this._debugLastRenderStateKey = stateKey;
+      let arcsInView = 0;
+      let firstArcInViewT0: number | null = null;
+      let lastArcInViewTEnd: number | null = null;
+      for (const arc of this.wssData.arcs) {
+        const arcTEnd = arc.t0 + arc.duration;
+        if (arc.t0 <= vMax && arcTEnd >= vMin) {
+          arcsInView++;
+          if (firstArcInViewT0 === null) firstArcInViewT0 = arc.t0;
+          lastArcInViewTEnd = arcTEnd;
+        }
+      }
+      console.debug('[GCODE_SEL] render: view vs arcs overlap', {
+        viewRange: { tMin: vMin, tMax: vMax },
+        totalArcs: this.wssData.arcs.length,
+        arcsInView,
+        firstArcInViewT0,
+        lastArcInViewTEnd,
+        yRange: { ...this.yRange },
+        quantity: this.quantity,
+        selectionRange: this.selectionRange ? { ...this.selectionRange } : null,
+      });
+    }
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const rect = this.container.getBoundingClientRect();
@@ -1448,6 +1543,9 @@ export class WssMiniplotRenderer {
   }
 
   private onMouseDown(e: MouseEvent): void {
+    this.mouseDownX = e.clientX;
+    this.mouseDownY = e.clientY;
+    this.mouseDownTime = Date.now();
     this.startDrag(e.clientX);
   }
 
@@ -1455,8 +1553,23 @@ export class WssMiniplotRenderer {
     if (this.isDragging) this.updateDrag(e.clientX);
   }
 
-  private onMouseUp(): void {
+  private onMouseUp(e: MouseEvent): void {
+    const wasDragging = this.isDragging;
     this.endDrag();
+    // Detect click: mouse hasn't moved much and it was a short press.
+    if (wasDragging) {
+      const dx = Math.abs(e.clientX - this.mouseDownX);
+      const dy = Math.abs(e.clientY - this.mouseDownY);
+      const elapsed = Date.now() - this.mouseDownTime;
+      if (dx < WssMiniplotRenderer.CLICK_THRESHOLD_PX &&
+          dy < WssMiniplotRenderer.CLICK_THRESHOLD_PX &&
+          elapsed < 500) {
+        const t = this.pixelToTime(e.clientX);
+        if (isFinite(t)) {
+          this.clickCallback?.(t);
+        }
+      }
+    }
   }
 
   destroy(): void {

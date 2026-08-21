@@ -1496,6 +1496,12 @@ export class WebGPUApp {
     // The WssMiniplotRenderer handles wheel zoom and drag-to-pan internally.
     this.miniplotRenderer?.onViewRangeChange(() => this.updateMiniplotLabel());
 
+    // Click on the miniplot → select the corresponding G-code line and
+    // highlight the 3D point at the clicked time.
+    this.miniplotRenderer?.onPlotClick((time: number) => {
+      this.handleMiniplotClick(time);
+    });
+
     container.addEventListener('dblclick', () => {
       this.miniplotRenderer?.resetZoom();
       this.updateMiniplotLabel();
@@ -1552,6 +1558,13 @@ export class WebGPUApp {
     if (!this.miniplotRenderer) return;
 
     if (this.currentWss) {
+      console.debug('[GCODE_SEL] updateMiniplotData: pushing WSS to renderer', {
+        wssArcCount: this.currentWss.arcs.length,
+        wssTotalTime: this.currentWss.totalTime,
+        wssMaxVelocity: this.currentWss.maxVelocity,
+        hasMiniplotData: !!this.miniplotData,
+        miniplotDataTotalTime: this.miniplotData?.totalTime ?? null,
+      });
       this.miniplotRenderer.setWssData(this.currentWss);
       // Pass event lines and line-to-time map for overlays
       this.miniplotRenderer.setEventLines({
@@ -1561,6 +1574,8 @@ export class WebGPUApp {
         coolantChangeLines: this.miniplotData?.coolantChangeLines,
       });
       this.miniplotRenderer.setLineToTimeMap(this.buildLineToTimeMap());
+    } else {
+      console.debug('[GCODE_SEL] updateMiniplotData: no WSS data to push');
     }
 
     // Pass PA parameters to the miniplot so PA quantities (PA Offset,
@@ -1589,9 +1604,21 @@ export class WebGPUApp {
     try {
       const url = `${this.rpcClient.httpBaseUrl}/api/trajectory/${jobId}/speeds`;
       const resp = await fetch(url);
-      if (!resp.ok) return;
+      if (!resp.ok) {
+        console.debug('[GCODE_SEL] fetchMiniplotData: HTTP not OK', { status: resp.status, url });
+        return;
+      }
       const json = await resp.json();
       this.miniplotData = json as MiniplotData;
+      console.debug('[GCODE_SEL] fetchMiniplotData: received data', {
+        segmentCount: this.miniplotData.segments.length,
+        totalTime: this.miniplotData.totalTime,
+        first3SegLineNumbers: this.miniplotData.segments.slice(0, 3).map(s => s.lineNumber),
+        first3SegTimeStarts: this.miniplotData.segments.slice(0, 3).map(s => s.timeStart),
+        first3SegDurations: this.miniplotData.segments.slice(0, 3).map(s => s.duration),
+        wssTotalTime: this.currentWss?.totalTime ?? null,
+        wssArcCount: this.currentWss?.arcs.length ?? null,
+      });
       // Enrich miniplot data with event line numbers from metadata
       if (this.gcodeMetadata) {
         this.miniplotData.toolChangeLines = this.gcodeMetadata.toolChanges.map(tc => tc.lineNumber);
@@ -1608,7 +1635,7 @@ export class WebGPUApp {
         this.updateInfoPanel();
       }
     } catch (e) {
-      // Silently fail — miniplot is optional
+      console.debug('[GCODE_SEL] fetchMiniplotData: error', e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -1812,7 +1839,18 @@ export class WebGPUApp {
         this.currentWss = parseTWSF(wssBinary);
         this.nurbsRenderer?.updateWss(this.currentWss);
         console.info(`WSS loaded: ${this.currentWss.arcs.length} arcs, ` +
-                     `${wssBinary.byteLength} bytes, totalLength=${this.currentWss.totalLength.toFixed(1)}mm`);
+                     `${wssBinary.byteLength} bytes, totalLength=${this.currentWss.totalLength.toFixed(1)}mm, ` +
+                     `totalTime=${this.currentWss.totalTime.toFixed(3)}s`);
+        console.debug('[GCODE_SEL] WSS loaded', {
+          arcCount: this.currentWss.arcs.length,
+          totalTime: this.currentWss.totalTime,
+          maxVelocity: this.currentWss.maxVelocity,
+          firstArcT0: this.currentWss.arcs[0]?.t0,
+          lastArcT0: this.currentWss.arcs[this.currentWss.arcs.length - 1]?.t0,
+          lastArcDuration: this.currentWss.arcs[this.currentWss.arcs.length - 1]?.duration,
+          hasMiniplotData: !!this.miniplotData,
+          miniplotDataTotalTime: (this.miniplotData as MiniplotData | null)?.totalTime ?? null,
+        });
         // Update miniplot with WSS data (always visible now)
         this.updateMiniplotData();
         this.updateMiniplotLabel();
@@ -2480,17 +2518,57 @@ export class WebGPUApp {
     // ── Miniplot: zoom to the selection's time range ──
     if (this.miniplotRenderer) {
       if (lines.length === 0 || !this.miniplotData) {
+        console.debug('[GCODE_SEL] miniplot branch:', {
+          reason: lines.length === 0 ? 'no lines selected' : 'no miniplotData',
+          linesLen: lines.length,
+          hasMiniplotData: !!this.miniplotData,
+          hasWss: !!this.currentWss,
+          wssTotalTime: this.currentWss?.totalTime,
+          wssArcCount: this.currentWss?.arcs.length,
+        });
         this.miniplotRenderer.setSelectionRange(null, null);
       } else {
         const sel = new Set(lines);
         let tMin = Infinity;
         let tMax = -Infinity;
+        let matchedSegCount = 0;
+        const allSegLineNumbers = this.miniplotData.segments.map(s => s.lineNumber);
         for (const seg of this.miniplotData.segments) {
           if (!sel.has(seg.lineNumber)) continue;
+          matchedSegCount++;
           if (seg.timeStart < tMin) tMin = seg.timeStart;
           const tEnd = seg.timeStart + seg.duration;
           if (tEnd > tMax) tMax = tEnd;
         }
+        // Sample WSS arc t0 range for overlap check
+        const wssArcs = this.currentWss?.arcs ?? [];
+        const wssFirstT0 = wssArcs.length > 0 ? wssArcs[0].t0 : null;
+        const wssLastArc = wssArcs.length > 0 ? wssArcs[wssArcs.length - 1] : null;
+        const wssLastTEnd = wssLastArc ? wssLastArc.t0 + wssLastArc.duration : null;
+        console.debug('[GCODE_SEL] miniplot time-range computation:', {
+          selectedLines: lines,
+          selectedLineCount: lines.length,
+          miniplotDataSegmentCount: this.miniplotData.segments.length,
+          matchedSegmentCount: matchedSegCount,
+          computedTMin: tMin,
+          computedTMax: tMax,
+          isFiniteTMin: isFinite(tMin),
+          isFiniteTMax: isFinite(tMax),
+          miniplotDataTotalTime: this.miniplotData.totalTime,
+          wssTotalTime: this.currentWss?.totalTime ?? null,
+          wssArcCount: wssArcs.length,
+          wssFirstArcT0: wssFirstT0,
+          wssLastArcTEnd: wssLastTEnd,
+          // Check if computed range overlaps WSS arc time domain
+          rangeOverlapsWss: isFinite(tMin) && isFinite(tMax) && wssLastTEnd !== null
+            ? (tMax >= (wssFirstT0 ?? 0) && tMin <= wssLastTEnd)
+            : 'N/A',
+          // Show first/last 5 segment lineNumbers to diagnose line-number mismatch
+          first5SegLineNumbers: allSegLineNumbers.slice(0, 5),
+          last5SegLineNumbers: allSegLineNumbers.slice(-5),
+          // Are any selected lines in the segment line numbers at all?
+          selectedLinesInSegments: lines.filter(l => allSegLineNumbers.includes(l)),
+        });
         if (isFinite(tMin) && isFinite(tMax) && tMax > tMin) {
           this.miniplotRenderer.setSelectionRange(tMin, tMax);
         } else if (isFinite(tMin) && isFinite(tMax)) {
@@ -2501,6 +2579,8 @@ export class WebGPUApp {
         }
       }
       this.updateMiniplotLabel();
+    } else {
+      console.debug('[GCODE_SEL] no miniplotRenderer instance');
     }
 
     // ── 3D view: highlight selected blocks + same-Z-layer detection + zoom ──
@@ -2583,6 +2663,86 @@ export class WebGPUApp {
         { x: maxX, y: maxY, z },
       );
     }
+  }
+
+  /**
+   * Handle a click on the miniplot at a given time. Selects the corresponding
+   * G-code line (triggering the normal selection zoom/highlight) and shows the
+   * print head marker at the 3D position for that time.
+   */
+  private handleMiniplotClick(time: number): void {
+    if (!this.miniplotData || !this.gcodeViewer) return;
+
+    // ── Time → G-code line number (binary search segments by timeStart) ──
+    const segs = this.miniplotData.segments;
+    if (segs.length === 0) return;
+    let lo = 0, hi = segs.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (segs[mid].timeStart <= time) lo = mid;
+      else hi = mid - 1;
+    }
+    // Clamp to [0, segs.length-1]
+    if (segs[lo].timeStart > time && lo > 0) lo--;
+    const lineNumber = segs[lo].lineNumber;
+
+    // Select the line in the G-code viewer. This triggers the
+    // 'selectionChanged' event → handleGcodeSelection, which zooms the
+    // miniplot and 3D view as usual.
+    this.gcodeViewer.setSelectedLines([lineNumber]);
+    this.gcodeViewer.highlightLine(lineNumber);
+
+    // ── Time → 3D position via WSS arcs ──
+    const pos = this.getPositionAtTime(time);
+    if (pos && this.printHeadMarker) {
+      this.printHeadMarker.setPosition(pos[0], pos[1], pos[2]);
+      this.printHeadMarker.visible = true;
+    }
+  }
+
+  /**
+   * Convert a time value to a 3D position along the toolpath using the WSS
+   * analytical velocity profile. Finds the arc containing the time, computes
+   * the arc-length at that time, converts to a path-progress fraction, and
+   * interpolates the tessellated positions.
+   *
+   * Returns null if WSS data or tessellated positions are unavailable.
+   */
+  private getPositionAtTime(time: number): [number, number, number] | null {
+    if (!this.currentWss || !this.nurbsRenderer) return null;
+    const arcs = this.currentWss.arcs;
+    if (arcs.length === 0) return null;
+
+    // Binary search for the arc whose [t0, t0+duration] contains `time`.
+    let lo = 0, hi = arcs.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (arcs[mid].t0 <= time) lo = mid;
+      else hi = mid - 1;
+    }
+    const arc = arcs[lo];
+    const tau = Math.max(0, Math.min(arc.duration, time - arc.t0));
+
+    // Compute arc-length s at time t0 + tau, per arc type:
+    //   BANG:     s = s0 + v0·τ + ½·a0·τ² + ⅙·η·τ³
+    //   SINGULAR: s = s0 + v0·τ + ½·a*·τ²
+    //   WALL:     s = s0 + v0·τ
+    let s: number;
+    if (arc.type < 2.5) {
+      // BANG_PLUS (0) or BANG_MINUS (1)
+      s = arc.s0 + arc.v0 * tau + 0.5 * arc.a0 * tau * tau + (1 / 6) * arc.eta * tau * tau * tau;
+    } else if (arc.type < 3.5) {
+      // SINGULAR (2)
+      s = arc.s0 + arc.v0 * tau + 0.5 * arc.aStar * tau * tau;
+    } else {
+      // WALL (3)
+      s = arc.s0 + arc.v0 * tau;
+    }
+
+    const totalLength = this.currentWss.totalLength;
+    if (totalLength <= 0) return null;
+    const frac = Math.max(0, Math.min(1, s / totalLength));
+    return this.nurbsRenderer.getPositionAt(frac);
   }
 
   /**
