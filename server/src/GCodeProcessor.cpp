@@ -413,12 +413,14 @@ ProcessResult GCodeProcessor::process(
     // Uses Tether's tether::motion::piecewiseNurbsFromSegments().
     // This is O(segments) — typically milliseconds, not minutes.
     Timer step3;
+    std::vector<double> perPieceFeedRates; // mm/s, used in Step 3b
     try {
         auto nurbsResult = tether::motion::piecewiseNurbsFromSegments(segments);
         result.nurbsPath = std::move(nurbsResult.path);
         result.deviations = std::move(nurbsResult.deviations);
         result.extruderSpeeds = std::move(nurbsResult.extruderSpeeds);
         result.pathLength = result.nurbsPath->totalLength();
+        perPieceFeedRates = std::move(nurbsResult.feedRates);
         WGV_LOG_TIME(std::format("Step 3: NURBS path — {} pieces, path length {:.1} mm",
             result.nurbsPath->numPieces(), result.pathLength), step3);
     } catch (const std::exception& e) {
@@ -455,6 +457,18 @@ ProcessResult GCodeProcessor::process(
             // Build PathAdapter from the NURBS path
             MotionPlanner::PathAdapter<3, double> pathAdapter(*result.nurbsPath);
 
+            // Set per-segment velocity limits from G-code feed rates.
+            // This enables the planner to respect per-segment feed rates
+            // and cornering constraints, producing a realistic velocity
+            // profile with thousands of arcs instead of just 2-4.
+            if (!perPieceFeedRates.empty()) {
+                pathAdapter.setSegmentVelocityLimits(perPieceFeedRates);
+                // Compute corner velocities using the junction deviation
+                // model. junctionDeviation = 0.05 mm is a typical value
+                // for 3D printers.
+                pathAdapter.computeCornerVelocities(0.05, config.maxAcceleration);
+            }
+
             // Configure kinematic limits from ProcessConfig
             MotionPlanner::KinematicLimits<3, double> limits;
             limits.path.maxPathVelocity = config.maxVelocity;
@@ -472,13 +486,14 @@ ProcessResult GCodeProcessor::process(
             // numSamples is only used for the optional SampledVelocityProfile
             // (needed by the PA builder); the WSS itself is analytical.
             MotionPlanner::analytical::ParetoTimeEnergyOptimalVelocityPlanner<3, double> profiler(limits);
+            // The planner's feedRate parameter is a global velocity ceiling
+            // for the entire path. We use config.maxVelocity — the per-segment
+            // feed rates (F-values) are NOT applied here because they vary
+            // per segment and the planner handles curvature-based velocity
+            // limits via the path adapter. Using the minimum segment feed rate
+            // (e.g. 5 mm/s from a priming line) would incorrectly limit the
+            // entire path to that speed.
             double feedRate = config.maxVelocity;
-            for (const auto& seg : parseResult.segments) {
-                if (seg.feedRate > 0.0) {
-                    feedRate = std::min(feedRate, seg.feedRate / 60.0);
-                    break;
-                }
-            }
             std::size_t numSamples = std::min<std::size_t>(
                 20000, std::max<std::size_t>(
                     200, pathAdapter.numSegments() * 20));
@@ -577,9 +592,13 @@ ProcessResult GCodeProcessor::process(
 
                     wssData.arcs.push_back(entry);
 
-                    // Map extrusion ratio to this arc via segment index at midpoint
-                    double tMid = arc.t0 + arc.duration * 0.5;
-                    auto segIdx = wss->segmentIndex(tMid);
+                    // Map extrusion ratio to this arc via segment index at midpoint.
+                    // Use the PathAdapter directly (O(log N) binary search) instead
+                    // of wss->segmentIndex(tMid) which calls locateAndState →
+                    // wallTimeToS (80-iteration root finding with Gauss quadrature
+                    // per WALL arc), making it O(N_arcs * 640) velocityLimit calls.
+                    double sMid = 0.5 * (arc.s0 + arc.s1);
+                    auto segIdx = pathAdapter.segmentIndexAtArcLength(sMid);
                     float ratio = (segIdx < extrusionRatios.size())
                         ? static_cast<float>(extrusionRatios[segIdx]) : 0.0f;
                     wssData.extrusionRatios.push_back(ratio);

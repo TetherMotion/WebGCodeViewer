@@ -46,9 +46,9 @@ test.describe('WSS (TWSF) integration', () => {
     const magic = String.fromCharCode(buffer[0], buffer[1], buffer[2], buffer[3]);
     expect(magic).toBe('TWSF');
 
-    // Version
+    // Version (TWSF v2 includes extrusion ratios)
     const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-    expect(view.getUint16(4, true)).toBe(1);
+    expect(view.getUint16(4, true)).toBe(2);
 
     // Arc count
     const arcCount = view.getUint32(8, true);

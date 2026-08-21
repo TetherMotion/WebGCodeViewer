@@ -262,6 +262,16 @@ if(WGV_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
+# ── Diagnostic tools ─────────────────────────────────────────────────────────
+add_executable(wss_diag tools/wss_diag.cpp)
+target_link_libraries(wss_diag PRIVATE wgv_server_shared)
+target_include_directories(wss_diag PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/server/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Tether/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Tether/dependencies/eigen"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Tether/dependencies/magic_enum/include"
+)
+
 # ── Tests ────────────────────────────────────────────────────────────────────
 if(WGV_BUILD_TESTS)
     enable_testing()
