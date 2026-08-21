@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebGCodeViewer Demos</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0e0e12;
+    color: #ccc;
+    font-family: system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 60px 20px;
+    min-height: 100vh;
+  }
+  h1 { margin-bottom: 8px; font-weight: 300; letter-spacing: 1px; }
+  p.subtitle { color: #666; margin-bottom: 40px; }
+  .demo-list { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 480px; }
+  a.demo-card {
+    display: block;
+    padding: 20px 24px;
+    background: #1a1a22;
+    border: 1px solid #2a2a34;
+    border-radius: 8px;
+    color: #ccc;
+    text-decoration: none;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  a.demo-card:hover { border-color: #4a9; background: #1e1e28; }
+  a.demo-card h2 { font-size: 16px; font-weight: 500; margin-bottom: 4px; }
+  a.demo-card p { font-size: 13px; color: #777; }
+</style>
+</head>
+<body>
+  <h1>WebGPU Demos</h1>
+  <p class="subtitle">Standalone test pages for WebGPU rendering components</p>
+  <div class="demo-list">
+    <a class="demo-card" href="sine-wave.html">
+      <h2>Sine Wave</h2>
+      <p>Fullscreen WebGPU line plot of a sine wave. Minimal compute-shader pipeline.</p>
+    </a>
+  </div>
+</body>
+</html>

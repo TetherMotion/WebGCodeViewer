@@ -23,6 +23,7 @@
  */
 
 import type { WssGpuData, PressureAdvanceParamBlock } from '@tether/viewer-core';
+import type { GpuPlotHost } from './GpuPlot';
 
 export type PressureAdvancePlotQuantity = 'offset' | 'extruderVelocity';
 
@@ -38,6 +39,18 @@ const QUANTITY_COLORS: Record<PressureAdvancePlotQuantity, [number, number, numb
 
 // Arc layout: 12 floats per arc (matches WssParser.ts / WssData.hpp)
 const ARC_FLOATS = 12;
+
+/// "Nice" step size for grid ticks (matches GpuPlot.niceStep).
+function niceStep(range: number, count: number): number {
+  if (range <= 0) return 1;
+  const rawStep = range / count;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const normalized = rawStep / magnitude;
+  if (normalized < 1.5) return 1 * magnitude;
+  if (normalized < 3) return 2 * magnitude;
+  if (normalized < 7) return 5 * magnitude;
+  return 10 * magnitude;
+}
 
 interface ViewRange {
   tMin: number;
@@ -65,9 +78,12 @@ export class PressureAdvancePlotRenderer {
   private computePipeline: GPUComputePipeline | null = null;
   private computeBindGroup: GPUBindGroup | null = null;
   private computeUniformBuffer: GPUBuffer | null = null;
-  private linePipeline: GPURenderPipeline | null = null;
-  private lineBindGroup: GPUBindGroup | null = null;
+
+  /// Host (GpuPlot) providing the plot rect / view range / y range / MSAA
+  /// texture / line pipeline so this renderer draws on top, aligned.
+  private host: GpuPlotHost | null = null;
   private lineUniformBuffer: GPUBuffer | null = null;
+  private lineBindGroup: GPUBindGroup | null = null;
 
   private outputPoints = 1;
   private readonly maxOutputPoints = 4096;
@@ -356,69 +372,14 @@ export class PressureAdvancePlotRenderer {
     // Dummy PA storage buffers
     this.device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
 
-    // ── Line render pipeline ──
-    const renderShader = this.device.createShaderModule({
-      code: `
-        struct LineUniforms {
-          tMin: f32,
-          tMax: f32,
-          yMin: f32,
-          yMax: f32,
-          color: vec3<f32>,
-          pointCount: f32,
-        };
-        @group(0) @binding(0) var<uniform> uniforms: LineUniforms;
-
-        struct VertexOutput {
-          @builtin(position) position: vec4<f32>,
-        };
-
-        @vertex
-        fn vs_main(@location(0) point: vec2<f32>) -> VertexOutput {
-          var out: VertexOutput;
-          let nx = (point.x - uniforms.tMin) / (uniforms.tMax - uniforms.tMin);
-          let ny = select(0.0,
-                          (point.y - uniforms.yMin) / (uniforms.yMax - uniforms.yMin),
-                          uniforms.yMax > uniforms.yMin);
-          out.position = vec4<f32>(2.0 * nx - 1.0, 2.0 * ny - 1.0, 0.0, 1.0);
-          return out;
-        }
-
-        @fragment
-        fn fs_main() -> @location(0) vec4<f32> {
-          return vec4<f32>(uniforms.color, 1.0);
-        }
-      `,
-    });
-
-    this.linePipeline = this.device.createRenderPipeline({
-      layout: 'auto',
-      vertex: {
-        module: renderShader,
-        entryPoint: 'vs_main',
-        buffers: [{
-          arrayStride: 8,
-          attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }],
-        }],
-      },
-      fragment: {
-        module: renderShader,
-        entryPoint: 'fs_main',
-        targets: [{ format }],
-      },
-      primitive: { topology: 'line-strip' },
-    });
-
+    // ── Line rendering ──
+    // The PA renderer reuses the host (GpuPlot) line pipeline + bind group
+    // layout so its line is drawn with the same MSAA + worldToClip-with-margins
+    // mapping as the motion profile series. The line uniform buffer matches
+    // the host's RenderUniforms struct (15 × f32 + 1 × u32 = 64 bytes).
     this.lineUniformBuffer = this.device.createBuffer({
-      size: 32, // 8 × f32
+      size: 64,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    this.lineBindGroup = this.device.createBindGroup({
-      layout: this.linePipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.lineUniformBuffer } },
-      ],
     });
 
     // Create dummy storage buffers for PA data (moments, op velocities, LUT)
@@ -504,6 +465,15 @@ export class PressureAdvancePlotRenderer {
   setQuantity(q: PressureAdvancePlotQuantity): void {
     this.quantity = q;
     this.computeYRange();
+  }
+
+  /**
+   * Set the host (GpuPlot) so this renderer can draw on top of the motion
+   * profile series, aligned to the same plot rect / view range / y range and
+   * using the same MSAA texture + line pipeline.
+   */
+  setHost(host: GpuPlotHost): void {
+    this.host = host;
   }
 
   private computeYRange(): void {
@@ -691,13 +661,23 @@ export class PressureAdvancePlotRenderer {
   }
 
   render(): void {
-    if (!this.context || !this.computePipeline || !this.linePipeline) return;
+    if (!this.context || !this.computePipeline) return;
     if (!this.wssData || !this.paParams) return;
+    if (!this.host) return; // need the host for plot rect + line pipeline
 
-    const dpr = window.devicePixelRatio || 1;
+    const linePipeline = this.host.getLinePipeline();
+    const lineLayout = this.host.getLineBindGroupLayout();
+    if (!linePipeline || !lineLayout) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const rect = this.canvas.getBoundingClientRect();
     const canvasWidth = Math.max(1, Math.floor(rect.width * dpr));
     this.outputPoints = Math.min(this.maxOutputPoints, canvasWidth);
+
+    // Sync this renderer's view range to the host's so the PA line stays
+    // aligned with the motion profile series when the user zooms/pans.
+    const hostView = this.host.getViewRange();
+    this.viewRange = { tMin: hostView.xMin, tMax: hostView.xMax };
 
     // Update compute uniforms
     const cu = new ArrayBuffer(32);
@@ -711,20 +691,36 @@ export class PressureAdvancePlotRenderer {
     // 24..31 = padding
     this.device.queue.writeBuffer(this.computeUniformBuffer!, 0, new Uint8Array(cu));
 
-    // Update line uniforms
+    // ── Line uniforms (match the host's RenderUniforms struct) ──
+    // Use the host's plot rect + y range so the PA line is drawn in the same
+    // screen region as the motion profile series.
+    const pr = this.host.getPlotRect();
+    const cs = this.host.getCanvasSize();
+    const hostY = this.host.getYRange();
     const color = QUANTITY_COLORS[this.quantity];
-    const lu = new Float32Array(8);
-    lu[0] = this.viewRange.tMin;
-    lu[1] = this.viewRange.tMax;
-    lu[2] = this.yRange.min;
-    lu[3] = this.yRange.max;
-    lu[4] = color[0];
-    lu[5] = color[1];
-    lu[6] = color[2];
-    lu[7] = this.outputPoints;
-    this.device.queue.writeBuffer(this.lineUniformBuffer!, 0, lu as Float32Array<ArrayBuffer>);
+    const xMajorStep = niceStep(hostView.xMax - hostView.xMin, 8);
+    const yMajorStep = niceStep(hostY.max - hostY.min, 6);
+    const ru = new Float32Array(15);
+    ru[0] = hostView.xMin;
+    ru[1] = hostView.xMax;
+    ru[2] = hostY.min;
+    ru[3] = hostY.max;
+    ru[4] = pr.x;
+    ru[5] = pr.y;
+    ru[6] = pr.w;
+    ru[7] = pr.h;
+    ru[8] = cs.w;
+    ru[9] = cs.h;
+    ru[10] = xMajorStep;
+    ru[11] = yMajorStep;
+    ru[12] = color[0];
+    ru[13] = color[1];
+    ru[14] = color[2];
+    this.device.queue.writeBuffer(this.lineUniformBuffer!, 0, ru as Float32Array<ArrayBuffer>);
+    const pc = new Uint32Array([this.outputPoints]);
+    this.device.queue.writeBuffer(this.lineUniformBuffer!, 60, pc as Uint32Array<ArrayBuffer>);
 
-    // Compute pass
+    // Compute pass — fill the point buffer with (t, value) pairs.
     const encoder = this.device.createCommandEncoder();
     const computePass = encoder.beginComputePass();
     computePass.setPipeline(this.computePipeline);
@@ -732,18 +728,35 @@ export class PressureAdvancePlotRenderer {
     computePass.dispatchWorkgroups(Math.ceil(this.outputPoints / 64));
     computePass.end();
 
-    // Render pass
-    const renderPass = encoder.beginRenderPass({
-      colorAttachments: [{
-        view: this.context.getCurrentTexture().createView(),
-        clearValue: [0.08, 0.08, 0.10, 1.0],
-        loadOp: 'clear',
-        storeOp: 'store',
-      }],
+    // Render pass — draw the PA line ON TOP of the motion profile series.
+    // loadOp:'load' preserves the GpuPlot's output; we render into the same
+    // MSAA texture (or canvas view) the host used.
+    const sc = this.host.getMsaaSampleCount();
+    const msaa = this.host.getMsaaTexture();
+    const canvasView = this.context.getCurrentTexture().createView();
+    const colorAttachment: GPURenderPassColorAttachment = sc > 1 && msaa
+      ? {
+          view: msaa.createView(),
+          resolveTarget: canvasView,
+          loadOp: 'load',
+          storeOp: 'store',
+        }
+      : {
+          view: canvasView,
+          loadOp: 'load',
+          storeOp: 'store',
+        };
+
+    const renderPass = encoder.beginRenderPass({ colorAttachments: [colorAttachment] });
+    const bindGroup = this.device.createBindGroup({
+      layout: lineLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.lineUniformBuffer! } },
+        { binding: 1, resource: { buffer: this.pointBuffer! } },
+      ],
     });
-    renderPass.setPipeline(this.linePipeline);
-    renderPass.setBindGroup(0, this.lineBindGroup!);
-    renderPass.setVertexBuffer(0, this.pointBuffer!);
+    renderPass.setPipeline(linePipeline);
+    renderPass.setBindGroup(0, bindGroup);
     renderPass.draw(this.outputPoints);
     renderPass.end();
 

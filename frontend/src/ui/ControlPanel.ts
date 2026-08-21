@@ -363,13 +363,14 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     const plotMenu = createMenu('Plot');
     const plotDropdown = plotMenu.dropdown;
 
-    const miniplotBtn = addToggle(plotDropdown, 'Miniplot', false, () => {
+    const miniplotBtn = addToggle(plotDropdown, 'Miniplot', true, () => {
       this.miniplotActive = !this.miniplotActive;
       miniplotBtn.classList.toggle('active', this.miniplotActive);
       this.emit('toggleMiniplot', undefined);
     }, 'Toggle per-segment miniplot');
-    // Override to track state properly
-    this.miniplotActive = false;
+    // Override to track state properly — miniplot is visible by default
+    this.miniplotActive = true;
+    miniplotBtn.classList.add('active');
     miniplotBtn.onclick = (e) => {
       e.stopPropagation();
       this.miniplotActive = !this.miniplotActive;
@@ -381,7 +382,7 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     const miniplotAxisLabel = document.createElement('label');
     miniplotAxisLabel.textContent = 'Quantity: ';
     const miniplotAxisSelect = document.createElement('select');
-    for (const q of ['Velocity', 'Acceleration', 'Jerk']) {
+    for (const q of ['Velocity', 'Acceleration', 'Jerk', 'PA Offset', 'Extruder Velocity']) {
       const opt = document.createElement('option');
       opt.value = q;
       opt.textContent = q;

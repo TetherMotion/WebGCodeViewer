@@ -30,6 +30,14 @@ export class ToolpathRenderer {
   private hasHighlight = false;
   private progress: number = 1.0; // 0..1 fraction of path to show
 
+  // Thick-line cylinder pipeline for highlighted segments
+  private thickPipeline: GPURenderPipeline | null = null;
+  private thickUniformBuffer: GPUBuffer | null = null;
+  private thickBindGroup: GPUBindGroup | null = null;
+  private thickInstanceBuffer: GPUBuffer | null = null;
+  private thickInstanceCount: number = 0;
+  private highlightThickness: number = 0.4; // mm, world-space thickness
+
   options: ToolpathRenderOptions = {
     colorAttribute: 'velocity',
     colorMap: new ColorMap('viridis'),
@@ -162,6 +170,121 @@ export class ToolpathRenderer {
         { binding: 2, resource: this.sampler },
       ],
     });
+
+    // ── Thick-line cylinder pipeline for highlighted segments ──
+    // Renders each highlighted segment as a camera-facing ribbon (billboarded
+    // thick line) using instanced rendering. One instance per highlighted
+    // line segment; each instance is a quad (6 vertices = 2 triangles).
+    const thickShader = this.device.createShaderModule({
+      code: `
+        struct ThickUniforms {
+          viewProj: mat4x4<f32>,
+          cameraEye: vec3<f32>,
+          thickness: f32,
+        };
+
+        @group(0) @binding(0) var<uniform> u: ThickUniforms;
+        @group(0) @binding(1) var<storage, read> instances: array<vec4<f32>>; // (start.xyz, end.x) | (end.yz, highlight)
+
+        struct VertexOutput {
+          @builtin(position) clipPos: vec4<f32>,
+          @location(0) highlight: f32,
+        };
+
+        // Quad corner offsets in the segment's local space.
+        // 6 vertices = 2 triangles: (p0-a, p0+a, p1-a) and (p0+a, p1+a, p1-a)
+        // where a = perpendicular offset * thickness/2
+        // Corner IDs: 0=p0-a, 1=p0+a, 2=p1-a, 3=p1+a
+        // Triangle 1: 0,1,2  Triangle 2: 1,3,2
+        @vertex
+        fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VertexOutput {
+          // Each instance has 6 vertices (2 triangles)
+          let cornerId = vi % 6u;
+          // Read instance data: 2 vec4 = start.xyz + end.x, end.yz + highlight
+          let d0 = instances[ii * 2u];
+          let d1 = instances[ii * 2u + 1u];
+          let p0 = d0.xyz;
+          let p1 = vec3<f32>(d0.w, d1.x, d1.y);
+          let highlight = d1.z;
+
+          // Segment direction
+          let dir = normalize(p1 - p0 + vec3<f32>(0.0001, 0.0001, 0.0001));
+          // Vector from segment to camera
+          let toCam = normalize(u.cameraEye - p0);
+          // Perpendicular vector (in the plane spanned by dir and toCam)
+          let perp = normalize(cross(dir, toCam));
+
+          let halfThick = u.thickness * 0.5;
+
+          // Select which endpoint and which side based on cornerId
+          // Triangle 1: 0=p0-perp, 1=p0+perp, 2=p1-perp
+          // Triangle 2: 3=p0+perp, 4=p1+perp, 5=p1-perp
+          var pos: vec3<f32>;
+          switch (cornerId) {
+            case 0u: { pos = p0 - perp * halfThick; }
+            case 1u: { pos = p0 + perp * halfThick; }
+            case 2u: { pos = p1 - perp * halfThick; }
+            case 3u: { pos = p0 + perp * halfThick; }
+            case 4u: { pos = p1 + perp * halfThick; }
+            case 5u: { pos = p1 - perp * halfThick; }
+            default: { pos = p0; }
+          }
+
+          // Nudge the ribbon slightly toward the camera so it wins the depth
+          // test against the thin toolpath line at the same position.
+          let nudge = normalize(u.cameraEye - pos) * 0.01;
+          pos = pos + nudge;
+
+          var output: VertexOutput;
+          output.clipPos = u.viewProj * vec4<f32>(pos, 1.0);
+          output.highlight = highlight;
+          return output;
+        }
+
+        @fragment
+        fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+          // Bright white-yellow for highlighted thick segments
+          let baseColor = vec3<f32>(1.0, 0.95, 0.3);
+          // Slight edge darkening for a cylindrical look
+          return vec4<f32>(baseColor, 1.0);
+        }
+      `,
+    });
+
+    this.thickPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: thickShader,
+        entryPoint: 'vs_main',
+        buffers: [],
+      },
+      fragment: {
+        module: thickShader,
+        entryPoint: 'fs_main',
+        targets: [{ format }],
+      },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: {
+        format: 'depth32float',
+        depthCompare: 'less-equal',
+        depthWriteEnabled: true,
+      },
+    });
+
+    // Thick uniforms: 64 (viewProj) + 16 (cameraEye + thickness) = 80 bytes
+    this.thickUniformBuffer = this.device.createBuffer({
+      size: 80,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    this.thickBindGroup = this.device.createBindGroup({
+      layout: this.thickPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.thickUniformBuffer } },
+        // Dummy instance buffer — replaced when setHighlight builds instances
+        { binding: 1, resource: { buffer: this.device.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }) } },
+      ],
+    });
   }
 
   updateData(data: TTHRData): void {
@@ -272,6 +395,7 @@ export class ToolpathRenderer {
   /**
    * Highlight samples belonging to specific block indices.
    * Pass null or empty set to clear highlight.
+   * Also builds the thick-line instance buffer for cylinder rendering.
    */
   setHighlight(blockIndices: Set<number> | null, data?: TTHRData): void {
     if (!this.highlightBuffer || !this.sampleCount) return;
@@ -290,12 +414,67 @@ export class ToolpathRenderer {
     }
 
     this.device.queue.writeBuffer(this.highlightBuffer, 0, highlightValues);
+
+    // Build thick-line instance buffer for highlighted segments.
+    this.buildThickInstances(highlightValues, data);
   }
 
   clearHighlight(): void {
     if (!this.highlightBuffer || !this.sampleCount) return;
     this.device.queue.writeBuffer(this.highlightBuffer, 0, new Float32Array(this.sampleCount));
     this.hasHighlight = false;
+    this.thickInstanceCount = 0;
+  }
+
+  /**
+   * Build the per-instance buffer for thick-line cylinder rendering.
+   * Each highlighted line segment (where at least one endpoint is highlighted)
+   * becomes one instance with (start.xyz, end.x, end.yz, highlight) packed
+   * into 2 vec4s.
+   */
+  private buildThickInstances(highlightValues: Float32Array, data?: TTHRData): void {
+    if (!data?.positions || !this.sampleCount) {
+      this.thickInstanceCount = 0;
+      return;
+    }
+    const n = this.sampleCount;
+    const axes = data.header.axisCount;
+    const instances: number[] = [];
+    for (let i = 0; i < n - 1; i++) {
+      // A segment is highlighted if either endpoint is highlighted
+      if (highlightValues[i] > 0 || highlightValues[i + 1] > 0) {
+        const p0x = data.positions[i * axes];
+        const p0y = data.positions[i * axes + 1];
+        const p0z = data.positions[i * axes + 2];
+        const p1x = data.positions[(i + 1) * axes];
+        const p1y = data.positions[(i + 1) * axes + 1];
+        const p1z = data.positions[(i + 1) * axes + 2];
+        // Pack as 2 vec4s: (p0.xyz, p1.x) and (p1.yz, highlight, _pad)
+        instances.push(p0x, p0y, p0z, p1x);
+        instances.push(p1y, p1z, 1.0, 0.0);
+      }
+    }
+    this.thickInstanceCount = instances.length / 8; // 8 floats per instance
+    if (this.thickInstanceCount === 0) return;
+
+    const arr = new Float32Array(instances);
+    if (this.thickInstanceBuffer) this.thickInstanceBuffer.destroy();
+    this.thickInstanceBuffer = this.device.createBuffer({
+      size: arr.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.thickInstanceBuffer, 0, arr as Float32Array<ArrayBuffer>);
+
+    // Recreate bind group with the new instance buffer
+    if (this.thickPipeline) {
+      this.thickBindGroup = this.device.createBindGroup({
+        layout: this.thickPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: this.thickUniformBuffer! } },
+          { binding: 1, resource: { buffer: this.thickInstanceBuffer } },
+        ],
+      });
+    }
   }
 
   /**
@@ -341,7 +520,7 @@ export class ToolpathRenderer {
     );
   }
 
-  render(pass: GPURenderPassEncoder, viewProj: Mat4): void {
+  render(pass: GPURenderPassEncoder, viewProj: Mat4, cameraEye?: { x: number; y: number; z: number }): void {
     if (!this.options.visible || !this.pipeline || !this.positionBuffer || this.sampleCount < 2) return;
 
     // Update uniforms (viewProj + progress)
@@ -359,6 +538,22 @@ export class ToolpathRenderer {
     pass.setVertexBuffer(3, this.sampleIndexBuffer!);
     pass.setIndexBuffer(this.indexBuffer!, 'uint32');
     pass.drawIndexed(this.indexCount);
+
+    // Draw thick cylinder segments for highlighted portions
+    if (this.hasHighlight && this.thickPipeline && this.thickBindGroup && this.thickInstanceCount > 0) {
+      const eye = cameraEye ?? { x: 0, y: 0, z: 1000 };
+      const thickData = new Float32Array(20);
+      for (let i = 0; i < 16; i++) thickData[i] = viewProj[i];
+      thickData[16] = eye.x;
+      thickData[17] = eye.y;
+      thickData[18] = eye.z;
+      thickData[19] = this.highlightThickness;
+      this.device.queue.writeBuffer(this.thickUniformBuffer!, 0, thickData as Float32Array<ArrayBuffer>);
+
+      pass.setPipeline(this.thickPipeline);
+      pass.setBindGroup(0, this.thickBindGroup);
+      pass.draw(6, this.thickInstanceCount);
+    }
   }
 
   destroy(): void {
@@ -369,5 +564,7 @@ export class ToolpathRenderer {
     this.indexBuffer?.destroy();
     this.uniformBuffer?.destroy();
     this.colorLUTTexture?.destroy();
+    this.thickUniformBuffer?.destroy();
+    this.thickInstanceBuffer?.destroy();
   }
 }

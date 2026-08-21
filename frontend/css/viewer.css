@@ -156,11 +156,21 @@ body {
     overflow: hidden;
 }
 
+/* Viewer column: 3D canvas (top) + miniplot section (bottom) */
+#viewer-column {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
 #canvas-container {
     flex: 1;
     position: relative;
     background: var(--bg-primary);
     min-width: 0;
+    min-height: 0;
 }
 
 /* Navigation cube overlay (top-right of canvas) */
@@ -435,6 +445,7 @@ body {
 
 .gcode-line.selected-range {
     background: rgba(74, 158, 255, 0.15);
+    border-left: 3px solid rgba(74, 158, 255, 0.7);
 }
 
 .gcode-icon-annotate {
@@ -1597,17 +1608,60 @@ input[type="checkbox"] {
     pointer-events: none;
 }
 
-/* Miniplot overlay */
-#miniplot-container {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    height: 180px;
+/* Miniplot section — permanent panel below the 3D view */
+#miniplot-section {
+    display: flex;
+    flex-direction: column;
+    height: 200px;
+    min-height: 200px;
     background: rgba(26, 26, 30, 0.92);
     border-top: 1px solid var(--border);
-    z-index: 15;
     backdrop-filter: blur(8px);
+    flex-shrink: 0;
+}
+
+#miniplot-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 8px;
+    background: rgba(20, 20, 24, 0.95);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    height: 28px;
+}
+
+#miniplot-quantity-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-primary);
+    font-weight: bold;
+}
+
+#miniplot-quantity-select {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 4px;
+    cursor: pointer;
+}
+
+#miniplot-quantity-select:hover {
+    border-color: var(--accent);
+}
+
+/* Miniplot canvas container — fills remaining space in the section */
+#miniplot-container {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
 }
 
 /* Feature #128: Layer count overlay */
@@ -1786,14 +1840,13 @@ body.drag-active::after {
 }
 
 #miniplot-label {
-    position: absolute;
-    top: 4px;
-    left: 8px;
     font-family: var(--font-mono);
     font-size: 11px;
     color: var(--text-secondary);
     pointer-events: none;
-    text-shadow: 0 0 4px rgba(0,0,0,0.8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ── Analysis Info Panel ── */

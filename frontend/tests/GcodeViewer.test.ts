@@ -379,20 +379,20 @@ describe('GcodeViewer', () => {
   });
 
   it('setSelection dispatches selectionChanged event', () => {
-    let payload: { start: number; end: number } | null = null;
+    let payload: { start: number; end: number; lines: number[] } | null = null;
     viewer.on('selectionChanged', (p) => { payload = p; });
     viewer.loadGcodeText('G1 X10\nG1 X20');
     viewer.setSelection(0, 1);
-    expect(payload).toEqual({ start: 0, end: 1 });
+    expect(payload).toEqual({ start: 0, end: 1, lines: [0, 1] });
   });
 
   it('clearSelection dispatches selectionChanged event with -1', () => {
-    let payload: { start: number; end: number } | null = null;
+    let payload: { start: number; end: number; lines: number[] } | null = null;
     viewer.on('selectionChanged', (p) => { payload = p; });
     viewer.loadGcodeText('G1 X10');
     viewer.setSelection(0, 0);
     viewer.clearSelection();
-    expect(payload).toEqual({ start: -1, end: -1 });
+    expect(payload).toEqual({ start: -1, end: -1, lines: [] });
   });
 
   it('shift+click on a line sets selection (dispatches selectionChanged)', () => {
@@ -424,6 +424,40 @@ describe('GcodeViewer', () => {
       expect(sel.start).toBe(1);
       expect(sel.end).toBe(3);
     }
+  });
+
+  it('ctrl+click toggles a line into the disjoint selection set', () => {
+    let payload: { lines: number[] } | null = null;
+    viewer.on('selectionChanged', (p) => { payload = p; });
+    viewer.loadGcodeText('G1 X10\nG1 X20\nG1 X30\nG1 X40');
+    const lineEls = container.querySelectorAll('.gcode-line');
+    // Ctrl+click line 1 → selection = {1}
+    (lineEls[1] as HTMLElement).dispatchEvent(
+      new MouseEvent('click', { bubbles: true, ctrlKey: true }),
+    );
+    expect(payload!.lines).toEqual([1]);
+    // Ctrl+click line 3 → selection = {1, 3} (disjoint)
+    (lineEls[3] as HTMLElement).dispatchEvent(
+      new MouseEvent('click', { bubbles: true, ctrlKey: true }),
+    );
+    expect(viewer.getSelectedLines()).toEqual([1, 3]);
+    // Ctrl+click line 1 again → removed → selection = {3}
+    (lineEls[1] as HTMLElement).dispatchEvent(
+      new MouseEvent('click', { bubbles: true, ctrlKey: true }),
+    );
+    expect(viewer.getSelectedLines()).toEqual([3]);
+  });
+
+  it('setSelectedLines sets a disjoint selection and highlights each line', () => {
+    viewer.loadGcodeText('G1 X10\nG1 X20\nG1 X30\nG1 X40');
+    viewer.setSelectedLines([0, 2]);
+    expect(viewer.getSelectedLines()).toEqual([0, 2]);
+    expect(viewer.hasSelection()).toBe(true);
+    const lineEls = container.querySelectorAll('.gcode-line');
+    expect(lineEls[0].classList.contains('selected-range')).toBe(true);
+    expect(lineEls[1].classList.contains('selected-range')).toBe(false);
+    expect(lineEls[2].classList.contains('selected-range')).toBe(true);
+    expect(lineEls[3].classList.contains('selected-range')).toBe(false);
   });
 
   it('selected lines get selected-range class', () => {

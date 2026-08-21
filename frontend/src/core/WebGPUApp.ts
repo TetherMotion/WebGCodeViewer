@@ -78,7 +78,7 @@ export class WebGPUApp {
   private miniplotRenderer: WssMiniplotRenderer | null = null;
   private miniplotContainer: HTMLElement | null = null;
   private miniplotLabel: HTMLElement | null = null;
-  private miniplotVisible: boolean = false;
+  private miniplotVisible: boolean = true;
   private miniplotData: MiniplotData | null = null;
 
   private resizeObserver: ResizeObserver | null = null;
@@ -425,17 +425,16 @@ export class WebGPUApp {
       this.toggleMiniplot();
     });
     this.controlPanel.on('miniplotAxisChanged', (quantityName) => {
-      const qMap: Record<string, WssPlotQuantity> = {
-        'Velocity': 'velocity',
-        'Acceleration': 'acceleration',
-        'Jerk': 'jerk',
-      };
-      const q = qMap[quantityName] || 'velocity';
-      if (this.miniplotRenderer) {
-        this.miniplotRenderer.setQuantity(q);
-        this.updateMiniplotLabel();
-      }
+      this.setMiniplotQuantity(quantityName);
     });
+
+    // Wire the inline quantity selector in the miniplot toolbar
+    const quantitySelect = document.getElementById('miniplot-quantity-select');
+    if (quantitySelect) {
+      quantitySelect.addEventListener('change', () => {
+        this.setMiniplotQuantity((quantitySelect as HTMLSelectElement).value);
+      });
+    }
 
     // G-code viewer → highlight toolpath
     this.gcodeViewer.on('blockSelected', (blockIndex) => {
@@ -449,6 +448,9 @@ export class WebGPUApp {
         this.miniplotRenderer.setSelectedLine(line);
         this.updateMiniplotLabel();
       }
+    });
+    this.gcodeViewer.on('selectionChanged', ({ lines }) => {
+      this.handleGcodeSelection(lines);
     });
     this.gcodeViewer.on('isolateZLayer', (lineNum) => {
       this.isolateZLayerForLine(lineNum);
@@ -1164,8 +1166,13 @@ export class WebGPUApp {
 
   private resize(): void {
     const dpr = window.devicePixelRatio || 1;
-    const w = Math.max(1, this.canvas.clientWidth * dpr);
-    const h = Math.max(1, this.canvas.clientHeight * dpr);
+    // Round to integers — canvas.width/height expect integers, and buffer
+    // sizes derived from w/h (e.g. depth readback) must be multiples of 4.
+    // With a fractional dpr (1.25, 1.5, …), unrounded w/h produce fractional
+    // buffer sizes that get truncated to non-multiple-of-4 values, causing
+    // mapAsync to reject with "Size must be a multiple of 4".
+    const w = Math.max(1, Math.floor(this.canvas.clientWidth * dpr));
+    const h = Math.max(1, Math.floor(this.canvas.clientHeight * dpr));
     this.canvas.width = w;
     this.canvas.height = h;
     this.camera.setAspect(w / h);
@@ -1185,8 +1192,13 @@ export class WebGPUApp {
       const unpaddedBytesPerRow = w * 4;
       const paddedBytesPerRow = Math.ceil(unpaddedBytesPerRow / 256) * 256;
       this.depthPaddedRowFloats = paddedBytesPerRow / 4;
+      // Buffer size must be a multiple of 4 for mapAsync. paddedBytesPerRow
+      // is a multiple of 256, so the product is already a multiple of 4 as
+      // long as h is an integer (guaranteed by Math.floor above). Round up
+      // to the nearest multiple of 4 as a safety net.
+      const bufSize = Math.ceil((paddedBytesPerRow * h) / 4) * 4;
       this.depthReadbackBuffer = this.device.createBuffer({
-        size: paddedBytesPerRow * h,
+        size: bufSize,
         usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
         // BUG 16 FIX: Label the buffer so WebGPU validation errors identify it
         label: 'depth-readback',
@@ -1421,7 +1433,7 @@ export class WebGPUApp {
     this.gridRenderer?.render(pass, viewProj);
     this.gridLabelRenderer?.render(pass, viewProj);
     this.nurbsRenderer?.render(pass, viewProj);
-    this.toolpathRenderer?.render(pass, viewProj);
+    this.toolpathRenderer?.render(pass, viewProj, this.camera.eye);
     this.crossSectionRenderer?.render(pass, viewProj);
     this.pointCloudRenderer?.render(pass, viewProj);
     this.printerFrameRenderer?.render(pass, viewProj);
@@ -1510,8 +1522,9 @@ export class WebGPUApp {
 
   private toggleMiniplot(): void {
     this.miniplotVisible = !this.miniplotVisible;
-    if (this.miniplotContainer) {
-      this.miniplotContainer.style.display = this.miniplotVisible ? 'block' : 'none';
+    const section = document.getElementById('miniplot-section');
+    if (section) {
+      section.style.display = this.miniplotVisible ? 'flex' : 'none';
     }
     if (this.miniplotVisible) {
       // Resize after becoming visible
@@ -1525,6 +1538,27 @@ export class WebGPUApp {
       if (!this.miniplotData && this.currentJobId) {
         this.fetchMiniplotData(this.currentJobId);
       }
+    }
+  }
+
+  /// Set the miniplot quantity from the UI selector name.
+  private setMiniplotQuantity(quantityName: string): void {
+    const qMap: Record<string, WssPlotQuantity> = {
+      'Velocity': 'velocity',
+      'Acceleration': 'acceleration',
+      'Jerk': 'jerk',
+      'PA Offset': 'paOffset',
+      'Extruder Velocity': 'paExtruderVelocity',
+    };
+    const q = qMap[quantityName] || 'velocity';
+    if (this.miniplotRenderer) {
+      this.miniplotRenderer.setQuantity(q);
+      this.updateMiniplotLabel();
+    }
+    // Sync the select element if the change came from the ControlPanel
+    const select = document.getElementById('miniplot-quantity-select') as HTMLSelectElement | null;
+    if (select && select.value !== quantityName) {
+      select.value = quantityName;
     }
   }
 
@@ -1545,6 +1579,14 @@ export class WebGPUApp {
         coolantChangeLines: this.miniplotData?.coolantChangeLines,
       });
       this.miniplotRenderer.setLineToTimeMap(this.buildLineToTimeMap());
+    }
+
+    // Pass PA parameters to the miniplot so PA quantities (PA Offset,
+    // Extruder Velocity) can be evaluated in the compute shader.
+    if (this.currentPressureAdvanceData && this.currentPressureAdvanceData.length > 0) {
+      // Use the first (default) algorithm; the user can switch algorithms
+      // via the PA controls in the future.
+      this.miniplotRenderer.setPaData(this.currentPressureAdvanceData[0]);
     }
   }
 
@@ -1609,6 +1651,7 @@ export class WebGPUApp {
     // Create plot container if not already created
     if (!this.plotContainer) {
       this.plotContainer = document.createElement('div');
+      this.plotContainer.id = 'pa-plot-container';
       this.plotContainer.style.cssText = `
         position: absolute; bottom: 0; left: 0; right: 0;
         height: 220px; background: rgba(10, 10, 15, 0.95);
@@ -1656,17 +1699,23 @@ export class WebGPUApp {
     }
 
     // Initialize the PressureAdvancePlotRenderer (for analytical PA series)
-    // This uses a separate canvas that overlays on top of the GpuPlot canvas.
-    // For now, it shares the same plot canvas — the PA renderer draws on top.
+    // It draws on top of the GpuPlot canvas, reusing the host's line pipeline
+    // + plot rect + MSAA texture so the PA line stays aligned with the motion
+    // profile series.
     if (!this.pressureAdvancePlotRenderer && this.plotCanvas && this.device) {
       this.pressureAdvancePlotRenderer = new PressureAdvancePlotRenderer(
         this.device, this.plotCanvas);
+      if (this.gpuPlot) {
+        this.pressureAdvancePlotRenderer.setHost(this.gpuPlot);
+      }
       this.pressureAdvancePlotRenderer.init(this.format).then(() => {
         this.updatePressureAdvancePlotSeries();
         this.renderPressureAdvancePlot();
       }).catch((e) => {
         console.error('Failed to init PA plot renderer:', e);
       });
+    } else if (this.pressureAdvancePlotRenderer && this.gpuPlot) {
+      this.pressureAdvancePlotRenderer.setHost(this.gpuPlot);
     }
 
     // Show the plot container
@@ -1925,11 +1974,9 @@ export class WebGPUApp {
         this.nurbsRenderer?.updateWss(this.currentWss);
         console.info(`WSS loaded: ${this.currentWss.arcs.length} arcs, ` +
                      `${wssBinary.byteLength} bytes, totalLength=${this.currentWss.totalLength.toFixed(1)}mm`);
-        // Update miniplot if visible and using WssMiniplotRenderer
-        if (this.miniplotVisible) {
-          this.updateMiniplotData();
-          this.updateMiniplotLabel();
-        }
+        // Update miniplot with WSS data (always visible now)
+        this.updateMiniplotData();
+        this.updateMiniplotLabel();
       } catch (e) {
         // WSS is optional — if it fails, the renderer falls back to
         // ReNURBS or piece-level coloring.
@@ -1946,6 +1993,8 @@ export class WebGPUApp {
         console.info(`PA data loaded: ${this.currentPressureAdvanceData.length} algorithms, ` +
                      `${paBinary.byteLength} bytes`);
         this.setupPressureAdvancePlot();
+        // Push PA params to the miniplot so PA quantities can be evaluated.
+        this.updateMiniplotData();
       } catch (e) {
         // PA is optional — if it fails, continue without it.
         console.info('PA data not available');
@@ -2624,6 +2673,111 @@ export class WebGPUApp {
       // We don't have line→block mapping here, so use the layer slider approach
       // Just switch to top view and let user pick a layer
       return;
+    }
+  }
+
+  /**
+   * Handle a multi-line G-code selection (drag, shift+click, ctrl+click).
+   *
+   * If all selected lines' pieces lie on the same Z-layer, switch to
+   * orthographic + top view, isolate that Z-layer, and zoom the camera onto
+   * the XY bounds of the selected pieces.
+   *
+   * Independently of the Z check, zoom the miniplot to the time range spanned
+   * by the selected lines so the user sees the selected quantity (velocity /
+   * acceleration / jerk) for just those lines.
+   */
+  private handleGcodeSelection(lines: number[]): void {
+    // ── Miniplot: zoom to the selection's time range ──
+    if (this.miniplotRenderer) {
+      if (lines.length === 0 || !this.miniplotData) {
+        this.miniplotRenderer.setSelectionRange(null, null);
+      } else {
+        const sel = new Set(lines);
+        let tMin = Infinity;
+        let tMax = -Infinity;
+        for (const seg of this.miniplotData.segments) {
+          if (!sel.has(seg.lineNumber)) continue;
+          if (seg.timeStart < tMin) tMin = seg.timeStart;
+          const tEnd = seg.timeStart + seg.duration;
+          if (tEnd > tMax) tMax = tEnd;
+        }
+        if (isFinite(tMin) && isFinite(tMax) && tMax > tMin) {
+          this.miniplotRenderer.setSelectionRange(tMin, tMax);
+        } else if (isFinite(tMin) && isFinite(tMax)) {
+          // Single-line selection: zoom to a tiny window around it.
+          this.miniplotRenderer.setSelectionRange(tMin, tMax + 1e-3);
+        } else {
+          this.miniplotRenderer.setSelectionRange(null, null);
+        }
+      }
+      this.updateMiniplotLabel();
+    }
+
+    // ── 3D view: same-Z-layer detection + ortho/top + zoom ──
+    if (lines.length === 0) return;
+    if (!this.currentNBP || this.currentNBP.pieces.length === 0) return;
+    if (!this.gcodeViewer) return;
+
+    // Map selected lines → piece indices (blockIndex ≈ pieceIndex).
+    const lineToBlock = this.gcodeViewer.lineToBlockMap;
+    const pieceIndices: number[] = [];
+    for (const ln of lines) {
+      const blockIdx = lineToBlock.get(ln);
+      if (blockIdx !== undefined && blockIdx >= 0 && blockIdx < this.currentNBP.pieces.length) {
+        pieceIndices.push(blockIdx);
+      }
+    }
+    if (pieceIndices.length === 0) return;
+
+    // Determine whether all selected pieces lie in the same Z-layer.
+    let commonLayerIdx = -1;
+    for (const pi of pieceIndices) {
+      let layerIdx = -1;
+      for (const layer of this.zLayers) {
+        if (pi >= layer.pieceStart && pi <= layer.pieceEnd) {
+          layerIdx = layer.layerIndex;
+          break;
+        }
+      }
+      if (layerIdx < 0) { commonLayerIdx = -1; break; }
+      if (commonLayerIdx < 0) commonLayerIdx = layerIdx;
+      else if (layerIdx !== commonLayerIdx) { commonLayerIdx = -1; break; }
+    }
+
+    if (commonLayerIdx < 0) {
+      // Selection spans multiple Z-layers — don't change the view.
+      return;
+    }
+
+    // Same Z-layer: switch to ortho + top, isolate the layer, zoom to the
+    // XY bounds of the selected pieces.
+    this.camera.setProjectionMode('orthographic');
+    this.setViewDirection('top');
+    this.applyLayerFilter(commonLayerIdx);
+    this.controlPanel.setLayerValue(commonLayerIdx);
+
+    // Compute XY bounds from the selected pieces' control points.
+    const dim = this.currentNBP.header.dim;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const pi of pieceIndices) {
+      const cps = this.currentNBP.pieces[pi].controlPoints;
+      for (let i = 0; i + 1 < cps.length; i += dim) {
+        const x = cps[i], y = cps[i + 1];
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (isFinite(minX) && isFinite(maxX) && isFinite(minY) && isFinite(maxY)) {
+      // Use the layer Z for the bounds so the grid is repositioned correctly.
+      const layer = this.zLayers[commonLayerIdx];
+      const z = layer ? layer.zHeight : 0;
+      this.fitCameraToBounds(
+        { x: minX, y: minY, z },
+        { x: maxX, y: maxY, z },
+      );
     }
   }
 

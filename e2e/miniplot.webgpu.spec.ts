@@ -38,10 +38,7 @@ test.describe('WSS miniplot (WebGPU)', () => {
     await page.goto(`${BASE}/?job=${jobId}`);
     await page.waitForTimeout(2000);
 
-    // Open the miniplot (M key).
-    await page.keyboard.press('m');
-    await page.waitForTimeout(500);
-
+    // The miniplot is now always visible by default (no toggle needed).
     // Wait for the WSS miniplot canvas (or compute miniplot fallback) to be present and visible.
     const canvas = page.locator('#miniplot-container canvas.wss-miniplot-canvas, #miniplot-container canvas.miniplot-compute-canvas');
     await expect(canvas).toBeVisible();

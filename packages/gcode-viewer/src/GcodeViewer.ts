@@ -17,7 +17,10 @@ export interface GcodeViewerEvents {
   highlightMotion: number; // block index — highlight only this motion in 3D
   bookmarkToggled: number; // line number — toggle bookmark on this line
   annotationChanged: { line: number; text: string }; // annotation edited
-  selectionChanged: { start: number; end: number }; // line range selected for analysis
+  /// Multi-line selection (drag, shift+click, ctrl+click). `lines` is the
+  /// full set of selected line numbers; `start`/`end` are min/max (or -1/-1
+  /// when empty) for backward compatibility with range-only consumers.
+  selectionChanged: { start: number; end: number; lines: number[] };
 }
 
 interface BlockInfo {
@@ -73,9 +76,17 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
   private searchMatches: number[] = []; // line numbers matching search
   private currentMatchIdx = -1;
 
-  // Selection state for region analysis
+  // Selection state for region analysis.
+  // `selectedLines` is the authoritative set of selected line numbers
+  // (supports ctrl+click disjoint selection). `selectionStart`/`End` are
+  // the min/max of the set (or -1/-1 when empty) for backward compatibility.
   private selectionStart: number = -1;
   private selectionEnd: number = -1;
+  private selectedLines: Set<number> = new Set();
+
+  // Drag-selection state (mousedown on a line → drag to extend).
+  private dragSelecting = false;
+  private dragAnchorLine = -1;
 
   // Annotation display: map of line → annotation text
   private annotations: Map<number, string> = new Map();
@@ -232,6 +243,20 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
 
     // Scroll handler for virtual rendering
     this.listEl.addEventListener('scroll', () => this.renderVisibleLines());
+
+    // Drag-selection: extend the selection from the anchor line to the line
+    // under the cursor while the left button is held. Listeners are on
+    // document so dragging outside the list still updates the selection.
+    document.addEventListener('mousemove', (e) => {
+      if (!this.dragSelecting || this.dragAnchorLine < 0) return;
+      const line = this.lineFromClientY(e.clientY);
+      if (line < 0) return;
+      this.setSelection(this.dragAnchorLine, line);
+    });
+    document.addEventListener('mouseup', () => {
+      this.dragSelecting = false;
+      this.dragAnchorLine = -1;
+    });
 
     // Search input handler
     this.searchInput.addEventListener('input', () => this.performSearch());
@@ -399,23 +424,40 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
     return this.annotations.get(line);
   }
 
-  // ── Selection for region analysis ──
+  // ── Multi-line selection (drag, shift+click, ctrl+click) ──
 
   /**
-   * Set a line selection range for region analysis.
-   * Pass -1 for both to clear.
+   * Set a contiguous line selection range. Also updates the `selectedLines`
+   * set to contain every line in [start, end]. Pass -1 for both to clear.
    */
   setSelection(start: number, end: number): void {
-    this.selectionStart = start;
-    this.selectionEnd = end;
-    this.emit('selectionChanged', { start, end });
-    this.renderVisibleLines();
+    if (start < 0 || end < 0) {
+      this.clearSelection();
+      return;
+    }
+    const lo = Math.min(start, end);
+    const hi = Math.max(start, end);
+    const lines: number[] = [];
+    for (let i = lo; i <= hi; i++) lines.push(i);
+    this.applySelection(lines);
   }
 
+  /**
+   * Set an explicit (possibly disjoint) set of selected line numbers.
+   * This is the authoritative setter used by ctrl+click and drag selection.
+   */
+  setSelectedLines(lines: number[]): void {
+    this.applySelection(lines);
+  }
+
+  /**
+   * Clear the multi-line selection.
+   */
   clearSelection(): void {
+    this.selectedLines.clear();
     this.selectionStart = -1;
     this.selectionEnd = -1;
-    this.emit('selectionChanged', { start: -1, end: -1 });
+    this.emit('selectionChanged', { start: -1, end: -1, lines: [] });
     this.renderVisibleLines();
   }
 
@@ -423,8 +465,34 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
     return { start: this.selectionStart, end: this.selectionEnd };
   }
 
+  /**
+   * Returns the full set of selected line numbers (supports disjoint
+   * ctrl+click selection).
+   */
+  getSelectedLines(): number[] {
+    return Array.from(this.selectedLines).sort((a, b) => a - b);
+  }
+
   hasSelection(): boolean {
-    return this.selectionStart >= 0 && this.selectionEnd >= 0;
+    return this.selectedLines.size > 0;
+  }
+
+  /// Internal: apply a new selection set, update min/max, emit, re-render.
+  private applySelection(lines: number[]): void {
+    this.selectedLines = new Set(lines);
+    if (lines.length === 0) {
+      this.selectionStart = -1;
+      this.selectionEnd = -1;
+    } else {
+      this.selectionStart = Math.min(...lines);
+      this.selectionEnd = Math.max(...lines);
+    }
+    this.emit('selectionChanged', {
+      start: this.selectionStart,
+      end: this.selectionEnd,
+      lines,
+    });
+    this.renderVisibleLines();
   }
 
   private performSearch(): void {
@@ -531,9 +599,8 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
         }
       }
 
-      // Apply selection range highlight
-      if (this.selectionStart >= 0 && this.selectionEnd >= 0 &&
-          lineNum >= this.selectionStart && lineNum <= this.selectionEnd) {
+      // Apply multi-line selection highlight (supports disjoint ctrl+click).
+      if (this.selectedLines.has(lineNum)) {
         lineEl.classList.add('selected-range');
       }
 
@@ -609,9 +676,33 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
         lineEl.appendChild(actionsEl);
       }
 
+      // mousedown begins a drag selection, but only for plain (unmodified)
+      // left clicks — modifier clicks (ctrl/shift) are handled in onclick so
+      // they also work via synthetic click events (e.g. tests, accessibility).
+      lineEl.onmousedown = (e) => {
+        if (e.button !== 0) return;
+        if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+        const ln = parseInt(lineEl.dataset.line!, 10);
+        // Begin a drag selection starting at this line. The selection is
+        // extended on mousemove and committed on mouseup; if the mouse
+        // doesn't move, it stays a single-line selection.
+        this.dragSelecting = true;
+        this.dragAnchorLine = ln;
+        this.setSelection(ln, ln);
+        e.preventDefault();
+      };
+
       lineEl.onclick = (e) => {
         const ln = parseInt(lineEl.dataset.line!, 10);
-        // Shift+click: set selection range for region analysis
+        // Ctrl/cmd+click toggles a single line in the disjoint selection set.
+        if (e.ctrlKey || e.metaKey) {
+          const next = new Set(this.selectedLines);
+          if (next.has(ln)) next.delete(ln);
+          else next.add(ln);
+          this.applySelection(Array.from(next));
+          return;
+        }
+        // Shift+click extends the existing selection as a contiguous range.
         if (e.shiftKey) {
           if (this.selectionStart < 0) {
             this.setSelection(ln, ln);
@@ -622,6 +713,8 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
           }
           return;
         }
+        // Plain click: the drag handler already set a single-line selection.
+        // Also drive the normal single-line highlight + events.
         const blockIdx = this.lineToBlock.get(ln) ?? -1;
         if (blockIdx >= 0) {
           this.highlightBlock(blockIdx);
@@ -648,6 +741,19 @@ export class GcodeViewer extends EventDispatcher<GcodeViewerEvents> {
     // Center the line in the viewport
     const scrollTo = targetTop - viewportHeight / 2 + LINE_HEIGHT / 2;
     this.listEl.scrollTop = Math.max(0, scrollTo);
+  }
+
+  /// Compute the line number under a client Y coordinate, accounting for
+  /// virtual-scroll offset and clamping to the available line range.
+  /// Returns -1 if there are no lines.
+  private lineFromClientY(clientY: number): number {
+    if (this.lines.length === 0) return -1;
+    const rect = this.listEl.getBoundingClientRect();
+    const y = clientY - rect.top + this.listEl.scrollTop;
+    let line = Math.floor(y / LINE_HEIGHT);
+    if (line < 0) line = 0;
+    if (line > this.lines.length - 1) line = this.lines.length - 1;
+    return line;
   }
 }
 

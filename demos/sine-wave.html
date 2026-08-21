@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sine Wave — WebGPU Demo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0e0e12; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #error {
+    display: none;
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #f44; font-family: monospace; font-size: 14px; text-align: center;
+    max-width: 600px; white-space: pre-wrap;
+  }
+  #info {
+    position: fixed; top: 12px; left: 16px;
+    color: #555; font-family: monospace; font-size: 12px;
+    pointer-events: none; user-select: none;
+  }
+  a.back {
+    position: fixed; top: 12px; right: 16px;
+    color: #555; font-family: monospace; font-size: 12px;
+    text-decoration: none;
+  }
+  a.back:hover { color: #888; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="info">sine-wave.wgsl — compute + line-strip</div>
+<a class="back" href="index.html">&larr; demos</a>
+<div id="error"></div>
+
+<script type="module">
+const SHADER = /* wgsl */`
+  // ── Compute: fill points[] with sin(x) ──────────────────────────────
+  struct ComputeUniforms {
+    pointCount : u32,
+    frequency  : f32,
+    amplitude  : f32,
+    _pad       : f32,
+  };
+
+  @group(0) @binding(0) var<uniform>  cu : ComputeUniforms;
+  @group(0) @binding(1) var<storage, read_write> points : array<vec2<f32>>;
+
+  @compute @workgroup_size(64)
+  fn cs_main(@builtin(global_invocation_id) gid : vec3<u32>) {
+    let i = gid.x;
+    if (i >= cu.pointCount) { return; }
+    let n = f32(cu.pointCount);
+    let x = f32(i) / max(n - 1.0, 1.0);          // 0..1
+    let y = cu.amplitude * sin(x * cu.frequency);
+    points[i] = vec2<f32>(x, y);
+  }
+
+  // ── Render: line-strip in clip space ────────────────────────────────
+  struct RenderUniforms {
+    yScale : f32,
+    _pad0  : f32,
+    _pad1  : f32,
+    _pad2  : f32,
+  };
+
+  @group(0) @binding(0) var<uniform>  ru : RenderUniforms;
+  @group(0) @binding(1) var<storage, read> rpoints : array<vec2<f32>>;
+
+  struct VSOut {
+    @builtin(position) pos : vec4<f32>,
+    @location(0)       uv  : vec2<f32>,
+  };
+
+  @vertex
+  fn vs_main(@builtin(vertex_index) vi : u32) -> VSOut {
+    let p = rpoints[vi];
+    // x is already 0..1 → map to clip space -1..1
+    // y is -amplitude..+amplitude → scale down and flip
+    var out : VSOut;
+    out.pos = vec4<f32>(2.0 * p.x - 1.0, p.y * ru.yScale, 0.0, 1.0);
+    out.uv  = p;
+    return out;
+  }
+
+  @fragment
+  fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
+    // Simple blue gradient based on y
+    let t = in.uv.y * 0.5 + 0.5;
+    return vec4<f32>(0.2 + 0.1 * t, 0.5 + 0.2 * t, 1.0, 1.0);
+  }
+`;
+
+const canvas  = document.getElementById('canvas');
+const errorEl = document.getElementById('error');
+
+function fail(msg) {
+  errorEl.textContent = msg;
+  errorEl.style.display = 'block';
+}
+
+// ── Init WebGPU ────────────────────────────────────────────────────────
+if (!navigator.gpu) { fail('WebGPU not supported.\nUse Chrome 113+ or Edge 113+ on desktop.\nFirefox: not enabled by default.\nSafari: Develop → Feature Flags → WebGPU.'); }
+else { init(); }
+
+async function init() {
+try {
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) { fail('No GPU adapter found.'); return; }
+
+const device  = await adapter.requestDevice();
+const context = canvas.getContext('webgpu');
+const format  = navigator.gpu.getPreferredCanvasFormat();
+
+context.configure({ device, format, alphaMode: 'premultiplied' });
+
+// ── Shader ─────────────────────────────────────────────────────────────
+const module = device.createShaderModule({ code: SHADER });
+
+const computePipeline = device.createComputePipeline({
+  layout: 'auto',
+  compute: { module, entryPoint: 'cs_main' },
+});
+
+const renderPipeline = device.createRenderPipeline({
+  layout: 'auto',
+  vertex:   { module, entryPoint: 'vs_main' },
+  fragment: { module, entryPoint: 'fs_main', targets: [{ format }] },
+  primitive: { topology: 'line-strip' },
+});
+
+// ── Buffers ────────────────────────────────────────────────────────────
+const MAX_POINTS = 4096;
+
+const computeUniforms = device.createBuffer({
+  size: 16,  // 4 × f32
+  usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+});
+
+const renderUniforms = device.createBuffer({
+  size: 16,  // 4 × f32
+  usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+});
+
+const pointBuffer = device.createBuffer({
+  size: MAX_POINTS * 8,  // vec2<f32> per point
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+});
+
+const computeBindGroup = device.createBindGroup({
+  layout: computePipeline.getBindGroupLayout(0),
+  entries: [
+    { binding: 0, resource: { buffer: computeUniforms } },
+    { binding: 1, resource: { buffer: pointBuffer } },
+  ],
+});
+
+const renderBindGroup = device.createBindGroup({
+  layout: renderPipeline.getBindGroupLayout(0),
+  entries: [
+    { binding: 0, resource: { buffer: renderUniforms } },
+    { binding: 1, resource: { buffer: pointBuffer } },
+  ],
+});
+
+// ── Resize ─────────────────────────────────────────────────────────────
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = Math.floor(canvas.clientWidth  * dpr);
+  canvas.height = Math.floor(canvas.clientHeight * dpr);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Render loop ────────────────────────────────────────────────────────
+const FREQUENCY = 8.0 * Math.PI;   // 4 full cycles across the width
+const AMPLITUDE = 0.8;
+
+function frame() {
+  const pointCount = Math.min(MAX_POINTS, canvas.width);
+
+  // Update compute uniforms (pointCount is u32, rest are f32)
+  const cuData = new ArrayBuffer(16);
+  const cuView = new DataView(cuData);
+  cuView.setUint32(0, pointCount, true);
+  cuView.setFloat32(4, FREQUENCY, true);
+  cuView.setFloat32(8, AMPLITUDE, true);
+  cuView.setFloat32(12, 0, true);
+  device.queue.writeBuffer(computeUniforms, 0, cuData);
+
+  device.queue.writeBuffer(renderUniforms, 0, new Float32Array([
+    1.0, 0, 0, 0,   // yScale = 1 (amplitude already baked into points)
+  ]));
+
+  // Encode
+  const encoder = device.createCommandEncoder();
+
+  // Compute pass — generate sine wave points
+  const cp = encoder.beginComputePass();
+  cp.setPipeline(computePipeline);
+  cp.setBindGroup(0, computeBindGroup);
+  cp.dispatchWorkgroups(Math.ceil(pointCount / 64));
+  cp.end();
+
+  // Render pass — draw line strip
+  const rp = encoder.beginRenderPass({
+    colorAttachments: [{
+      view: context.getCurrentTexture().createView(),
+      clearValue: { r: 0.055, g: 0.055, b: 0.07, a: 1 },
+      loadOp: 'clear',
+      storeOp: 'store',
+    }],
+  });
+  rp.setPipeline(renderPipeline);
+  rp.setBindGroup(0, renderBindGroup);
+  rp.draw(pointCount);
+  rp.end();
+
+  device.queue.submit([encoder.finish()]);
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+} catch (e) {
+  fail(String(e));
+}
+}
+</script>
+</body>
+</html>
