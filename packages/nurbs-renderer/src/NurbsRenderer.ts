@@ -477,12 +477,17 @@ export class NurbsRenderer {
             let t = arcT0 + tau;
             return vec4<f32>(t, v, a, j);
           } else {
-            // WALL (3): v = v_wall(s) from curvature + limits
-            let vWall = min(uniforms.feedRate, uniforms.maxPathVelocity);
-            let vCurv = select(uniforms.feedRate,
+            // WALL (3): v = arc.v0 (Pareto planner already computed the
+            // correct wall velocity from per-segment feed rates + curvature).
+            // Do NOT re-evaluate from global feedRate — that ignores
+            // per-segment feed rate limits and causes velocity spikes.
+            let v = arcV0;
+            // Also clamp by curvature-based limit in case curvature
+            // increases within the arc (safety clamp).
+            let vCurv = select(arcV0,
                                sqrt(uniforms.maxCentripetalAccel / max(curvature, 1e-10)),
                                curvature > 1e-8);
-            let v = min(vWall, vCurv);
+            v = min(v, vCurv);
             // WALL arcs have a ≈ 0, j = 0
             // Time is approximated as t0 + dsLocal / v
             let tau = select(arcDuration, dsLocal / max(v, 1e-6), v > 1e-6);
