@@ -817,39 +817,121 @@ export class WssMiniplotRenderer {
       this.yRange = { min: 0, max: 1 };
       return;
     }
-    let minV: number, maxV: number;
-    switch (this.quantity) {
-      case 'velocity':
-        minV = 0;
-        maxV = this.wssData.maxVelocity * 1.05;
-        break;
-      case 'acceleration':
-        minV = -this.wssData.maxAcceleration * 1.05;
-        maxV = this.wssData.maxAcceleration * 1.05;
-        break;
-      case 'jerk':
-        minV = -this.wssData.maxJerk * 1.05;
-        maxV = this.wssData.maxJerk * 1.05;
-        break;
-      case 'paOffset':
-        if (this.paParams) {
-          minV = -this.paParams.maxOffset * 1.1;
-          maxV = this.paParams.maxOffset * 1.1;
+
+    // Autoscale: scan arcs within the current view range and compute
+    // the actual min/max of the plotted quantity. This adapts the Y axis
+    // to the visible data instead of using a fixed global max.
+    const tMin = this.viewRange.tMin;
+    const tMax = this.viewRange.tMax;
+    const arcs = this.wssData.arcs;
+
+    let minV = Infinity;
+    let maxV = -Infinity;
+
+    for (const arc of arcs) {
+      const arcTEnd = arc.t0 + arc.duration;
+      // Skip arcs entirely outside the view range
+      if (arcTEnd < tMin || arc.t0 > tMax) continue;
+
+      // Sample the arc at several points within the view range to find
+      // extrema. For BANG arcs (quadratic velocity), the vertex can be
+      // inside the arc, so we sample at start, 1/4, 1/2, 3/4, and end.
+      const sampleTs = [arc.t0, arc.t0 + arc.duration * 0.25,
+                        arc.t0 + arc.duration * 0.5,
+                        arc.t0 + arc.duration * 0.75, arcTEnd];
+      for (const t of sampleTs) {
+        if (t < tMin || t > tMax) continue;
+        const tau = Math.max(0, Math.min(arc.duration, t - arc.t0));
+        let v: number;
+        const kind = arc.type;
+        if (kind < 2.5) {
+          // BANG
+          v = arc.v0 + arc.a0 * tau + 0.5 * arc.eta * tau * tau;
+        } else if (kind < 3.5) {
+          // SINGULAR
+          v = arc.v0 + arc.aStar * tau;
         } else {
-          minV = -0.1;
-          maxV = 0.1;
+          // WALL
+          v = arc.v0;
         }
-        break;
-      case 'paExtruderVelocity':
-        if (this.paParams) {
-          minV = 0;
-          maxV = this.paParams.maxVelocity * 1.05;
-        } else {
+        // Apply quantity transform
+        let val: number;
+        switch (this.quantity) {
+          case 'velocity':
+          case 'paExtruderVelocity':
+            val = v;
+            break;
+          case 'acceleration':
+            val = (kind < 2.5) ? arc.a0 + arc.eta * tau
+                 : (kind < 3.5) ? arc.aStar : 0;
+            break;
+          case 'jerk':
+            val = (kind < 2.5) ? arc.eta : 0;
+            break;
+          case 'paOffset':
+            val = 0; // PA offset is computed on GPU; approximate with 0
+            break;
+          default:
+            val = v;
+        }
+        if (isFinite(val)) {
+          if (val < minV) minV = val;
+          if (val > maxV) maxV = val;
+        }
+      }
+    }
+
+    // Fallback to global max if no arcs in view
+    if (minV === Infinity || maxV === -Infinity) {
+      switch (this.quantity) {
+        case 'velocity':
           minV = 0;
           maxV = this.wssData.maxVelocity * 1.05;
-        }
-        break;
+          break;
+        case 'acceleration':
+          minV = -this.wssData.maxAcceleration * 1.05;
+          maxV = this.wssData.maxAcceleration * 1.05;
+          break;
+        case 'jerk':
+          minV = -this.wssData.maxJerk * 1.05;
+          maxV = this.wssData.maxJerk * 1.05;
+          break;
+        case 'paOffset':
+          if (this.paParams) {
+            minV = -this.paParams.maxOffset * 1.1;
+            maxV = this.paParams.maxOffset * 1.1;
+          } else {
+            minV = -0.1;
+            maxV = 0.1;
+          }
+          break;
+        case 'paExtruderVelocity':
+          if (this.paParams) {
+            minV = 0;
+            maxV = this.paParams.maxVelocity * 1.05;
+          } else {
+            minV = 0;
+            maxV = this.wssData.maxVelocity * 1.05;
+          }
+          break;
+      }
+    } else {
+      // Add 5% padding above and below
+      const range = maxV - minV;
+      if (range < 1e-9) {
+        // Degenerate: single value, add ±1
+        minV -= 1;
+        maxV += 1;
+      } else {
+        maxV += range * 0.05;
+        minV -= range * 0.05;
+      }
+      // For velocity, clamp min to 0 (velocity is non-negative)
+      if (this.quantity === 'velocity' || this.quantity === 'paExtruderVelocity') {
+        minV = Math.max(0, minV);
+      }
     }
+
     if (!isFinite(minV) || !isFinite(maxV) || minV >= maxV) {
       minV = 0;
       maxV = 1;
@@ -1028,6 +1110,7 @@ export class WssMiniplotRenderer {
 
   resetZoom(): void {
     this.viewRange = { ...this.totalRange };
+    this.computeYRange();
     this.viewRangeCallback?.();
   }
 
@@ -1038,6 +1121,7 @@ export class WssMiniplotRenderer {
   setViewRange(tMin: number, tMax: number): void {
     if (!isFinite(tMin) || !isFinite(tMax) || tMax <= tMin) return;
     this.viewRange = this.clampRange({ tMin, tMax });
+    this.computeYRange();
     this.viewRangeCallback?.();
   }
 
@@ -1120,6 +1204,7 @@ export class WssMiniplotRenderer {
     const newMin = t - (t - this.viewRange.tMin) * factor;
     const newMax = newMin + newSpan;
     this.viewRange = this.clampRange({ tMin: newMin, tMax: newMax });
+    this.computeYRange();
     this.viewRangeCallback?.();
     return true;
   }
@@ -1140,6 +1225,7 @@ export class WssMiniplotRenderer {
       tMin: this.dragStartTMin + dt,
       tMax: this.dragStartTMin + this.dragTSpan + dt,
     });
+    this.computeYRange();
     this.viewRangeCallback?.();
   }
 
