@@ -182,6 +182,23 @@ if(WGV_BUILD_FRONTEND)
     find_program(NPM_EXECUTABLE npm QUIET)
 
     if(NPM_EXECUTABLE)
+        # The frontend imports the @tether/* workspace packages as bare module
+        # specifiers (e.g. "@tether/viewer-core"). These are only symlinked into
+        # node_modules/ by running `npm install` at the workspace root (the repo
+        # root), not inside frontend/. Without them the TypeScript build fails
+        # with "Cannot find module '@tether/*'". Warn at configure time so the
+        # user gets an actionable message instead of hundreds of tsc errors.
+        if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/node_modules/@tether")
+            message(WARNING
+                "npm workspace packages (@tether/*) are not installed at the "
+                "repository root.\n"
+                "The frontend build will fail with "
+                "\"Cannot find module '@tether/*'\".\n"
+                "Run `npm install` at the repository root to install the "
+                "workspace symlinks:\n"
+                "  cd ${CMAKE_CURRENT_SOURCE_DIR} && npm install\n")
+        endif()
+
         # Update proto:generate path in package.json to point to our proto/
         # The frontend package.json references ../proto which is correct since
         # frontend/ is at the same level as proto/
