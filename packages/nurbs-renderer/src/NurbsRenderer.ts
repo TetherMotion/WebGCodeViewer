@@ -930,8 +930,12 @@ export class NurbsRenderer {
 
           // Reconstruct clip-space position: keep depth and w from the
           // endpoint, apply the NDC offset scaled by w.
+          // Add a tiny per-instance depth bias to prevent Z-fighting between
+          // overlapping billboards at the same Z height (common in 3D printing
+          // where all segments in a layer share the same Z).
           var output: VertexOutput;
-          output.clipPos = vec4<f32>(ndcPos * baseClip.w, baseClip.z, baseClip.w);
+          let depthBias = f32(ii % 4096u) * 1e-7 * baseClip.w;
+          output.clipPos = vec4<f32>(ndcPos * baseClip.w, baseClip.z - depthBias, baseClip.w);
 
           // Per-vertex attributes from the endpoint.
           let vIdx = select(i0, i1, useP1);

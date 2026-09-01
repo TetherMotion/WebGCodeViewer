@@ -14,6 +14,7 @@ export class Camera {
   private _up: Vec3 = { x: 0, y: 0, z: 1 };
   private _fov: number = degToRad(45);
   private _aspect: number = 1.0;
+  private _viewportHeight: number = 1080; // CSS pixels
   private _near: number = 0.1;
   private _far: number = 10000;
   private _projectionMode: ProjectionMode = 'perspective';
@@ -45,6 +46,11 @@ export class Camera {
 
   setAspect(aspect: number): void {
     this._aspect = aspect;
+  }
+
+  setViewportSize(width: number, height: number): void {
+    this._aspect = width / height;
+    this._viewportHeight = height;
   }
 
   setProjectionMode(mode: ProjectionMode): void {
@@ -95,10 +101,21 @@ export class Camera {
       z: forward.x * this._up.y - forward.y * this._up.x,
     };
 
-    const panScale = this.orbitDistance * 0.001;
-    this.targetTarget.x -= right.x * dx * panScale + forward.x * dy * panScale;
-    this.targetTarget.y -= right.y * dx * panScale + forward.y * dy * panScale;
-    this.targetTarget.z -= right.z * dx * panScale + forward.z * dy * panScale;
+    // Convert pixel delta to world-space delta at the target plane.
+    // The visible world height at the target plane is:
+    //   perspective: 2 * orbitDistance * tan(fov/2)
+    //   ortho:       2 * orthoScale
+    // One pixel = visibleWorldHeight / viewportHeight (in CSS pixels).
+    // So the world-space pan = pixels * (worldHeight / pixelHeight).
+    // This makes the dragged point on the target plane follow the cursor 1:1.
+    const visibleWorldHeight = this._projectionMode === 'orthographic'
+      ? 2 * this._orthoScale
+      : 2 * this.orbitDistance * Math.tan(this._fov * 0.5);
+    const worldPerPixel = visibleWorldHeight / Math.max(1, this._viewportHeight);
+
+    this.targetTarget.x -= right.x * dx * worldPerPixel + forward.x * dy * worldPerPixel;
+    this.targetTarget.y -= right.y * dx * worldPerPixel + forward.y * dy * worldPerPixel;
+    this.targetTarget.z -= right.z * dx * worldPerPixel + forward.z * dy * worldPerPixel;
     this.updateOrbitPosition();
   }
 

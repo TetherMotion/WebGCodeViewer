@@ -1202,7 +1202,7 @@ export class WebGPUApp {
     const h = Math.max(1, Math.floor(this.canvas.clientHeight * dpr));
     this.canvas.width = w;
     this.canvas.height = h;
-    this.camera.setAspect(w / h);
+    this.camera.setViewportSize(this.canvas.clientWidth, this.canvas.clientHeight);
     if (this.device) {
       this.depthTexture?.destroy();
       this.depthTexture = this.device.createTexture({
