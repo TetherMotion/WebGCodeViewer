@@ -107,6 +107,7 @@ file(GLOB WGV_SERVER_SOURCES CONFIGURE_DEPENDS
 if(NOT TARGET tether_io_protocol)
     list(APPEND WGV_SERVER_SOURCES
         "${CMAKE_CURRENT_SOURCE_DIR}/Tether/src/io/Registry.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Tether/src/io/Protocol.cpp"
     )
 endif()
 list(APPEND WGV_SERVER_SOURCES ${WGV_PROTO_CC})

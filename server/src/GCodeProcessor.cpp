@@ -2,6 +2,7 @@
 #include "tether/gcode/GCodeInterpreter.hpp"
 #include "tether/gcode/motion/G64CornerMode.hpp"
 #include "tether/motion_planner/PathAdapter.hpp"
+#include "tether/motion_planner/SCurveVelocityProfiler.hpp"
 #include "tether/motion_planner/analytical/ParetoTimeEnergyOptimalVelocityPlanner.hpp"
 #include "tether/motion_planner/analytical/extrusion/AnalyticalExtrusionTypes.hpp"
 #include "tether/web/PressureAdvanceProfileBuilder.hpp"
@@ -438,19 +439,21 @@ ProcessResult GCodeProcessor::process(
 
     if (progress) progress(0.6);
 
-    // ── Step 3b: Extract analytical WSS (Weighted Switching Structure) ──
-    // Runs the analytical ParetoTimeEnergyOptimalVelocityPlanner to solve
-    // the time-energy optimal control problem. The solution is a list of
-    // weighted arcs (BANG/SINGULAR/WALL) — a compact analytical structure
-    // that is transferred to the client as-is (NO sampling).
+    // ── Step 3b: Velocity profile → WSS (Weighted Switching Structure) ──
+    // Two profiler backends are supported:
+    //
+    //   "scurve" (default): SCurveVelocityProfiler — per-piece 7-phase
+    //     S-curve profiles, jerk-limited, simple, not time-optimal. The
+    //     sampled profile is converted to SINGULAR WSS arcs (one per
+    //     sample interval, constant acceleration) for the frontend shader.
+    //
+    //   "pareto": ParetoTimeEnergyOptimalVelocityPlanner — analytical
+    //     time-energy optimal control, snap-space. Produces analytical
+    //     arcs (SNAP/SINGULAR/WALL) transferred as-is (no sampling).
     //
     // The WebGPU shaders evaluate v(s), a(s), j(s), t(s) in closed form at
     // the exact points needed for rendering. For WALL arcs, the shader
     // evaluates v_wall(s) from the NURBS path curvature + kinematic limits.
-    //
-    // Memory: O(arcs) ≈ O(segments). For a 69K-segment file: ~3.3 MB.
-    // Compare: dense sampling at 1ms over a 4-hour print = 14M samples ×
-    // 32 bytes = 448 MB. The WSS is ~135× smaller and exactly analytical.
     Timer step3b;
     try {
         if (result.nurbsPath && !result.nurbsPath->pieces().empty()) {
@@ -482,34 +485,17 @@ ProcessResult GCodeProcessor::process(
             }
             limits.axis.jerkLimitEnabled = limits.path.jerkLimitEnabled;
 
-            // Run ParetoTimeEnergyOptimalVelocityPlanner to get the WSS.
-            // numSamples is only used for the optional SampledVelocityProfile
-            // (needed by the PA builder); the WSS itself is analytical.
-            MotionPlanner::analytical::ParetoTimeEnergyOptimalVelocityPlanner<3, double> profiler(limits);
-            // The planner's feedRate parameter is a global velocity ceiling
-            // for the entire path. We use config.maxVelocity — the per-segment
-            // feed rates (F-values) are NOT applied here because they vary
-            // per segment and the planner handles curvature-based velocity
-            // limits via the path adapter. Using the minimum segment feed rate
-            // (e.g. 5 mm/s from a priming line) would incorrectly limit the
-            // entire path to that speed.
+            // The feedRate parameter is a global velocity ceiling for the
+            // entire path. We use config.maxVelocity — the per-segment feed
+            // rates (F-values) are NOT applied here because they vary per
+            // segment and the profiler handles curvature-based velocity
+            // limits via the path adapter. Using the minimum segment feed
+            // rate (e.g. 5 mm/s from a priming line) would incorrectly
+            // limit the entire path to that speed.
             double feedRate = config.maxVelocity;
             std::size_t numSamples = std::min<std::size_t>(
                 20000, std::max<std::size_t>(
                     200, pathAdapter.numSegments() * 20));
-            WGV_LOG(std::format("Step 3b: ParetoPlanner — {} segments, feedRate={:.1} mm/s",
-                pathAdapter.numSegments(), feedRate));
-            Timer toppraTimer;
-            WGV_LOG("Step 3b: ParetoPlanner calling computeProfile...");
-            auto velocityProfile = profiler.computeProfile(
-                pathAdapter, feedRate, 0.0, 0.0, numSamples);
-            if (!velocityProfile) {
-                throw std::runtime_error("ParetoPlanner returned a null velocity profile");
-            }
-            WGV_LOG_TIME("Step 3b: ParetoPlanner computeProfile returned (analytical)", toppraTimer);
-
-            // Extract the WSS (analytical trajectory source)
-            auto wss = profiler.weightedSource();
 
             // Build extrusion ratios from segment data (needed for WSS v2
             // and for PA computation)
@@ -523,111 +509,226 @@ ProcessResult GCodeProcessor::process(
                 }
             }
 
-            // ── Transfer WSS arcs directly (no sampling) ──
-            // Each arc is converted to a WssArcEntry (48 bytes, f32) for
-            // direct GPU upload. The shader evaluates v/a/j/t in closed form.
-            if (wss && wss->totalTime() > 0.0) {
-                Timer wssTimer;
-                const auto& arcs = wss->arcs();
-                WssData wssData;
-                wssData.arcs.reserve(arcs.size());
-                wssData.extrusionRatios.reserve(arcs.size());
-                wssData.totalLength = wss->totalLength();
-                wssData.totalTime = wss->totalTime();
+            // Select profiler backend (default: scurve)
+            std::string profilerName = config.profiler;
+            if (profilerName.empty()) profilerName = "scurve";
+            bool useSCurve = (profilerName == "scurve" || profilerName == "SCurve");
 
-                // Kinematic limits for WALL arc evaluation in the shader
-                wssData.limits.feedRate = static_cast<float>(feedRate);
-                wssData.limits.maxPathVelocity = static_cast<float>(config.maxVelocity);
-                wssData.limits.maxCentripetalAcceleration = static_cast<float>(
-                    limits.path.maxCentripetalAcceleration);
-                wssData.limits.maxAxisVelocityX = static_cast<float>(config.maxVelocity);
-                wssData.limits.maxAxisVelocityY = static_cast<float>(config.maxVelocity);
-                wssData.limits.maxAxisVelocityZ = static_cast<float>(config.maxVelocity);
+            WssData wssData;
+            bool wssValid = false;
 
-                // Compute max v/a/j by scanning arc endpoints.
-                // For BANG arcs, max |a| is at the endpoint; max |v| is at
-                // whichever endpoint is larger. For SINGULAR, a is constant.
-                // For WALL, v = v_wall(s) ≤ feedRate.
-                double maxV = 0.0, maxA = 0.0, maxJ = 0.0;
-                double prevVEnd = 0.0;  // ending velocity of previous arc
-                for (const auto& arc : arcs) {
-                    WssArcEntry entry{};
-                    entry.s0 = static_cast<float>(arc.s0);
-                    entry.s1 = static_cast<float>(arc.s1);
-                    entry.t0 = static_cast<float>(arc.t0);
-                    entry.a0 = static_cast<float>(arc.a0);
-                    entry.eta = static_cast<float>(arc.eta);
-                    entry.a_star = static_cast<float>(arc.a_star);
-                    entry.duration = static_cast<float>(arc.duration);
-
-                    using WAT = MotionPlanner::analytical::WeightedArcType;
-                    switch (arc.type) {
-                        case WAT::BANG_PLUS:  entry.type = 0.0f; break;
-                        case WAT::BANG_MINUS: entry.type = 1.0f; break;
-                        case WAT::SINGULAR:   entry.type = 2.0f; break;
-                        case WAT::WALL:       entry.type = 3.0f; break;
-                    }
-
-                    // Compute the ending velocity of this arc.
-                    // The Tether library sometimes sets an incorrect v0 for
-                    // arcs (e.g. using the initial start velocity instead of
-                    // the previous arc's ending velocity). Use prevVEnd when
-                    // it's significantly different from the library's v0.
-                    double v0 = arc.v0;
-                    if (prevVEnd > 1e-6 && std::abs(v0 - prevVEnd) > 1e-3) {
-                        v0 = prevVEnd;
-                    }
-                    double vEnd;
-                    if (arc.type == WAT::SINGULAR) {
-                        vEnd = v0 + arc.a_star * arc.duration;
-                    } else if (arc.type == WAT::WALL) {
-                        vEnd = v0;  // WALL: constant velocity
-                    } else {
-                        // BANG_PLUS or BANG_MINUS
-                        vEnd = v0 + arc.a0 * arc.duration
-                             + 0.5 * arc.eta * arc.duration * arc.duration;
-                    }
-                    entry.v0 = static_cast<float>(v0);
-                    prevVEnd = vEnd;
-
-                    wssData.arcs.push_back(entry);
-
-                    // Map extrusion ratio to this arc via segment index at midpoint.
-                    // Use the PathAdapter directly (O(log N) binary search) instead
-                    // of wss->segmentIndex(tMid) which calls locateAndState →
-                    // wallTimeToS (80-iteration root finding with Gauss quadrature
-                    // per WALL arc), making it O(N_arcs * 640) velocityLimit calls.
-                    double sMid = 0.5 * (arc.s0 + arc.s1);
-                    auto segIdx = pathAdapter.segmentIndexAtArcLength(sMid);
-                    float ratio = (segIdx < extrusionRatios.size())
-                        ? static_cast<float>(extrusionRatios[segIdx]) : 0.0f;
-                    wssData.extrusionRatios.push_back(ratio);
-
-                    // Track max values for normalization
-                    if (arc.type == WAT::SINGULAR) {
-                        maxA = std::max(maxA, std::abs(arc.a_star));
-                        maxJ = std::max(maxJ, 0.0); // SINGULAR: j = 0
-                        maxV = std::max({maxV, std::abs(v0), std::abs(vEnd)});
-                    } else if (arc.type == WAT::WALL) {
-                        // v ≤ feedRate; a ≈ 0; j = 0
-                        maxV = std::max({maxV, std::abs(v0), feedRate});
-                    } else {
-                        // BANG
-                        double aEnd = arc.a0 + arc.eta * arc.duration;
-                        maxV = std::max({maxV, std::abs(v0), std::abs(vEnd)});
-                        maxA = std::max({maxA, std::abs(arc.a0), std::abs(aEnd)});
-                        maxJ = std::max(maxJ, std::abs(arc.eta));
-                    }
+            if (useSCurve) {
+                // ── SCurve path: per-piece 7-phase S-curve profiler ──
+                // Produces a SampledVelocityProfile, converted to SINGULAR
+                // WSS arcs (one per sample interval, constant acceleration).
+                WGV_LOG(std::format("Step 3b: SCurveProfiler — {} segments, feedRate={:.1} mm/s, numSamples={}",
+                    pathAdapter.numSegments(), feedRate, numSamples));
+                Timer scurveTimer;
+                MotionPlanner::SCurveVelocityProfiler<3, double> scurveProfiler(limits);
+                auto velocityProfile = scurveProfiler.computeProfile(
+                    pathAdapter, feedRate, 0.0, 0.0, numSamples);
+                if (!velocityProfile) {
+                    throw std::runtime_error("SCurveProfiler returned a null velocity profile");
                 }
+                WGV_LOG_TIME("Step 3b: SCurveProfiler computeProfile returned", scurveTimer);
 
-                wssData.maxVelocity = static_cast<float>(maxV);
-                wssData.maxAcceleration = static_cast<float>(maxA);
-                wssData.maxJerk = static_cast<float>(maxJ);
+                const auto& points = velocityProfile->points();
+                if (points.size() < 2 || velocityProfile->totalTime() <= 0.0) {
+                    WGV_LOG("Step 3b: SCurveProfiler produced empty profile, skipping WSS");
+                } else {
+                    Timer wssTimer;
+                    wssData.arcs.reserve(points.size() - 1);
+                    wssData.extrusionRatios.reserve(points.size() - 1);
+                    wssData.totalLength = velocityProfile->totalLength();
+                    wssData.totalTime = velocityProfile->totalTime();
 
-                WGV_LOG(std::format("Step 3b: WSS extracted — {} arcs, totalLength={:.1} mm, totalTime={:.2}s",
-                    wssData.arcs.size(), wssData.totalLength, wssData.totalTime));
-                WGV_LOG_TIME("Step 3b: WSS arc extraction", wssTimer);
+                    // Kinematic limits for shader-side WALL evaluation
+                    wssData.limits.feedRate = static_cast<float>(feedRate);
+                    wssData.limits.maxPathVelocity = static_cast<float>(config.maxVelocity);
+                    wssData.limits.maxCentripetalAcceleration = static_cast<float>(
+                        limits.path.maxCentripetalAcceleration);
+                    wssData.limits.maxAxisVelocityX = static_cast<float>(config.maxVelocity);
+                    wssData.limits.maxAxisVelocityY = static_cast<float>(config.maxVelocity);
+                    wssData.limits.maxAxisVelocityZ = static_cast<float>(config.maxVelocity);
 
+                    // Convert each sample interval to a SINGULAR arc
+                    // (constant acceleration = average over the interval).
+                    double maxV = 0.0, maxA = 0.0, maxJ = 0.0;
+                    for (size_t i = 0; i + 1 < points.size(); ++i) {
+                        const auto& p0 = points[i];
+                        const auto& p1 = points[i + 1];
+                        double dt = p1.time - p0.time;
+                        double ds = p1.arcLength - p0.arcLength;
+                        if (dt < 1e-12) continue;  // skip zero-duration intervals
+
+                        // Average acceleration over the interval
+                        double aAvg = (p1.velocity - p0.velocity) / dt;
+
+                        WssArcEntry entry{};
+                        entry.s0 = static_cast<float>(p0.arcLength);
+                        entry.s1 = static_cast<float>(p1.arcLength);
+                        entry.t0 = static_cast<float>(p0.time);
+                        entry.v0 = static_cast<float>(p0.velocity);
+                        entry.a0 = static_cast<float>(aAvg);
+                        entry.eta = 0.0f;          // SINGULAR: no jerk in arc
+                        entry.a_star = static_cast<float>(aAvg);
+                        entry.duration = static_cast<float>(dt);
+                        entry.type = 2.0f;          // SINGULAR
+                        wssData.arcs.push_back(entry);
+
+                        // Extrusion ratio from segment index at interval midpoint
+                        double sMid = 0.5 * (p0.arcLength + p1.arcLength);
+                        auto segIdx = pathAdapter.segmentIndexAtArcLength(sMid);
+                        float ratio = (segIdx < extrusionRatios.size())
+                            ? static_cast<float>(extrusionRatios[segIdx]) : 0.0f;
+                        wssData.extrusionRatios.push_back(ratio);
+
+                        // Track max values (jerk from the sampled profile)
+                        maxV = std::max({maxV, std::abs(p0.velocity), std::abs(p1.velocity)});
+                        maxA = std::max(maxA, std::abs(aAvg));
+                        maxJ = std::max({maxJ, std::abs(p0.jerk), std::abs(p1.jerk)});
+                    }
+
+                    if (!wssData.arcs.empty()) {
+                        wssData.maxVelocity = static_cast<float>(maxV);
+                        wssData.maxAcceleration = static_cast<float>(maxA);
+                        wssData.maxJerk = static_cast<float>(maxJ);
+                        wssValid = true;
+                        WGV_LOG(std::format("Step 3b: WSS extracted — {} arcs (SINGULAR), totalLength={:.1} mm, totalTime={:.2}s",
+                            wssData.arcs.size(), wssData.totalLength, wssData.totalTime));
+                    }
+                    WGV_LOG_TIME("Step 3b: WSS arc extraction (SCurve)", wssTimer);
+                }
+            } else {
+                // ── Pareto path: analytical Pareto time-energy optimal ──
+                WGV_LOG(std::format("Step 3b: ParetoPlanner — {} segments, feedRate={:.1} mm/s",
+                    pathAdapter.numSegments(), feedRate));
+                Timer toppraTimer;
+                WGV_LOG("Step 3b: ParetoPlanner calling computeProfile...");
+                MotionPlanner::analytical::ParetoTimeEnergyOptimalVelocityPlanner<3, double> profiler(limits);
+                auto velocityProfile = profiler.computeProfile(
+                    pathAdapter, feedRate, 0.0, 0.0, numSamples);
+                if (!velocityProfile) {
+                    throw std::runtime_error("ParetoPlanner returned a null velocity profile");
+                }
+                WGV_LOG_TIME("Step 3b: ParetoPlanner computeProfile returned (analytical)", toppraTimer);
+
+                // Extract the WSS (analytical trajectory source)
+                auto wss = profiler.weightedSource();
+
+                // ── Transfer WSS arcs directly (no sampling) ──
+                // Each arc is converted to a WssArcEntry (48 bytes, f32) for
+                // direct GPU upload. The shader evaluates v/a/j/t in closed form.
+                if (wss && wss->totalTime() > 0.0) {
+                    Timer wssTimer;
+                    const auto& arcs = wss->arcs();
+                    wssData.arcs.reserve(arcs.size());
+                    wssData.extrusionRatios.reserve(arcs.size());
+                    wssData.totalLength = wss->totalLength();
+                    wssData.totalTime = wss->totalTime();
+
+                    // Kinematic limits for WALL arc evaluation in the shader
+                    wssData.limits.feedRate = static_cast<float>(feedRate);
+                    wssData.limits.maxPathVelocity = static_cast<float>(config.maxVelocity);
+                    wssData.limits.maxCentripetalAcceleration = static_cast<float>(
+                        limits.path.maxCentripetalAcceleration);
+                    wssData.limits.maxAxisVelocityX = static_cast<float>(config.maxVelocity);
+                    wssData.limits.maxAxisVelocityY = static_cast<float>(config.maxVelocity);
+                    wssData.limits.maxAxisVelocityZ = static_cast<float>(config.maxVelocity);
+
+                    // Compute max v/a/j by scanning arc endpoints.
+                    // For BANG arcs, max |a| is at the endpoint; max |v| is at
+                    // whichever endpoint is larger. For SINGULAR, a is constant.
+                    // For WALL, v = v_wall(s) ≤ feedRate.
+                    double maxV = 0.0, maxA = 0.0, maxJ = 0.0;
+                    double prevVEnd = 0.0;  // ending velocity of previous arc
+                    for (const auto& arc : arcs) {
+                        WssArcEntry entry{};
+                        entry.s0 = static_cast<float>(arc.s0);
+                        entry.s1 = static_cast<float>(arc.s1);
+                        entry.t0 = static_cast<float>(arc.t0);
+                        entry.a0 = static_cast<float>(arc.a0);
+                        entry.eta = static_cast<float>(arc.eta);
+                        entry.a_star = static_cast<float>(arc.a_star);
+                        entry.duration = static_cast<float>(arc.duration);
+
+                        using WAT = MotionPlanner::analytical::WeightedArcType;
+                        switch (arc.type) {
+                            case WAT::SNAP_PLUS:   entry.type = 0.0f; break;
+                            case WAT::SNAP_MINUS:  entry.type = 1.0f; break;
+                            case WAT::SINGULAR:    entry.type = 2.0f; break;
+                            case WAT::WALL:        entry.type = 3.0f; break;
+                            case WAT::DWELL:       entry.type = 4.0f; break;
+                        }
+
+                        // Compute the ending velocity of this arc.
+                        // The Tether library sometimes sets an incorrect v0 for
+                        // arcs (e.g. using the initial start velocity instead of
+                        // the previous arc's ending velocity). Use prevVEnd when
+                        // it's significantly different from the library's v0.
+                        double v0 = arc.v0;
+                        if (prevVEnd > 1e-6 && std::abs(v0 - prevVEnd) > 1e-3) {
+                            v0 = prevVEnd;
+                        }
+                        double vEnd;
+                        if (arc.type == WAT::SINGULAR) {
+                            vEnd = v0 + arc.a0 * arc.duration
+                                 + 0.5 * arc.j_star * arc.duration * arc.duration;
+                        } else if (arc.type == WAT::WALL) {
+                            vEnd = v0;  // WALL: constant velocity
+                        } else if (arc.type == WAT::DWELL) {
+                            vEnd = 0.0;
+                        } else {
+                            // SNAP_PLUS or SNAP_MINUS: v(t) = v0 + a0*t + j0*t²/2 + σ*t³/6
+                            vEnd = v0 + arc.a0 * arc.duration
+                                 + 0.5 * arc.j0 * arc.duration * arc.duration
+                                 + arc.eta * arc.duration * arc.duration * arc.duration / 6.0;
+                        }
+                        entry.v0 = static_cast<float>(v0);
+                        prevVEnd = vEnd;
+
+                        wssData.arcs.push_back(entry);
+
+                        // Map extrusion ratio to this arc via segment index at midpoint.
+                        // Use the PathAdapter directly (O(log N) binary search) instead
+                        // of wss->segmentIndex(tMid) which calls locateAndState →
+                        // wallTimeToS (80-iteration root finding with Gauss quadrature
+                        // per WALL arc), making it O(N_arcs * 640) velocityLimit calls.
+                        double sMid = 0.5 * (arc.s0 + arc.s1);
+                        auto segIdx = pathAdapter.segmentIndexAtArcLength(sMid);
+                        float ratio = (segIdx < extrusionRatios.size())
+                            ? static_cast<float>(extrusionRatios[segIdx]) : 0.0f;
+                        wssData.extrusionRatios.push_back(ratio);
+
+                        // Track max values for normalization
+                        if (arc.type == WAT::SINGULAR) {
+                            maxA = std::max(maxA, std::abs(arc.a_star));
+                            maxJ = std::max(maxJ, 0.0); // SINGULAR: j = 0
+                            maxV = std::max({maxV, std::abs(v0), std::abs(vEnd)});
+                        } else if (arc.type == WAT::WALL) {
+                            // v ≤ feedRate; a ≈ 0; j = 0
+                            maxV = std::max({maxV, std::abs(v0), feedRate});
+                        } else {
+                            // BANG
+                            double aEnd = arc.a0 + arc.eta * arc.duration;
+                            maxV = std::max({maxV, std::abs(v0), std::abs(vEnd)});
+                            maxA = std::max({maxA, std::abs(arc.a0), std::abs(aEnd)});
+                            maxJ = std::max(maxJ, std::abs(arc.eta));
+                        }
+                    }
+
+                    wssData.maxVelocity = static_cast<float>(maxV);
+                    wssData.maxAcceleration = static_cast<float>(maxA);
+                    wssData.maxJerk = static_cast<float>(maxJ);
+                    wssValid = true;
+
+                    WGV_LOG(std::format("Step 3b: WSS extracted — {} arcs, totalLength={:.1} mm, totalTime={:.2}s",
+                        wssData.arcs.size(), wssData.totalLength, wssData.totalTime));
+                    WGV_LOG_TIME("Step 3b: WSS arc extraction", wssTimer);
+                }
+            }
+
+            if (wssValid && !wssData.arcs.empty()) {
                 result.wssData = std::move(wssData);
                 result.renurbsMaxVelocity = result.wssData->maxVelocity;
                 result.renurbsMaxAcceleration = result.wssData->maxAcceleration;

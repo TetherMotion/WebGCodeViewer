@@ -450,6 +450,7 @@ std::string ViewerRpcHandler::handleProcessJob(const std::string& requestBytes) 
     if (req.max_acceleration() > 0) config.maxAcceleration = req.max_acceleration();
     if (req.max_jerk() > 0) config.maxJerk = req.max_jerk();
     if (!req.strategy().empty()) config.strategy = req.strategy();
+    if (!req.profiler().empty()) config.profiler = req.profiler();
 
     if (!jobManager_->startProcessing(req.job_id(), config)) {
         throw std::runtime_error("Failed to start processing (job may already be processing)");

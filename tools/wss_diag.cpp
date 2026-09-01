@@ -125,8 +125,8 @@ private:
 
 const char* arcTypeName(WeightedArcType t) {
     switch (t) {
-        case WeightedArcType::BANG_PLUS:  return "BANG_PLUS";
-        case WeightedArcType::BANG_MINUS: return "BANG_MINUS";
+        case WeightedArcType::SNAP_PLUS:  return "SNAP_PLUS";
+        case WeightedArcType::SNAP_MINUS: return "SNAP_MINUS";
         case WeightedArcType::SINGULAR:   return "SINGULAR";
         case WeightedArcType::WALL:       return "WALL";
         default: return "UNKNOWN";
@@ -342,8 +342,8 @@ int main(int argc, char* argv[]) {
     int bangP = 0, bangM = 0, sing = 0, wall = 0, dwell = 0;
     for (const auto& a : arcs) {
         switch (a.type) {
-            case WeightedArcType::BANG_PLUS:  bangP++; break;
-            case WeightedArcType::BANG_MINUS: bangM++; break;
+            case WeightedArcType::SNAP_PLUS:  bangP++; break;
+            case WeightedArcType::SNAP_MINUS: bangM++; break;
             case WeightedArcType::SINGULAR:   sing++; break;
             case WeightedArcType::WALL:       wall++; break;
             case WeightedArcType::DWELL:      dwell++; break;

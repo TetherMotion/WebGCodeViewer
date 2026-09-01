@@ -74,6 +74,8 @@ export interface ProcessJobOptions {
   maxAcceleration?: number;
   maxJerk?: number;
   strategy?: string;
+  /** Velocity profiler: "scurve" (default) or "pareto". */
+  profiler?: string;
 }
 
 export interface BinaryRequestOptions {
@@ -159,6 +161,7 @@ export class RpcClient {
         maxAcceleration: options.maxAcceleration ?? 0,
         maxJerk: options.maxJerk ?? 0,
         strategy: options.strategy ?? '',
+        profiler: options.profiler ?? '',
       }),
     );
   }

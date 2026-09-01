@@ -49,6 +49,11 @@ struct ProcessConfig {
     double maxAcceleration = 2000.0; ///< mm/s² acceleration limit
     double maxJerk = 20000.0;       ///< mm/s³ jerk limit
     std::string strategy = "FixedTime"; ///< Approximation strategy name
+    /// Velocity profiler selection: "scurve" (default, simple per-piece
+    /// 7-phase S-curve, jerk-limited) or "pareto" (analytical Pareto
+    /// time-energy optimal, snap-space). See SCurveVelocityProfiler and
+    /// ParetoTimeEnergyOptimalVelocityPlanner in Tether.
+    std::string profiler = "scurve";
     /// If true, skip dense sampling (TrajectoryAnalyzer) and only build
     /// the NURBS path. Samples will be empty. Default true since the
     /// viewer uses NURBS rendering.

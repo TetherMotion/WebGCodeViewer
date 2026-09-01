@@ -138,6 +138,7 @@ message ProcessJobRequest {
   double max_acceleration = 4;
   double max_jerk = 5;
   string strategy = 6;
+  string profiler = 7;
 }
 
 message ProcessJobResponse {
