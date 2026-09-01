@@ -481,13 +481,10 @@ export class NurbsRenderer {
             // correct wall velocity from per-segment feed rates + curvature).
             // Do NOT re-evaluate from global feedRate — that ignores
             // per-segment feed rate limits and causes velocity spikes.
-            let v = arcV0;
-            // Also clamp by curvature-based limit in case curvature
-            // increases within the arc (safety clamp).
             let vCurv = select(arcV0,
                                sqrt(uniforms.maxCentripetalAccel / max(curvature, 1e-10)),
                                curvature > 1e-8);
-            v = min(v, vCurv);
+            let v = min(arcV0, vCurv);
             // WALL arcs have a ≈ 0, j = 0
             // Time is approximated as t0 + dsLocal / v
             let tau = select(arcDuration, dsLocal / max(v, 1e-6), v > 1e-6);

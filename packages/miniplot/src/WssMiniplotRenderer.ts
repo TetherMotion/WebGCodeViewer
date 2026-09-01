@@ -937,6 +937,15 @@ export class WssMiniplotRenderer {
       maxV = 1;
     }
     this.yRange = { min: minV, max: maxV };
+    console.debug('[MINIPLOT] computeYRange:', {
+      quantity: this.quantity,
+      arcsScanned: arcs.length,
+      viewRange: { tMin, tMax },
+      yRange: { min: minV, max: maxV },
+      wssMaxVelocity: this.wssData.maxVelocity,
+      wssMaxAcceleration: this.wssData.maxAcceleration,
+      wssMaxJerk: this.wssData.maxJerk,
+    });
   }
 
   private uploadArcs(data: WssGpuData): void {

@@ -5,6 +5,9 @@
 
 #include <gtest/gtest.h>
 #include <cmath>
+#include <fstream>
+#include <format>
+#include <iterator>
 
 using namespace tether::web;
 
@@ -397,4 +400,64 @@ TEST(GCodeProcessor, FiltersAxisWordsWithoutValues) {
     auto result = processor.process(gcode, sampleConfig());
 
     EXPECT_TRUE(result.success) << result.errorMessage;
+}
+
+// ── Diagnostic: WSS velocity spikes on my_square.gcode ───────────────────────
+TEST(GCodeProcessor, MySquareVelocityDiagnostic) {
+    std::ifstream file("/home/uli/dev/WebGCodeViewer/my_square.gcode");
+    ASSERT_TRUE(file.good());
+    std::string gcode((std::istreambuf_iterator<char>(file)),
+                       std::istreambuf_iterator<char>());
+
+    GCodeProcessor processor;
+    ProcessConfig config;
+    config.nurbsOnly = true;
+    auto result = processor.process(gcode, config);
+
+    ASSERT_TRUE(result.success) << result.errorMessage;
+    ASSERT_TRUE(result.wssData.has_value());
+    const auto& w = *result.wssData;
+
+    std::cout << "WSS: " << w.arcs.size() << " arcs, totalTime=" << w.totalTime
+              << "s, totalLength=" << w.totalLength << "mm\n";
+    std::cout << "limits: feedRate=" << w.limits.feedRate
+              << " maxPathVelocity=" << w.limits.maxPathVelocity << "\n";
+    std::cout << "reported maxVelocity=" << w.maxVelocity << "\n";
+
+    // Scan arcs for velocity spikes
+    double maxV = 0;
+    int maxIdx = -1;
+    for (size_t i = 0; i < w.arcs.size(); ++i) {
+        const auto& arc = w.arcs[i];
+        double vEnd = 0;
+        int type = (int)arc.type;
+        if (type == 0 || type == 1)
+            vEnd = arc.v0 + arc.a0 * arc.duration + 0.5 * arc.eta * arc.duration * arc.duration;
+        else if (type == 2)
+            vEnd = arc.v0 + arc.a_star * arc.duration;
+        else if (type == 3)
+            vEnd = arc.v0;
+        if (arc.v0 > maxV) { maxV = arc.v0; maxIdx = (int)i; }
+        if (vEnd > maxV) { maxV = vEnd; maxIdx = (int)i; }
+    }
+    std::cout << "Actual max velocity: " << maxV << " at arc " << maxIdx << "\n";
+
+    // Print arcs around the max
+    if (maxIdx >= 0) {
+        int start = std::max(0, maxIdx - 5);
+        int end = std::min((int)w.arcs.size() - 1, maxIdx + 5);
+        for (int i = start; i <= end; ++i) {
+            const auto& arc = w.arcs[i];
+            std::cout << std::format("  [{}] type={} v0={:.2f} a0={:.2f} eta={:.2f} a*={:.2f} dur={:.4f} s0={:.1f} s1={:.1f} t0={:.2f}\n",
+                i, (int)arc.type, arc.v0, arc.a0, arc.eta, arc.a_star, arc.duration, arc.s0, arc.s1, arc.t0);
+        }
+    }
+
+    // Print first 40 arcs
+    std::cout << "\nFirst 40 arcs:\n";
+    for (size_t i = 0; i < std::min(w.arcs.size(), (size_t)40); ++i) {
+        const auto& arc = w.arcs[i];
+        std::cout << std::format("  [{}] type={} v0={:.2f} a0={:.2f} eta={:.2f} a*={:.2f} dur={:.4f} s0={:.1f} s1={:.1f} t0={:.2f}\n",
+            i, (int)arc.type, arc.v0, arc.a0, arc.eta, arc.a_star, arc.duration, arc.s0, arc.s1, arc.t0);
+    }
 }

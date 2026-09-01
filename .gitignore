@@ -47,3 +47,6 @@ node_modules/
 frontend/coverage/
 web/
 test_webgpu.js
+
+# Test outputs
+*.svg
