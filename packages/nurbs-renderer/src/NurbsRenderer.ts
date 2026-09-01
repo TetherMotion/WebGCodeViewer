@@ -137,7 +137,7 @@ export class NurbsRenderer {
 
   options: NurbsRenderOptions = {
     colorMap: new ColorMap('viridis'),
-    colorAttribute: 'pieceIndex',
+    colorAttribute: 'velocity',
     lineWidth: 2.0,
     visible: true,
     showTravels: true,
@@ -790,6 +790,7 @@ export class NurbsRenderer {
           cameraEyeY: f32,          // 4   (offset 120)
           cameraEyeZ: f32,          // 4   (offset 124)
           thickness: f32,           // 4   (offset 128)
+          viewportHeight: f32,      // 4   (offset 132)
         };
         @group(0) @binding(0) var<uniform> u: VolUniforms;
         @group(0) @binding(1) var<storage, read> segIndices: array<vec2<u32>>;
@@ -887,38 +888,53 @@ export class NurbsRenderer {
           let p0 = vec3<f32>(positions[i0 * 3u], positions[i0 * 3u + 1u], positions[i0 * 3u + 2u]);
           let p1 = vec3<f32>(positions[i1 * 3u], positions[i1 * 3u + 1u], positions[i1 * 3u + 2u]);
 
-          let cameraEye = vec3<f32>(u.cameraEyeX, u.cameraEyeY, u.cameraEyeZ);
+          // Transform both endpoints to clip space.
+          let clip0 = u.viewProj * vec4<f32>(p0, 1.0);
+          let clip1 = u.viewProj * vec4<f32>(p1, 1.0);
 
-          // Screen-space thickness: scale by distance to camera so the
-          // quad appears constant-width in pixels.
-          let dist0 = length(cameraEye - p0);
-          let dist1 = length(cameraEye - p1);
-          let dist = 0.5 * (dist0 + dist1);
-          let halfThick = u.thickness * dist * 0.001;
+          // Convert to NDC (perspective divide).
+          let ndc0 = clip0.xy / clip0.w;
+          let ndc1 = clip1.xy / clip1.w;
 
-          // Billboard: expand perpendicular to the segment direction and
-          // the camera view direction.
-          let dir = normalize(p1 - p0 + vec3<f32>(0.0001, 0.0001, 0.0001));
-          let toCam = normalize(cameraEye - 0.5 * (p0 + p1));
-          let perp = normalize(cross(dir, toCam));
+          // Screen-space segment direction and perpendicular (rotate 90°).
+          let screenDir = ndc1 - ndc0;
+          let screenLen = length(screenDir);
+          // Perpendicular in NDC: rotate 90°. Normalize to unit length.
+          let screenPerp = vec2<f32>(-screenDir.y, screenDir.x) / max(screenLen, 1e-6);
 
-          var pos: vec3<f32>;
+          // Half-thickness in NDC: convert pixel width to NDC.
+          // NDC range is [-1, 1] = 2 units = viewportHeight pixels.
+          let halfThickNdc = u.thickness / max(u.viewportHeight, 1.0);
+
+          // Offset each corner perpendicular to the segment in screen space.
+          let offset = screenPerp * halfThickNdc;
+
+          // Pick the endpoint for this corner.
+          // Corners 0,1,3 → p0;  2,4,5 → p1.
+          let useP1 = (cornerId == 2u || cornerId == 4u || cornerId == 5u);
+          let baseNdc = select(ndc0, ndc1, useP1);
+          let baseClip = select(clip0, clip1, useP1);
+
+          // Apply perpendicular offset: +offset or -offset depending on corner.
+          var side: f32;
           switch (cornerId) {
-            case 0u: { pos = p0 - perp * halfThick; }
-            case 1u: { pos = p0 + perp * halfThick; }
-            case 2u: { pos = p1 - perp * halfThick; }
-            case 3u: { pos = p0 + perp * halfThick; }
-            case 4u: { pos = p1 + perp * halfThick; }
-            case 5u: { pos = p1 - perp * halfThick; }
-            default: { pos = p0; }
+            case 0u: { side = -1.0; }
+            case 1u: { side =  1.0; }
+            case 2u: { side = -1.0; }
+            case 3u: { side =  1.0; }
+            case 4u: { side =  1.0; }
+            case 5u: { side = -1.0; }
+            default: { side = 0.0; }
           }
+          let ndcPos = baseNdc + offset * side;
 
-          // Per-vertex attributes: corners 0,1,3 at p0; 2,4,5 at p1.
-          let useP1 = select(0.0, 1.0, (cornerId == 2u || cornerId == 4u || cornerId == 5u));
-          let vIdx = select(i0, i1, useP1 > 0.5);
-
+          // Reconstruct clip-space position: keep depth and w from the
+          // endpoint, apply the NDC offset scaled by w.
           var output: VertexOutput;
-          output.clipPos = u.viewProj * vec4<f32>(pos, 1.0);
+          output.clipPos = vec4<f32>(ndcPos * baseClip.w, baseClip.z, baseClip.w);
+
+          // Per-vertex attributes from the endpoint.
+          let vIdx = select(i0, i1, useP1);
           output.colorValue = colors[vIdx];
           output.localU = segIndexU[vIdx * 3u + 1u];
           output.segIndexX = segIndexU[vIdx * 3u];
@@ -974,10 +990,10 @@ export class NurbsRenderer {
       },
     });
 
-    // Volumetric uniforms buffer (160 bytes — viewProj + scalars + cameraEye + thickness).
+    // Volumetric uniforms buffer (144 bytes — viewProj + scalars + cameraEye + thickness + viewportHeight).
     this.volUniformBuffer = this.device.createBuffer({
       label: 'NurbsRenderer.volUniformBuffer',
-      size: 160,
+      size: 144,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -1855,8 +1871,8 @@ export class NurbsRenderer {
 
     if (useVolumetric) {
       // Volumetric uniforms: same scalar fields as line uniforms (offsets 0..115)
-      // + cameraEyeX/Y/Z at 116/120/124 + thickness at 128. Buffer is 160 bytes.
-      const volUniformData = new ArrayBuffer(160);
+      // + cameraEyeX/Y/Z at 116/120/124 + thickness at 128 + viewportHeight at 132.
+      const volUniformData = new ArrayBuffer(144);
       const vView = new DataView(volUniformData);
       for (let i = 0; i < 16; i++) vView.setFloat32(i * 4, viewProj[i], true);
       vView.setFloat32(64, this.progress, true);
@@ -1875,10 +1891,10 @@ export class NurbsRenderer {
       vView.setFloat32(116, this.cameraEye[0], true);
       vView.setFloat32(120, this.cameraEye[1], true);
       vView.setFloat32(124, this.cameraEye[2], true);
-      // Thickness: scale lineWidth (1-8) to world-space half-thickness factor.
-      // The shader multiplies by distance * 0.001, so a lineWidth of 2 gives
-      // ~0.002 * dist half-thickness, which is ~2px at typical viewing distances.
+      // Thickness in pixels (lineWidth slider value, 1-8)
       vView.setFloat32(128, this.options.lineWidth, true);
+      // Viewport height in pixels (for converting pixel thickness to NDC)
+      vView.setFloat32(132, this.viewportHeight, true);
       this.device.queue.writeBuffer(this.volUniformBuffer!, 0, volUniformData);
 
       // Create per-frame bind groups (vertex buffers may change via updateData).
@@ -1943,8 +1959,12 @@ export class NurbsRenderer {
 
   /** Set the camera eye position for thick-line billboarding. */
   private cameraEye: [number, number, number] = [0, 0, 1000];
+  private viewportHeight: number = 1080;
   setCameraEye(eye: { x: number; y: number; z: number }): void {
     this.cameraEye = [eye.x, eye.y, eye.z];
+  }
+  setViewportHeight(h: number): void {
+    this.viewportHeight = h;
   }
 
   /**

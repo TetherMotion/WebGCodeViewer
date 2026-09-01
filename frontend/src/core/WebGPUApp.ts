@@ -274,6 +274,9 @@ export class WebGPUApp {
       }
     });
     this.controlPanel.on('resetView', () => {
+      // Restore perspective projection (Reset View should always go back to defaults)
+      this.camera.setProjectionMode('perspective');
+      this.navCube.setProjectionMode('perspective');
       // BUG 1 FIX: Check NURBS data first (the common path), then TTHR
       const bounds = this.getCurrentFullBounds();
       if (bounds) {
@@ -1083,32 +1086,55 @@ export class WebGPUApp {
     const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
-    // Find the nearest tessellated vertex by projecting to screen space.
+    // Find the nearest tessellated segment by projecting endpoints to screen
+    // space and computing point-to-segment distance. This matches the
+    // volumetric billboard rendering (thick quads), so clicking anywhere on
+    // a visible segment selects it.
     const { positions, pieceRanges } = tess;
     const n = positions.length / 3;
     const viewProj = this.camera.viewProjectionMatrix;
     let bestIdx = -1;
     let bestDist = Infinity;
-    const maxDist = 0.05; // 5% of screen space
+    const maxDist = 0.03; // 3% of screen space (half the old threshold, since we measure to the segment center line)
 
+    // Project all vertices to NDC once
+    const ndc = new Float32Array(n * 2);
+    const valid = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
       const px = positions[i * 3];
       const py = positions[i * 3 + 1];
       const pz = positions[i * 3 + 2];
-
+      const clipW = viewProj[3] * px + viewProj[7] * py + viewProj[11] * pz + viewProj[15];
+      if (clipW <= 0) { valid[i] = 0; continue; }
       const clipX = viewProj[0] * px + viewProj[4] * py + viewProj[8] * pz + viewProj[12];
       const clipY = viewProj[1] * px + viewProj[5] * py + viewProj[9] * pz + viewProj[13];
-      const clipW = viewProj[3] * px + viewProj[7] * py + viewProj[11] * pz + viewProj[15];
+      ndc[i * 2] = clipX / clipW;
+      ndc[i * 2 + 1] = clipY / clipW;
+      valid[i] = 1;
+    }
 
-      if (clipW <= 0) continue;
-
-      const ndcX = clipX / clipW;
-      const ndcY = clipY / clipW;
-      const dist = Math.sqrt((ndcX - x) ** 2 + (ndcY - y) ** 2);
-
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestIdx = i;
+    // For each piece, check each segment (pair of consecutive vertices)
+    for (let pi = 0; pi < pieceRanges.length; pi++) {
+      const r = pieceRanges[pi];
+      for (let j = r.start; j < r.start + r.count - 1; j++) {
+        if (!valid[j] || !valid[j + 1]) continue;
+        const ax = ndc[j * 2], ay = ndc[j * 2 + 1];
+        const bx = ndc[(j + 1) * 2], by = ndc[(j + 1) * 2 + 1];
+        // Point-to-segment distance in NDC
+        const dx = bx - ax, dy = by - ay;
+        const lenSq = dx * dx + dy * dy;
+        let t = 0;
+        if (lenSq > 1e-12) {
+          t = ((x - ax) * dx + (y - ay) * dy) / lenSq;
+          t = Math.max(0, Math.min(1, t));
+        }
+        const cx = ax + t * dx, cy = ay + t * dy;
+        const dist = Math.sqrt((cx - x) ** 2 + (cy - y) ** 2);
+        if (dist < bestDist) {
+          bestDist = dist;
+          // Pick the closer endpoint's vertex index
+          bestIdx = t < 0.5 ? j : j + 1;
+        }
       }
     }
 
@@ -1425,6 +1451,7 @@ export class WebGPUApp {
     this.gridRenderer?.render(pass, viewProj);
     this.gridLabelRenderer?.render(pass, viewProj);
     this.nurbsRenderer?.setCameraEye(this.camera.eye);
+    this.nurbsRenderer?.setViewportHeight(this.canvas.height);
     this.nurbsRenderer?.render(pass, viewProj);
     this.tthrRenderer?.render(pass, viewProj, this.camera.eye);
     this.crossSectionRenderer?.render(pass, viewProj);

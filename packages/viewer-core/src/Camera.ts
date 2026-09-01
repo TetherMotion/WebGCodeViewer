@@ -18,6 +18,8 @@ export class Camera {
   private _far: number = 10000;
   private _projectionMode: ProjectionMode = 'perspective';
   private _orthoScale: number = 200; // half-height of ortho frustum
+  // Scene bounds for adaptive near/far plane calculation
+  private _sceneRadius: number = 200;
 
   // Target values for smooth interpolation
   private targetEye: Vec3 = { ...this._eye };
@@ -124,12 +126,18 @@ export class Camera {
   }
 
   get projectionMatrix(): Mat4 {
+    // Adaptive near/far planes based on orbit distance and scene size.
+    // This prevents clipping when the camera is far from the scene and
+    // maintains good depth precision by keeping the near/far ratio bounded.
+    const dist = this.orbitDistance;
+    const near = Math.max(0.001, dist * 0.001);
+    const far = Math.max(near * 2, dist + this._sceneRadius * 4);
     if (this._projectionMode === 'orthographic') {
       const halfH = this._orthoScale;
       const halfW = halfH * this._aspect;
-      return mat4Ortho(-halfW, halfW, -halfH, halfH, this._near, this._far);
+      return mat4Ortho(-halfW, halfW, -halfH, halfH, near, far);
     }
-    return mat4Perspective(this._fov, this._aspect, this._near, this._far);
+    return mat4Perspective(this._fov, this._aspect, near, far);
   }
 
   get viewProjectionMatrix(): Mat4 {
@@ -197,6 +205,7 @@ export class Camera {
     // rotated away from the axis.
     const dx = max.x - min.x, dy = max.y - min.y, dz = max.z - min.z;
     const radius = 0.5 * Math.sqrt(dx * dx + dy * dy + dz * dz);
+    this._sceneRadius = Math.max(1, radius);
     // Fit against the smaller of the vertical/horizontal half-FOVs so the
     // sphere fits in both dimensions regardless of viewport aspect ratio.
     const halfV = this._fov / 2;
