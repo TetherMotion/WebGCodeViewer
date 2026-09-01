@@ -31,6 +31,7 @@ export interface ControlPanelEvents {
   toggleBoundingBox: void;    // Feature #48: bounding box dimensions
   copyViewUrl: void;          // Feature #92: copy current view URL
   toggleLayerCount: void;     // Feature #128: layer count display
+  toggleVolumetricSegments: boolean;  // volumetric (thick) segment rendering
   // Printer simulation controls
   printerModeChanged: 'realtime' | 'simulation';
   printerSpeedChanged: number;   // speed multiplier (0.5, 1, 2, 5, 10)
@@ -59,6 +60,7 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
   private gridActive = false;
   private crossActive = false;
   private miniplotActive = false;
+  private volSegmentsActive = true;
 
   // Cross-section Z slider
   private crossSectionGroup: HTMLElement;
@@ -280,6 +282,20 @@ export class ControlPanel extends EventDispatcher<ControlPanelEvents> {
     const bboxBtn = addToggle(viewDropdown, 'BBox', false, () => this.emit('toggleBoundingBox', undefined), 'Show bounding box dimensions');
     const layerCountBtn = addToggle(viewDropdown, 'Layer Count', false, () => this.emit('toggleLayerCount', undefined), 'Show layer count display');
     const fullscreenBtn = addButton(viewDropdown, 'Fullscreen', () => this.emit('toggleFullscreen', undefined), 'Toggle fullscreen mode');
+
+    addDivider(viewDropdown);
+    addSection(viewDropdown, 'Rendering');
+
+    // Volumetric segments toggle (default enabled)
+    const volBtn = addToggle(viewDropdown, 'Volumetric Segments', true, () => {}, 'Render segments as thick camera-facing quads');
+    this.volSegmentsActive = true;
+    volBtn.classList.toggle('active', this.volSegmentsActive);
+    volBtn.onclick = (e) => {
+      e.stopPropagation();
+      this.volSegmentsActive = !this.volSegmentsActive;
+      volBtn.classList.toggle('active', this.volSegmentsActive);
+      this.emit('toggleVolumetricSegments', this.volSegmentsActive);
+    };
 
     addDivider(viewDropdown);
     addSection(viewDropdown, 'Line Width');

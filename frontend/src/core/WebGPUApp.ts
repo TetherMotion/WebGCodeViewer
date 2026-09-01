@@ -247,9 +247,16 @@ export class WebGPUApp {
         'extruderSpeed': 'extruderSpeed',
         'motion': 'motion',
         'solid': 'solid',
-        'velocity': 'pieceIndex',    // NBP has no per-piece velocity
-        'acceleration': 'pieceIndex',
-        'jerk': 'pieceIndex',
+        'velocity': 'velocity',         // GPU-side WSS evaluation (colorMode=1)
+        'acceleration': 'acceleration', // GPU-side WSS evaluation (colorMode=2)
+        'jerk': 'jerk',                 // GPU-side WSS evaluation (colorMode=3)
+        'pressureAdvanceOffset': 'pressureAdvanceOffset',     // colorMode=5
+        'pressureAdvanceVelocity': 'pressureAdvanceVelocity', // colorMode=6
+        'feedRate': 'feedRate',
+        'spindleRpm': 'spindleRpm',
+        'toolNumber': 'toolNumber',
+        'coolant': 'coolant',
+        'featureType': 'featureType',
         'curvature': 'pieceIndex',
         'segment': 'pieceIndex',
       };
@@ -291,6 +298,10 @@ export class WebGPUApp {
     this.controlPanel.on('lineWidthChanged', (width) => {
       if (this.nurbsRenderer) this.nurbsRenderer.options.lineWidth = width;
       // Line width is handled by the NURBS renderer
+    });
+    // Volumetric segments toggle (thick camera-facing quads)
+    this.controlPanel.on('toggleVolumetricSegments', (enabled) => {
+      if (this.nurbsRenderer) this.nurbsRenderer.options.volumetricSegments = enabled;
     });
     // Feature #3: Toggle retraction highlighting
     this.controlPanel.on('toggleRetractions', () => {

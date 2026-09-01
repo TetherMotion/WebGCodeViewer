@@ -33,6 +33,7 @@ export interface NurbsRenderOptions {
   zSeamVisible: boolean;         // Show Z-seam markers
   highlightBridges: boolean;     // Highlight bridge regions
   highlightSupport: boolean;     // Highlight support structure
+  volumetricSegments: boolean;   // Render segments as camera-facing quads (thick lines)
 }
 
 export class NurbsRenderer {
@@ -65,6 +66,15 @@ export class NurbsRenderer {
   private thickInstanceBuffer: GPUBuffer | null = null;
   private thickInstanceCount: number = 0;
   private highlightThickness: number = 0.4; // mm
+
+  // Volumetric segments: instanced camera-facing quads for thick line rendering.
+  // Reuses the same position/color/segIndex vertex buffers as the line pipeline.
+  // Each instance = one line segment (pair of consecutive vertices) → 6 verts (2 tris).
+  private volPipeline: GPURenderPipeline | null = null;
+  private volUniformBuffer: GPUBuffer | null = null;
+  private volInstanceBuffer: GPUBuffer | null = null;
+  private volInstanceCount: number = 0;
+  private volWssBindGroup: GPUBindGroup | null = null;
 
   // Per-piece feed rates (mm/min), set externally for feedRate color attribute
   private pieceFeedRates: Float32Array | null = null;
@@ -136,6 +146,7 @@ export class NurbsRenderer {
     zSeamVisible: false,
     highlightBridges: false,
     highlightSupport: false,
+    volumetricSegments: true,  // default: thick segments
   };
 
   constructor(private device: GPUDevice) {}
@@ -746,6 +757,236 @@ export class NurbsRenderer {
         { binding: 1, resource: { buffer: this.thickInstanceBuffer } },
       ],
     });
+
+    // ── Volumetric segments pipeline ──
+    // Renders every line segment as a camera-facing quad (billboard).
+    // Uses instancing: 6 vertices per instance (2 triangles), one instance
+    // per line segment. The instance buffer stores the two endpoint indices
+    // into the shared position/color/segIndex vertex buffers.
+    //
+    // The fragment shader evaluates WSS velocity/acceleration/jerk in closed
+    // form (same as the line pipeline) so coloring is identical.
+    //
+    // Thickness is in pixels (screen-space), converted to world-space using
+    // the camera distance so it appears constant on screen.
+    const volShader = this.device.createShaderModule({
+      code: `
+        struct VolUniforms {
+          viewProj: mat4x4<f32>,    // 64 bytes
+          progress: f32,            // 4   (offset 64)
+          colorMode: u32,           // 4   (offset 68)
+          maxValue: f32,            // 4   (offset 72)
+          useWss: u32,              // 4   (offset 76)
+          totalLength: f32,         // 4   (offset 80)
+          wssArcCount: u32,         // 4   (offset 84)
+          _pad0: u32,               // 4   (offset 88)
+          feedRate: f32,            // 4   (offset 92)
+          maxPathVelocity: f32,     // 4   (offset 96)
+          maxCentripetalAccel: f32, // 4   (offset 100)
+          maxAxisVelX: f32,         // 4   (offset 104)
+          maxAxisVelY: f32,         // 4   (offset 108)
+          maxAxisVelZ: f32,         // 4   (offset 112)
+          cameraEyeX: f32,          // 4   (offset 116)
+          cameraEyeY: f32,          // 4   (offset 120)
+          cameraEyeZ: f32,          // 4   (offset 124)
+          thickness: f32,           // 4   (offset 128)
+        };
+        @group(0) @binding(0) var<uniform> u: VolUniforms;
+        @group(0) @binding(1) var<storage, read> segIndices: array<vec2<u32>>;
+        @group(0) @binding(2) var<storage, read> positions: array<f32>;
+        @group(0) @binding(3) var<storage, read> colors: array<f32>;
+        @group(0) @binding(4) var<storage, read> segIndexU: array<f32>;
+        @group(0) @binding(5) var<storage, read> sampleIndices: array<f32>;
+
+        @group(1) @binding(0) var<storage, read> wssArcs: array<f32>;
+        @group(2) @binding(0) var colorLUT: texture_1d<f32>;
+        @group(2) @binding(1) var colorSampler: sampler;
+
+        fn readWssArc(idx: u32) -> array<f32, 12> {
+          let base = idx * 12u;
+          var a: array<f32, 12>;
+          for (var i = 0u; i < 12u; i = i + 1u) { a[i] = wssArcs[base + i]; }
+          return a;
+        }
+
+        fn findWssArc(s: f32) -> u32 {
+          let n = u.wssArcCount;
+          if (n == 0u) { return 0u; }
+          var lo: u32 = 0u;
+          var hi: u32 = n;
+          while (lo < hi) {
+            let mid = (lo + hi) / 2u;
+            let arcS1 = wssArcs[mid * 12u + 1u];
+            if (arcS1 < s) { lo = mid + 1u; } else { hi = mid; }
+          }
+          return min(lo, n - 1u);
+        }
+
+        fn bangTauForDs(v0: f32, a0: f32, eta: f32, ds: f32) -> f32 {
+          if (ds <= 0.0) { return 0.0; }
+          var tau = ds / max(v0, 1e-6);
+          for (var iter = 0u; iter < 12u; iter = iter + 1u) {
+            let f = v0 * tau + 0.5 * a0 * tau * tau + (1.0/6.0) * eta * tau * tau * tau - ds;
+            let fp = v0 + a0 * tau + 0.5 * eta * tau * tau;
+            if (abs(fp) < 1e-15) { break; }
+            let dtau = f / fp;
+            tau = tau - dtau;
+            if (abs(dtau) < 1e-10) { break; }
+          }
+          return max(tau, 0.0);
+        }
+
+        fn singularTauForDs(v0: f32, aStar: f32, ds: f32) -> f32 {
+          if (ds <= 0.0) { return 0.0; }
+          if (abs(aStar) < 1e-14) { return ds / max(v0, 1e-6); }
+          let disc = v0 * v0 + 2.0 * aStar * ds;
+          return (-v0 + sqrt(max(disc, 0.0))) / aStar;
+        }
+
+        fn evalWssAtS(s: f32, curvature: f32) -> vec4<f32> {
+          if (u.wssArcCount == 0u) { return vec4<f32>(0.0, 0.0, 0.0, 0.0); }
+          let idx = findWssArc(s);
+          let arc = readWssArc(idx);
+          let arcS0 = arc[0]; let arcT0 = arc[2]; let arcV0 = arc[3];
+          let arcA0 = arc[4]; let arcEta = arc[5]; let arcAStar = arc[6];
+          let arcDuration = arc[7]; let arcType = arc[8];
+          let dsLocal = max(s - arcS0, 0.0);
+          if (arcType < 2.5) {
+            let tau = bangTauForDs(arcV0, arcA0, arcEta, dsLocal);
+            let a = arcA0 + arcEta * tau;
+            let v = arcV0 + arcA0 * tau + 0.5 * arcEta * tau * tau;
+            return vec4<f32>(arcT0 + tau, v, a, arcEta);
+          } else if (arcType < 3.5) {
+            let tau = singularTauForDs(arcV0, arcAStar, dsLocal);
+            let v = arcV0 + arcAStar * tau;
+            return vec4<f32>(arcT0 + tau, v, arcAStar, 0.0);
+          } else {
+            let vCurv = select(arcV0, sqrt(u.maxCentripetalAccel / max(curvature, 1e-10)), curvature > 1e-8);
+            let v = min(arcV0, vCurv);
+            let tau = select(arcDuration, dsLocal / max(v, 1e-6), v > 1e-6);
+            return vec4<f32>(arcT0 + tau, v, 0.0, 0.0);
+          }
+        }
+
+        struct VertexOutput {
+          @builtin(position) clipPos: vec4<f32>,
+          @location(0) colorValue: f32,
+          @location(1) dimmed: f32,
+          @location(2) localU: f32,
+          @location(3) segIndexX: f32,
+          @location(4) curvature: f32,
+        };
+
+        @vertex
+        fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VertexOutput {
+          let cornerId = vi % 6u;
+          let idxs = segIndices[ii];
+          let i0 = idxs.x;
+          let i1 = idxs.y;
+
+          let p0 = vec3<f32>(positions[i0 * 3u], positions[i0 * 3u + 1u], positions[i0 * 3u + 2u]);
+          let p1 = vec3<f32>(positions[i1 * 3u], positions[i1 * 3u + 1u], positions[i1 * 3u + 2u]);
+
+          let cameraEye = vec3<f32>(u.cameraEyeX, u.cameraEyeY, u.cameraEyeZ);
+
+          // Screen-space thickness: scale by distance to camera so the
+          // quad appears constant-width in pixels.
+          let dist0 = length(cameraEye - p0);
+          let dist1 = length(cameraEye - p1);
+          let dist = 0.5 * (dist0 + dist1);
+          let halfThick = u.thickness * dist * 0.001;
+
+          // Billboard: expand perpendicular to the segment direction and
+          // the camera view direction.
+          let dir = normalize(p1 - p0 + vec3<f32>(0.0001, 0.0001, 0.0001));
+          let toCam = normalize(cameraEye - 0.5 * (p0 + p1));
+          let perp = normalize(cross(dir, toCam));
+
+          var pos: vec3<f32>;
+          switch (cornerId) {
+            case 0u: { pos = p0 - perp * halfThick; }
+            case 1u: { pos = p0 + perp * halfThick; }
+            case 2u: { pos = p1 - perp * halfThick; }
+            case 3u: { pos = p0 + perp * halfThick; }
+            case 4u: { pos = p1 + perp * halfThick; }
+            case 5u: { pos = p1 - perp * halfThick; }
+            default: { pos = p0; }
+          }
+
+          // Per-vertex attributes: corners 0,1,3 at p0; 2,4,5 at p1.
+          let useP1 = select(0.0, 1.0, (cornerId == 2u || cornerId == 4u || cornerId == 5u));
+          let vIdx = select(i0, i1, useP1 > 0.5);
+
+          var output: VertexOutput;
+          output.clipPos = u.viewProj * vec4<f32>(pos, 1.0);
+          output.colorValue = colors[vIdx];
+          output.localU = segIndexU[vIdx * 3u + 1u];
+          output.segIndexX = segIndexU[vIdx * 3u];
+          output.curvature = segIndexU[vIdx * 3u + 2u];
+
+          // Progress cutoff: dim segments past the progress point.
+          let sampleIdx = sampleIndices[vIdx];
+          let cutoff = u.progress * 1000000.0;
+          output.dimmed = select(0.0, 1.0, sampleIdx > cutoff);
+
+          return output;
+        }
+
+        @fragment
+        fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+          var cv = input.colorValue;
+
+          if (u.colorMode > 0u && u.colorMode <= 4u) {
+            var val: f32 = 0.0;
+            if (u.useWss != 0u) {
+              let s = input.localU * u.totalLength;
+              let state = evalWssAtS(s, input.curvature);
+              switch (u.colorMode) {
+                case 1u: { val = state.y; }
+                case 2u: { val = abs(state.z); }
+                case 3u: { val = abs(state.w); }
+                case 4u: { val = state.x; }
+                default: { val = 0.0; }
+              }
+            }
+            cv = select(0.0, val / u.maxValue, u.maxValue > 0.0);
+          }
+
+          let sampled = textureSample(colorLUT, colorSampler, cv);
+          let retractionColor = vec3<f32>(1.0, 0.2, 0.1);
+          let baseColor = mix(sampled.rgb, retractionColor,
+                              select(0.0, 1.0, input.colorValue < 0.0));
+          let finalColor = baseColor * (1.0 - input.dimmed * 0.8);
+          return vec4<f32>(finalColor, 1.0);
+        }
+      `,
+    });
+
+    this.volPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: volShader, entryPoint: 'vs_main', buffers: [] },
+      fragment: { module: volShader, entryPoint: 'fs_main', targets: [{ format }] },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: {
+        format: 'depth32float',
+        depthCompare: 'less',
+        depthWriteEnabled: true,
+      },
+    });
+
+    // Volumetric uniforms buffer (160 bytes — viewProj + scalars + cameraEye + thickness).
+    this.volUniformBuffer = this.device.createBuffer({
+      label: 'NurbsRenderer.volUniformBuffer',
+      size: 160,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Dummy instance buffer (replaced in updateData)
+    this.volInstanceBuffer = this.device.createBuffer({
+      label: 'NurbsRenderer.volInstanceBuffer',
+      size: 8,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
   }
 
   /**
@@ -854,6 +1095,18 @@ export class NurbsRenderer {
     } catch {
       this.wssBindGroup = null;
     }
+    // Volumetric pipeline's WSS bind group (group 1, different auto layout)
+    try {
+      const volWssLayout = this.volPipeline!.getBindGroupLayout(1);
+      this.volWssBindGroup = this.device.createBindGroup({
+        layout: volWssLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.wssArcBuffer } },
+        ],
+      });
+    } catch {
+      this.volWssBindGroup = null;
+    }
     this.hasWss = false;
     this.wssData = null;
   }
@@ -893,6 +1146,18 @@ export class NurbsRenderer {
     } catch {
       this.wssBindGroup = null;
     }
+    // Volumetric pipeline's WSS bind group (group 1, different auto layout)
+    try {
+      const volWssLayout = this.volPipeline!.getBindGroupLayout(1);
+      this.volWssBindGroup = this.device.createBindGroup({
+        layout: volWssLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.wssArcBuffer } },
+        ],
+      });
+    } catch {
+      this.volWssBindGroup = null;
+    }
 
     this.wssData = data;
     this.hasWss = true;
@@ -915,6 +1180,7 @@ export class NurbsRenderer {
     const allSampleIndices: number[] = [];
     const allSegIndexU: number[] = [];  // [segIdx, localU] per vertex
     const allIndices: number[] = [];
+    const allVolInstances: number[] = [];  // pairs of vertex indices for volumetric instancing
 
     // Precompute max extruder speed for normalization
     let maxExtruderSpeed = 0;
@@ -1088,6 +1354,8 @@ export class NurbsRenderer {
       // Line indices: connect consecutive vertices within this piece
       for (let j = 0; j < segments; j++) {
         allIndices.push(vertexOffset + j, vertexOffset + j + 1);
+        // Volumetric instance: pair of endpoint indices for this segment
+        allVolInstances.push(vertexOffset + j, vertexOffset + j + 1);
       }
 
       pieceStartS += pieceDists[segments];
@@ -1112,6 +1380,8 @@ export class NurbsRenderer {
       this.deferDestroy(this.indexBuffer); this.indexBuffer = null;
       this.deferDestroy(this.sampleIdxBuffer); this.sampleIdxBuffer = null;
       this.deferDestroy(this.segIndexUBuffer); this.segIndexUBuffer = null;
+      this.deferDestroy(this.volInstanceBuffer); this.volInstanceBuffer = null;
+      this.volInstanceCount = 0;
       return;
     }
 
@@ -1121,19 +1391,20 @@ export class NurbsRenderer {
     const idxData = new Uint32Array(allIndices);
     const sampleIdxData = new Float32Array(allSampleIndices);
     const segIdxUData = new Float32Array(allSegIndexU);
+    const volInstData = new Uint32Array(allVolInstances);
 
     this.deferDestroy(this.positionBuffer);
     this.positionBuffer = this.device.createBuffer({
       label: 'NurbsRenderer.positionBuffer',
       size: posData.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.positionBuffer, 0, posData);
 
     this.deferDestroy(this.colorBuffer);
     this.colorBuffer = this.device.createBuffer({
       size: colData.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.colorBuffer, 0, colData);
 
@@ -1141,7 +1412,7 @@ export class NurbsRenderer {
     this.deferDestroy(this.sampleIdxBuffer);
     this.sampleIdxBuffer = this.device.createBuffer({
       size: sampleIdxData.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.sampleIdxBuffer, 0, sampleIdxData);
 
@@ -1149,7 +1420,7 @@ export class NurbsRenderer {
     this.deferDestroy(this.segIndexUBuffer);
     this.segIndexUBuffer = this.device.createBuffer({
       size: segIdxUData.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.segIndexUBuffer, 0, segIdxUData);
 
@@ -1159,6 +1430,16 @@ export class NurbsRenderer {
       usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.indexBuffer, 0, idxData);
+
+    // Volumetric instance buffer: pairs of vertex indices (u32 × 2 per segment)
+    this.volInstanceCount = volInstData.length / 2;
+    this.deferDestroy(this.volInstanceBuffer);
+    this.volInstanceBuffer = this.device.createBuffer({
+      label: 'NurbsRenderer.volInstanceBuffer',
+      size: volInstData.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.volInstanceBuffer, 0, volInstData);
 
     // Update color LUT
     this.updateColorLUT();
@@ -1563,20 +1844,85 @@ export class NurbsRenderer {
     view.setFloat32(120, 0, true); // _pad2
     this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
-    pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, this.bindGroup);
-    pass.setBindGroup(1, this.renurbsBindGroup);
-    if (this.paBindGroup) {
-      pass.setBindGroup(2, this.paBindGroup);
+    // Volumetric segments: render as camera-facing quads (thick lines).
+    // Falls back to the line-list pipeline when disabled or when the vol
+    // pipeline/instance buffer is not available.
+    const useVolumetric = this.options.volumetricSegments
+      && this.volPipeline !== null
+      && this.volInstanceBuffer !== null
+      && this.volInstanceCount > 0
+      && this.volUniformBuffer !== null;
+
+    if (useVolumetric) {
+      // Volumetric uniforms: same scalar fields as line uniforms (offsets 0..115)
+      // + cameraEyeX/Y/Z at 116/120/124 + thickness at 128. Buffer is 160 bytes.
+      const volUniformData = new ArrayBuffer(160);
+      const vView = new DataView(volUniformData);
+      for (let i = 0; i < 16; i++) vView.setFloat32(i * 4, viewProj[i], true);
+      vView.setFloat32(64, this.progress, true);
+      vView.setUint32(68, colorMode, true);
+      vView.setFloat32(72, maxValue, true);
+      vView.setUint32(76, hasWss ? 1 : 0, true);
+      vView.setFloat32(80, this.wssData?.totalLength ?? 0, true);
+      vView.setUint32(84, this.wssData?.arcs.length ?? 0, true);
+      vView.setUint32(88, 0, true); // _pad0
+      vView.setFloat32(92, this.wssData?.limits.feedRate ?? 0, true);
+      vView.setFloat32(96, this.wssData?.limits.maxPathVelocity ?? 0, true);
+      vView.setFloat32(100, this.wssData?.limits.maxCentripetalAcceleration ?? 0, true);
+      vView.setFloat32(104, this.wssData?.limits.maxAxisVelocityX ?? 0, true);
+      vView.setFloat32(108, this.wssData?.limits.maxAxisVelocityY ?? 0, true);
+      vView.setFloat32(112, this.wssData?.limits.maxAxisVelocityZ ?? 0, true);
+      vView.setFloat32(116, this.cameraEye[0], true);
+      vView.setFloat32(120, this.cameraEye[1], true);
+      vView.setFloat32(124, this.cameraEye[2], true);
+      // Thickness: scale lineWidth (1-8) to world-space half-thickness factor.
+      // The shader multiplies by distance * 0.001, so a lineWidth of 2 gives
+      // ~0.002 * dist half-thickness, which is ~2px at typical viewing distances.
+      vView.setFloat32(128, this.options.lineWidth, true);
+      this.device.queue.writeBuffer(this.volUniformBuffer!, 0, volUniformData);
+
+      // Create per-frame bind groups (vertex buffers may change via updateData).
+      const volBindGroup = this.device.createBindGroup({
+        layout: this.volPipeline!.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: this.volUniformBuffer! } },
+          { binding: 1, resource: { buffer: this.volInstanceBuffer! } },
+          { binding: 2, resource: { buffer: this.positionBuffer! } },
+          { binding: 3, resource: { buffer: this.colorBuffer! } },
+          { binding: 4, resource: { buffer: this.segIndexUBuffer! } },
+          { binding: 5, resource: { buffer: this.sampleIdxBuffer! } },
+        ],
+      });
+      const volColorBindGroup = this.device.createBindGroup({
+        layout: this.volPipeline!.getBindGroupLayout(2),
+        entries: [
+          { binding: 0, resource: this.colorLUTTexture!.createView() },
+          { binding: 1, resource: this.sampler! },
+        ],
+      });
+
+      pass.setPipeline(this.volPipeline!);
+      pass.setBindGroup(0, volBindGroup);
+      pass.setBindGroup(1, this.volWssBindGroup);
+      pass.setBindGroup(2, volColorBindGroup);
+      pass.draw(6, this.volInstanceCount);
+    } else {
+      // Line-list pipeline (thin lines)
+      pass.setPipeline(this.pipeline);
+      pass.setBindGroup(0, this.bindGroup);
+      pass.setBindGroup(1, this.renurbsBindGroup);
+      if (this.paBindGroup) {
+        pass.setBindGroup(2, this.paBindGroup);
+      }
+      // Group 3: WSS arc storage buffer (real or dummy).
+      pass.setBindGroup(3, this.wssBindGroup);
+      pass.setVertexBuffer(0, this.positionBuffer);
+      pass.setVertexBuffer(1, this.colorBuffer);
+      pass.setVertexBuffer(2, this.sampleIdxBuffer);
+      pass.setVertexBuffer(3, this.segIndexUBuffer);
+      pass.setIndexBuffer(this.indexBuffer, 'uint32');
+      pass.drawIndexed(this.indexCount);
     }
-    // Group 3: WSS arc storage buffer (real or dummy).
-    pass.setBindGroup(3, this.wssBindGroup);
-    pass.setVertexBuffer(0, this.positionBuffer);
-    pass.setVertexBuffer(1, this.colorBuffer);
-    pass.setVertexBuffer(2, this.sampleIdxBuffer);
-    pass.setVertexBuffer(3, this.segIndexUBuffer);
-    pass.setIndexBuffer(this.indexBuffer, 'uint32');
-    pass.drawIndexed(this.indexCount);
 
     // Draw thick cylinder segments for highlighted pieces
     if (this.highlightPieces.size > 0 && this.thickPipeline && this.thickBindGroup && this.thickInstanceCount > 0) {
